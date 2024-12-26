@@ -32,7 +32,7 @@ from impulse_wars cimport (
 )
 
 
-# doesn't seem like you an directly import C or Cython constants 
+# doesn't seem like you can directly import C or Cython constants 
 # from Python so we have to create wrapper functions
 
 def maxDrones() -> int:
