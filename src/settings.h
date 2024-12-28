@@ -33,7 +33,8 @@ const uint16_t LOG_BUFFER_SIZE = 1024;
 #define WIN_REWARD 1.0f
 #define KILL_REWARD 0.5f
 #define DEATH_REWARD 0.0f
-#define SHOT_HIT_REWARD_COEF 1.0f
+#define WEAPON_PICKUP_REWARD 0.25f
+#define SHOT_HIT_REWARD_COEF 2.0f
 
 // observation constants
 const uint8_t MAX_MAP_COLUMNS = _MAX_MAP_COLUMNS;

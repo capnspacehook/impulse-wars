@@ -312,7 +312,7 @@ void createDrone(env *e, const uint8_t idx) {
     drone->lastAim = (b2Vec2){.x = 0.0f, .y = -1.0f};
     drone->lastVelocity = b2Vec2_zero;
     drone->dead = false;
-    memset(&drone->hitInfo, 0x0, sizeof(stepHitInfo));
+    memset(&drone->stepInfo, 0x0, sizeof(droneStepInfo));
 
     entity *ent = (entity *)fastMalloc(sizeof(entity));
     ent->type = DRONE_ENTITY;
@@ -403,7 +403,7 @@ bool explosionOverlapCallback(b2ShapeId shapeId, void *context) {
         DEBUG_LOGF("drone %d hit itself with explosion from weapon %d", ctx->drone->idx, ctx->weaponType);
         return true;
     }
-    ctx->drone->hitInfo.explosionHit[hitDrone->idx] = true;
+    ctx->drone->stepInfo.explosionHit[hitDrone->idx] = true;
 
     ctx->e->stats[ctx->drone->idx].shotsHit[ctx->weaponType]++;
     DEBUG_LOGF("drone %d hit drone %d with explosion from weapon %d", ctx->drone->idx, hitDrone->idx, ctx->weaponType);
@@ -709,7 +709,7 @@ bool handleProjectileBeginContact(env *e, const entity *proj, const entity *ent)
             const droneEntity *hitDrone = (droneEntity *)ent->entity;
             if (projectile->droneIdx != hitDrone->idx) {
                 droneEntity *shooterDrone = safe_array_get_at(e->drones, projectile->droneIdx);
-                shooterDrone->hitInfo.shotHit[hitDrone->idx] = true;
+                shooterDrone->stepInfo.shotHit[hitDrone->idx] = true;
 
                 e->stats[shooterDrone->idx].shotsHit[projectile->weaponInfo->type]++;
                 DEBUG_LOGF("drone %d hit drone %d with weapon %d", shooterDrone->idx, hitDrone->idx, projectile->weaponInfo->type);
@@ -813,6 +813,7 @@ void handleWeaponPickupBeginTouch(env *e, const entity *sensor, entity *visitor)
         cell->ent = NULL;
 
         droneEntity *drone = (droneEntity *)visitor->entity;
+        drone->stepInfo.pickedUpWeapon = true;
         droneChangeWeapon(e, drone, pickup->weapon);
 
         e->stats[drone->idx].weaponsPickedUp[pickup->weapon]++;

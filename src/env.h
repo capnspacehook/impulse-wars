@@ -337,10 +337,13 @@ float computeReward(env *e, const droneEntity *drone) {
         if (i == drone->idx) {
             continue;
         }
-        if (drone->hitInfo.shotHit[i]) {
+        if (drone->stepInfo.pickedUpWeapon) {
+            reward += WEAPON_PICKUP_REWARD;
+        }
+        if (drone->stepInfo.shotHit[i]) {
             reward += computeShotHitReward(e, i);
         }
-        if (drone->hitInfo.explosionHit[i]) {
+        if (drone->stepInfo.explosionHit[i]) {
             reward += computeShotHitReward(e, i);
         }
     }
@@ -386,7 +389,7 @@ void stepEnv(env *e) {
         for (uint8_t i = 0; i < e->numDrones; i++) {
             droneEntity *drone = safe_array_get_at(e->drones, i);
             drone->lastVelocity = b2Body_GetLinearVelocity(drone->bodyID);
-            memset(&drone->hitInfo, 0x0, sizeof(stepHitInfo));
+            memset(&drone->stepInfo, 0x0, sizeof(droneStepInfo));
 
             if (i >= e->numAgents) {
                 break;
@@ -427,14 +430,14 @@ void stepEnv(env *e) {
 
         // handle sudden death
         e->stepsLeft = fmaxf(e->stepsLeft - 1, 0.0f);
-        if (e->stepsLeft == 0) {
-            e->suddenDeathSteps = fmaxf(e->suddenDeathSteps - 1, 0.0f);
-            if (e->suddenDeathSteps == 0) {
-                DEBUG_LOG("placing sudden death walls");
-                handleSuddenDeath(e);
-                e->suddenDeathSteps = SUDDEN_DEATH_STEPS;
-            }
-        }
+        // if (e->stepsLeft == 0) {
+        //     e->suddenDeathSteps = fmaxf(e->suddenDeathSteps - 1, 0.0f);
+        //     if (e->suddenDeathSteps == 0) {
+        //         DEBUG_LOG("placing sudden death walls");
+        //         handleSuddenDeath(e);
+        //         e->suddenDeathSteps = SUDDEN_DEATH_STEPS;
+        //     }
+        // }
 
         projectilesStep(e);
 
@@ -456,7 +459,7 @@ void stepEnv(env *e) {
 
         weaponPickupsStep(e, DELTA_TIME);
 
-        const bool roundOver = deadDrones >= e->numDrones - 1;
+        const bool roundOver = deadDrones >= e->numDrones - 1 || e->stepsLeft == 0;
         computeRewards(e, roundOver, lastAlive);
 
         if (e->client != NULL) {

@@ -120,10 +120,11 @@ typedef struct projectileEntity {
     uint8_t bounces;
 } projectileEntity;
 
-typedef struct stepHitInfo {
+typedef struct droneStepInfo {
+    bool pickedUpWeapon;
     bool shotHit[_MAX_DRONES];
     bool explosionHit[_MAX_DRONES];
-} stepHitInfo;
+} droneStepInfo;
 
 typedef struct droneStats {
     float reward;
@@ -155,7 +156,7 @@ typedef struct droneEntity {
     b2Vec2 lastMove;
     b2Vec2 lastAim;
     b2Vec2 lastVelocity;
-    stepHitInfo hitInfo;
+    droneStepInfo stepInfo;
     bool dead;
 } droneEntity;
 
