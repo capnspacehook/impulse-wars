@@ -374,10 +374,54 @@ void computeRewards(env *e, const bool roundOver, const uint8_t winner) {
     }
 }
 
+typedef struct agentActions {
+    b2Vec2 move;
+    b2Vec2 aim;
+    bool shoot;
+} agentActions;
+
+static inline bool isActionNoop(const b2Vec2 action) {
+    return b2Length(action) < ACTION_NOOP_MAGNITUDE;
+}
+
 void stepEnv(env *e) {
     if (e->needsReset) {
         DEBUG_LOG("Resetting environment");
         resetEnv(e);
+    }
+
+    agentActions stepActions[e->numAgents];
+    memset(stepActions, 0x0, e->numAgents * sizeof(agentActions));
+
+    // handle actions
+    // TODO: try tanh instead of clamp
+    for (uint8_t i = 0; i < e->numAgents; i++) {
+        droneEntity *drone = safe_array_get_at(e->drones, i);
+
+        const uint8_t offset = i * ACTION_SIZE;
+        b2Vec2 move = (b2Vec2){.x = clamp(e->actions[offset + 0]), .y = clamp(e->actions[offset + 1])};
+        // cap movement magnitude to 1.0
+        if (b2Length(move) > 1.0f) {
+            move = b2Normalize(move);
+        } else if (isActionNoop(move)) {
+            move = b2Vec2_zero;
+        }
+        stepActions[i].move = move;
+
+        const b2Vec2 rawAim = (b2Vec2){.x = clamp(e->actions[offset + 2]), .y = clamp(e->actions[offset + 3])};
+        b2Vec2 aim;
+        if (isActionNoop(rawAim)) {
+            aim = b2Vec2_zero;
+        } else {
+            aim = b2Normalize(rawAim);
+        }
+        stepActions[i].aim = aim;
+        stepActions[i].shoot = e->actions[offset + 4] > 0.0f;
+
+        drone->lastMove = move;
+        if (!b2VecEqual(aim, b2Vec2_zero)) {
+            drone->lastAim = aim;
+        }
     }
 
     // reset reward buffer
@@ -391,27 +435,16 @@ void stepEnv(env *e) {
             droneEntity *drone = safe_array_get_at(e->drones, i);
             drone->lastVelocity = b2Body_GetLinearVelocity(drone->bodyID);
             memset(&drone->stepInfo, 0x0, sizeof(droneStepInfo));
-
             if (i >= e->numAgents) {
                 break;
             }
 
-            const uint8_t offset = i * ACTION_SIZE;
-            const b2Vec2 rawMove = (b2Vec2){.x = clamp(e->actions[offset + 0]), .y = clamp(e->actions[offset + 1])};
-            const b2Vec2 move = rawMove; // b2Normalize(rawMove);
-            const b2Vec2 rawAim = (b2Vec2){.x = clamp(e->actions[offset + 2]), .y = clamp(e->actions[offset + 3])};
-            const b2Vec2 aim = b2Normalize(rawAim);
-            const bool shoot = e->actions[offset + 4] > 0.0f;
-
-            if (!b2VecEqual(move, b2Vec2_zero)) {
-                droneMove(drone, move);
+            const agentActions actions = stepActions[i];
+            if (!b2VecEqual(actions.move, b2Vec2_zero)) {
+                droneMove(drone, actions.move);
             }
-            drone->lastMove = move;
-            if (shoot) {
-                droneShoot(e, drone, aim);
-            }
-            if (!b2VecEqual(aim, b2Vec2_zero)) {
-                drone->lastAim = b2Normalize(aim);
+            if (actions.shoot) {
+                droneShoot(e, drone, actions.aim);
             }
         }
 
@@ -429,6 +462,7 @@ void stepEnv(env *e) {
             wall->pos.valid = false;
         }
 
+        // TODO: fix
         // handle sudden death
         e->stepsLeft = fmaxf(e->stepsLeft - 1, 0.0f);
         // if (e->stepsLeft == 0) {

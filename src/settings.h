@@ -29,6 +29,8 @@ const uint8_t MAX_DRONES = _MAX_DRONES;
 
 const uint16_t LOG_BUFFER_SIZE = 1024;
 
+const float ACTION_NOOP_MAGNITUDE = 0.1f;
+
 // reward settings
 #define WIN_REWARD 1.0f
 #define KILL_REWARD 0.5f
