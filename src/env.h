@@ -178,6 +178,7 @@ void computeObs(env *e) {
             scaledAmmo = scaleValue(activeDrone->ammo, maxAmmo, true);
         }
 
+        e->obs[offset++] = scaleValue(e->stepsLeft, ROUND_STEPS, true) * 255;
         e->obs[offset++] = scaleValue(pos.x, MAX_X_POS, false) * 255;
         e->obs[offset++] = scaleValue(pos.y, MAX_Y_POS, false) * 255;
         e->obs[offset++] = scaleValue(vel.x, MAX_SPEED, false) * 255;
