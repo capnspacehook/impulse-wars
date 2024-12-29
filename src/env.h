@@ -394,12 +394,13 @@ void stepEnv(env *e) {
     memset(stepActions, 0x0, e->numAgents * sizeof(agentActions));
 
     // handle actions
-    // TODO: try tanh instead of clamp
+    // TODO: don't use tanh on human actions
     for (uint8_t i = 0; i < e->numAgents; i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
 
         const uint8_t offset = i * ACTION_SIZE;
-        b2Vec2 move = (b2Vec2){.x = clamp(e->actions[offset + 0]), .y = clamp(e->actions[offset + 1])};
+        b2Vec2 move = (b2Vec2){.x = tanhf(e->actions[offset + 0]), .y = tanhf(e->actions[offset + 1])};
+        ASSERT_VEC_BOUNDED(move);
         // cap movement magnitude to 1.0
         if (b2Length(move) > 1.0f) {
             move = b2Normalize(move);
@@ -408,7 +409,8 @@ void stepEnv(env *e) {
         }
         stepActions[i].move = move;
 
-        const b2Vec2 rawAim = (b2Vec2){.x = clamp(e->actions[offset + 2]), .y = clamp(e->actions[offset + 3])};
+        const b2Vec2 rawAim = (b2Vec2){.x = tanhf(e->actions[offset + 2]), .y = tanhf(e->actions[offset + 3])};
+        ASSERT_VEC_BOUNDED(rawAim);
         b2Vec2 aim;
         if (isActionNoop(rawAim)) {
             aim = b2Vec2_zero;

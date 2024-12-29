@@ -45,7 +45,7 @@ def sweep(args, train):
         Param(name="ent_coef", space=LogSpace(scale=1.0), search_center=0.0005),
         Param(name="gae_lambda", space=LogitSpace(min=0.0, max=1.0), search_center=0.95),
         Param(name="gamma", space=LogitSpace(min=0.0, max=1.0), search_center=0.99),
-        Param(name="learning_rate", space=LogSpace(scale=1.0), search_center=0.0001),
+        Param(name="learning_rate", space=LogSpace(scale=1.0), search_center=0.001),
     ]
 
     sweepID = args.wandb_sweep
