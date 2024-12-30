@@ -24,7 +24,7 @@ from impulse_wars import ImpulseWars
 
 def make_policy(env, config):
     """Make the policy for the environment"""
-    policy = Policy(env, config.num_drones)
+    policy = Policy(env, config.num_drones, config.discretize_actions)
     policy = Recurrent(env, policy)
     return pufferlib.cleanrl.RecurrentPolicy(policy)
 
@@ -41,6 +41,7 @@ def train(args) -> Deque[Dict[str, Any]] | None:
         num_envs=args.vec.num_envs,
         env_args=(args.train.num_internal_envs,),
         env_kwargs=dict(
+            discretize_actions=args.train.discretize_actions,
             num_drones=args.train.num_drones,
             num_agents=args.train.num_agents,
             seed=args.seed,
@@ -152,7 +153,7 @@ if __name__ == "__main__":
     parser.add_argument("--train.torch-deterministic", action="store_true")
     parser.add_argument("--train.cpu-offload", action="store_true")
     parser.add_argument("--train.device", type=str, default="cuda" if th.cuda.is_available() else "cpu")
-    parser.add_argument("--train.total-timesteps", type=int, default=250_000_000)
+    parser.add_argument("--train.total-timesteps", type=int, default=150_000_000)
     parser.add_argument("--train.checkpoint-interval", type=int, default=25)
     parser.add_argument("--train.eval-interval", type=int, default=1_000_000)
     parser.add_argument("--train.compile", action="store_true")
@@ -163,10 +164,10 @@ if __name__ == "__main__":
     parser.add_argument("--train.bptt-horizon", type=int, default=32)
     parser.add_argument("--train.clip-coef", type=float, default=0.2)
     parser.add_argument("--train.clip-vloss", action="store_false")
-    parser.add_argument("--train.ent-coef", type=float, default=0.0005)
-    parser.add_argument("--train.gae-lambda", type=float, default=0.90)
-    parser.add_argument("--train.gamma", type=float, default=0.99)
-    parser.add_argument("--train.learning-rate", type=float, default=0.003)
+    parser.add_argument("--train.ent-coef", type=float, default=0.0015)
+    parser.add_argument("--train.gae-lambda", type=float, default=0.98)
+    parser.add_argument("--train.gamma", type=float, default=0.999)
+    parser.add_argument("--train.learning-rate", type=float, default=0.00125)
     parser.add_argument("--train.anneal-lr", action="store_true")
     parser.add_argument("--train.max-grad-norm", type=float, default=0.5)
     parser.add_argument("--train.minibatch-size", type=int, default=32_768)
@@ -176,6 +177,7 @@ if __name__ == "__main__":
     parser.add_argument("--train.vf-coef", type=float, default=0.5)
     parser.add_argument("--train.target-kl", type=float, default=0.2)
 
+    parser.add_argument("--train.discretize_actions", action="store_true")
     parser.add_argument("--train.num-drones", type=int, default=2, help="Number of drones in the environment")
     parser.add_argument(
         "--train.num-agents",
@@ -229,6 +231,7 @@ if __name__ == "__main__":
             num_envs=1,
             env_args=(1,),
             env_kwargs=dict(
+                discretize_actions=args.train.discretize_actions,
                 num_drones=args.train.num_drones,
                 num_agents=args.train.num_agents,
                 render=True,

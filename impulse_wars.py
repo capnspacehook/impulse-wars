@@ -8,7 +8,7 @@ import pufferlib
 from cy_impulse_wars import (
     maxDrones,
     obsConstants,
-    actionsSize,
+    continuousActionsSize,
     CyImpulseWars,
 )
 
@@ -41,38 +41,66 @@ class ImpulseWars(pufferlib.PufferEnv):
         num_envs: int,
         num_drones: int = 2,
         num_agents: int = 2,
+        discretize_actions: bool = False,
         seed: int = 0,
         render: bool = False,
-        report_interval=16,
+        report_interval: int = 16,
         buf=None,
     ):
         if num_drones > maxDrones() or num_drones <= 0:
             raise ValueError(f"num_drones must greater than 0 and less than or equal to {maxDrones()}")
         if num_agents > num_drones or num_agents <= 0:
-            raise ValueError(f"num_agents must greater than 0 and less than or equal to num_drones")
+            raise ValueError("num_agents must greater than 0 and less than or equal to num_drones")
 
         self.numDrones = num_drones
+        self.num_agents = num_agents * num_envs
         self.obsInfo = obsConstants(num_drones)
+        self.tick = 0
 
         self.single_observation_space = gymnasium.spaces.Box(
             low=0.0, high=255, shape=(self.obsInfo.obsSize,), dtype=np.uint8
         )
-        self.single_action_space = gymnasium.spaces.Box(
-            low=-1.0, high=1.0, shape=(actionsSize(),), dtype=np.float32
-        )
+
+        if discretize_actions:
+            self.single_action_space = gymnasium.spaces.MultiDiscrete(
+                [
+                    9,  # move, cardinal directions + diagonal directions + noop
+                    9,  # aim, cardinal directions + diagonal directions + noop
+                    2,  # shoot
+                ]
+            )
+        else:
+            # action space is actually bounded by (-1, 1) but pufferlib
+            # will check that actions are within the bounds of the action
+            # space before actions get to the env, and we ensure the actions
+            # are bounded there; so set bounds to (-inf, inf) here so
+            # action bounds checks pass
+            self.single_action_space = gymnasium.spaces.Box(
+                low=float("-inf"), high=float("inf"), shape=(continuousActionsSize(),), dtype=np.float32
+            )
 
         self.report_interval = report_interval
         self.render_mode = "human" if render else None
-        self.num_agents = num_agents * num_envs
-        self.tick = 0
 
         super().__init__(buf)
+
+        # pass both the discrete and continuous actions to the env, the
+        # continuous actions will always be used for human players
+        discreteActions = self.actions
+        continuousActions = self.actions
+        if discretize_actions:
+            continuousActions = np.zeros((self.num_agents, *self.single_action_space.shape), dtype=np.float32)
+        else:
+            discreteActions = np.zeros((self.num_agents, *self.single_action_space.shape), dtype=np.int32)
+
         self.c_envs = CyImpulseWars(
             num_envs,
             num_drones,
             num_agents,
             self.observations,
-            self.actions,
+            discretize_actions,
+            continuousActions,
+            discreteActions,
             self.rewards,
             self.terminals,
             seed,
@@ -113,7 +141,7 @@ def testPerf(timeout, actionCache, numEnvs):
     actions = np.random.uniform(
         env.single_action_space.low[0],
         env.single_action_space.high[0],
-        (actionCache, env.num_agents, actionsSize()),
+        (actionCache, env.num_agents, continuousActionsSize()),
     )
 
     tick = 0

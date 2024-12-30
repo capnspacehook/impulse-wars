@@ -25,10 +25,10 @@ class Recurrent(LSTMWrapper):
 
 
 class Policy(nn.Module):
-    def __init__(self, env: pufferlib.PufferEnv, numDrones: int):
+    def __init__(self, env: pufferlib.PufferEnv, numDrones: int, discretizeActions: bool = False):
         super().__init__()
 
-        self.is_continuous = True
+        self.is_continuous = not discretizeActions
 
         self.numDrones = numDrones
         self.obsInfo = obsConstants(numDrones)
@@ -67,8 +67,12 @@ class Policy(nn.Module):
             nn.LeakyReLU(),
         )
 
-        self.actorMean = layer_init(nn.Linear(lstmOutputSize, env.single_action_space.shape[0]), std=0.01)
-        self.actorLogStd = nn.Parameter(th.zeros(1, env.single_action_space.shape[0]))
+        if self.is_continuous:
+            self.actorMean = layer_init(nn.Linear(lstmOutputSize, env.single_action_space.shape[0]), std=0.01)
+            self.actorLogStd = nn.Parameter(th.zeros(1, env.single_action_space.shape[0]))
+        else:
+            self.actionDim = env.single_action_space.nvec.tolist()
+            self.actor = layer_init(nn.Linear(lstmOutputSize, sum(self.actionDim)), std=0.01)
 
         self.critic = layer_init(nn.Linear(lstmOutputSize, 1), std=1.0)
 
@@ -105,10 +109,14 @@ class Policy(nn.Module):
         return self.encoder(features), None
 
     def decode_actions(self, hidden: th.Tensor, lookup=None):
-        actionMean = self.actorMean(hidden)
-        actionLogStd = self.actorLogStd.expand_as(actionMean)
-        actionStd = th.exp(actionLogStd)
-        action = Normal(actionMean, actionStd)
+        if self.is_continuous:
+            actionMean = self.actorMean(hidden)
+            actionLogStd = self.actorLogStd.expand_as(actionMean)
+            actionStd = th.exp(actionLogStd)
+            action = Normal(actionMean, actionStd)
+        else:
+            action = self.actor(hidden)
+            action = th.split(action, self.actionDim, dim=1)
 
         value = self.critic(hidden)
 

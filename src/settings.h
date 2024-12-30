@@ -29,8 +29,6 @@ const uint8_t MAX_DRONES = _MAX_DRONES;
 
 const uint16_t LOG_BUFFER_SIZE = 1024;
 
-const float ACTION_NOOP_MAGNITUDE = 0.1f;
-
 // reward settings
 #define WIN_REWARD 1.0f
 #define KILL_REWARD 0.5f
@@ -54,7 +52,16 @@ const uint16_t OBS_SIZE = MAP_OBS_SIZE + SCALAR_OBS_SIZE;
 #define MAX_Y_POS 40.0f
 #define MAX_SPEED 250.0f
 
-const uint8_t ACTION_SIZE = 5;
+// action constants
+const uint8_t CONTINUOUS_ACTION_SIZE = 5;
+const uint8_t DISCRETE_ACTION_SIZE = 3;
+const float ACTION_NOOP_MAGNITUDE = 0.1f;
+
+#define DIAG_MAG 0.707107f
+const float discToContActionMap[2][8] = {
+    {0.0f, 0.0f, -1.0f, 1.0f, -DIAG_MAG, DIAG_MAG, -DIAG_MAG, DIAG_MAG},
+    {-1.0f, 1.0f, 0.0f, 0.0f, -DIAG_MAG, -DIAG_MAG, DIAG_MAG, DIAG_MAG},
+};
 
 // wall settings
 #define WALL_THICKNESS 4.0f

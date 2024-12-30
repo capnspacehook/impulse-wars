@@ -1,11 +1,11 @@
-from libc.stdint cimport uint8_t, uint16_t, uint64_t
+from libc.stdint cimport int32_t, uint8_t, uint16_t, uint64_t
 from libc.stdlib cimport calloc, free
 
 import pufferlib
 
 from impulse_wars cimport (
     MAX_DRONES,
-    ACTION_SIZE,
+    CONTINUOUS_ACTION_SIZE,
     OBS_SIZE,
     NUM_WALL_TYPES,
     NUM_WEAPONS,
@@ -39,8 +39,8 @@ def maxDrones() -> int:
     return MAX_DRONES
 
 
-def actionsSize() -> int:
-    return ACTION_SIZE
+def continuousActionsSize() -> int:
+    return CONTINUOUS_ACTION_SIZE
 
 
 def obsConstants(numDrones: int) -> pufferlib.Namespace:
@@ -66,7 +66,7 @@ cdef class CyImpulseWars:
         logBuffer *logs
         rayClient* rayClient
 
-    def __init__(self, uint16_t numEnvs, uint8_t numDrones, uint8_t numAgents, uint8_t[:, :] observations, float[:, :] actions, float[:] rewards, uint8_t[:] terminals, uint64_t seed, bint render):
+    def __init__(self, uint16_t numEnvs, uint8_t numDrones, uint8_t numAgents, uint8_t[:, :] observations, bint discretizeActions, float[:, :] contActions, int32_t[:, :] discActions, float[:] rewards, uint8_t[:] terminals, uint64_t seed, bint render):
         self.numEnvs = numEnvs
         self.numDrones = numDrones
         self.render = render
@@ -81,7 +81,9 @@ cdef class CyImpulseWars:
                 numDrones,
                 numAgents,
                 &observations[i * inc, 0],
-                &actions[i * inc, 0],
+                discretizeActions,
+                &contActions[i * inc, 0],
+                &discActions[i * inc, 0],
                 &rewards[i * inc],
                 &terminals[i * inc],
                 self.logs,

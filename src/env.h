@@ -233,12 +233,14 @@ void setupEnv(env *e) {
     computeObs(e);
 }
 
-env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, float *actions, float *rewards, uint8_t *terminals, logBuffer *logs, uint64_t seed) {
+env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool discretizeActions, float *contActions, int32_t *discActions, float *rewards, uint8_t *terminals, logBuffer *logs, uint64_t seed) {
     e->numDrones = numDrones;
     e->numAgents = numAgents;
 
     e->obs = obs;
-    e->actions = actions;
+    e->discretizeActions = discretizeActions;
+    e->contActions = contActions;
+    e->discActions = discActions;
     e->rewards = rewards;
     e->terminals = terminals;
 
@@ -384,6 +386,56 @@ static inline bool isActionNoop(const b2Vec2 action) {
     return b2Length(action) < ACTION_NOOP_MAGNITUDE;
 }
 
+agentActions computeActions(env *e, const uint8_t droneIdx) {
+    agentActions actions = {0};
+
+    if (e->discretizeActions) {
+        const uint8_t offset = droneIdx * DISCRETE_ACTION_SIZE;
+
+        // 8 is no-op for both move and aim
+        const uint8_t move = e->discActions[offset + 0];
+        ASSERT(move <= 8);
+        if (move != 8) {
+            actions.move.x = discToContActionMap[0][move];
+            actions.move.y = discToContActionMap[1][move];
+        }
+        const uint8_t aim = e->discActions[offset + 1];
+        ASSERT(move <= 8);
+        if (aim != 8) {
+            actions.aim.x = discToContActionMap[0][aim];
+            actions.aim.y = discToContActionMap[1][aim];
+        }
+        const uint8_t shoot = e->discActions[offset + 2];
+        ASSERT(shoot <= 1);
+        actions.shoot = (bool)shoot;
+        return actions;
+    }
+    const uint8_t offset = droneIdx * CONTINUOUS_ACTION_SIZE;
+
+    b2Vec2 move = (b2Vec2){.x = tanhf(e->contActions[offset + 0]), .y = tanhf(e->contActions[offset + 1])};
+    ASSERT_VEC_BOUNDED(move);
+    // cap movement magnitude to 1.0
+    if (b2Length(move) > 1.0f) {
+        move = b2Normalize(move);
+    } else if (isActionNoop(move)) {
+        move = b2Vec2_zero;
+    }
+    actions.move = move;
+
+    const b2Vec2 rawAim = (b2Vec2){.x = tanhf(e->contActions[offset + 2]), .y = tanhf(e->contActions[offset + 3])};
+    ASSERT_VEC_BOUNDED(rawAim);
+    b2Vec2 aim;
+    if (isActionNoop(rawAim)) {
+        aim = b2Vec2_zero;
+    } else {
+        aim = b2Normalize(rawAim);
+    }
+    actions.aim = aim;
+    actions.shoot = e->contActions[offset + 4] > 0.0f;
+
+    return actions;
+}
+
 void stepEnv(env *e) {
     if (e->needsReset) {
         DEBUG_LOG("Resetting environment");
@@ -398,31 +450,10 @@ void stepEnv(env *e) {
     for (uint8_t i = 0; i < e->numAgents; i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
 
-        const uint8_t offset = i * ACTION_SIZE;
-        b2Vec2 move = (b2Vec2){.x = tanhf(e->actions[offset + 0]), .y = tanhf(e->actions[offset + 1])};
-        ASSERT_VEC_BOUNDED(move);
-        // cap movement magnitude to 1.0
-        if (b2Length(move) > 1.0f) {
-            move = b2Normalize(move);
-        } else if (isActionNoop(move)) {
-            move = b2Vec2_zero;
-        }
-        stepActions[i].move = move;
-
-        const b2Vec2 rawAim = (b2Vec2){.x = tanhf(e->actions[offset + 2]), .y = tanhf(e->actions[offset + 3])};
-        ASSERT_VEC_BOUNDED(rawAim);
-        b2Vec2 aim;
-        if (isActionNoop(rawAim)) {
-            aim = b2Vec2_zero;
-        } else {
-            aim = b2Normalize(rawAim);
-        }
-        stepActions[i].aim = aim;
-        stepActions[i].shoot = e->actions[offset + 4] > 0.0f;
-
-        drone->lastMove = move;
-        if (!b2VecEqual(aim, b2Vec2_zero)) {
-            drone->lastAim = aim;
+        stepActions[i] = computeActions(e, i);
+        drone->lastMove = stepActions[i].move;
+        if (!b2VecEqual(stepActions[i].aim, b2Vec2_zero)) {
+            drone->lastAim = stepActions[i].aim;
         }
     }
 

@@ -5,7 +5,7 @@ const float lStickDeadzone = 0.1f;
 const float rStickDeadzone = 0.1f;
 
 void getPlayerInputs(const env *e, const droneEntity *drone, const int gamepadIdx) {
-    uint8_t offset = gamepadIdx * ACTION_SIZE;
+    uint8_t offset = gamepadIdx * CONTINUOUS_ACTION_SIZE;
     if (IsGamepadAvailable(gamepadIdx)) {
         float lStickX = GetGamepadAxisMovement(gamepadIdx, GAMEPAD_AXIS_LEFT_X);
         float lStickY = GetGamepadAxisMovement(gamepadIdx, GAMEPAD_AXIS_LEFT_Y);
@@ -17,11 +17,11 @@ void getPlayerInputs(const env *e, const droneEntity *drone, const int gamepadId
             shoot = IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_RIGHT_TRIGGER_1);
         }
 
-        e->actions[offset++] = lStickX;
-        e->actions[offset++] = lStickY;
-        e->actions[offset++] = rStickX;
-        e->actions[offset++] = rStickY;
-        e->actions[offset++] = shoot;
+        e->contActions[offset++] = lStickX;
+        e->contActions[offset++] = lStickY;
+        e->contActions[offset++] = rStickX;
+        e->contActions[offset++] = rStickY;
+        e->contActions[offset++] = shoot;
 
         return;
     }
@@ -53,11 +53,11 @@ void getPlayerInputs(const env *e, const droneEntity *drone, const int gamepadId
         shoot = true;
     }
 
-    e->actions[offset++] = move.x;
-    e->actions[offset++] = move.y;
-    e->actions[offset++] = aim.x;
-    e->actions[offset++] = aim.y;
-    e->actions[offset++] = shoot;
+    e->contActions[offset++] = move.x;
+    e->contActions[offset++] = move.y;
+    e->contActions[offset++] = aim.x;
+    e->contActions[offset++] = aim.y;
+    e->contActions[offset++] = shoot;
 }
 
 int main(void) {
@@ -66,11 +66,11 @@ int main(void) {
     env *e = (env *)fastCalloc(1, sizeof(env));
     uint8_t *obs = (uint8_t *)fastCalloc(NUM_DRONES * OBS_SIZE, sizeof(uint8_t));
     float *rewards = (float *)fastCalloc(NUM_DRONES, sizeof(float));
-    float *actions = (float *)fastCalloc(NUM_DRONES * ACTION_SIZE, sizeof(float));
+    float *actions = (float *)fastCalloc(NUM_DRONES * CONTINUOUS_ACTION_SIZE, sizeof(float));
     uint8_t *terminals = (uint8_t *)fastCalloc(NUM_DRONES, sizeof(uint8_t));
     logBuffer *logs = createLogBuffer(LOG_BUFFER_SIZE);
 
-    initEnv(e, NUM_DRONES, NUM_DRONES, obs, actions, rewards, terminals, logs, time(NULL));
+    initEnv(e, NUM_DRONES, NUM_DRONES, obs, false, actions, NULL, rewards, terminals, logs, time(NULL));
 
     rayClient *client = createRayClient();
     e->client = client;

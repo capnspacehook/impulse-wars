@@ -185,7 +185,9 @@ typedef struct env {
 
     uint8_t *obs;
     float *rewards;
-    float *actions;
+    bool discretizeActions;
+    float *contActions;
+    int32_t *discActions;
     uint8_t *terminals;
 
     uint64_t randState;
