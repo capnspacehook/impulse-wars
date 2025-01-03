@@ -165,11 +165,15 @@ static inline float scaleValue(const float v, const float max, const bool minIsZ
     return fmaxf(fminf(scaled, max), 0.0f);
 }
 
-static inline uint8_t oneHotEncode(uint8_t *obs, const uint16_t offset, const uint8_t val, const uint8_t max) {
+static inline uint8_t oneHotEncode(float *obs, const uint16_t offset, const uint8_t val, const uint8_t max) {
     ASSERTF(val < max, "val: %d, max: %d", val, max);
-    memset(obs + offset, 0x0, max * sizeof(uint8_t));
+    memset(obs + offset, 0x0, max * sizeof(float));
     obs[offset + val] = 1;
     return max;
+}
+
+static inline uint16_t alignedSize(const uint16_t size, const uint8_t align) {
+    return (size + align - 1) & ~(align - 1);
 }
 
 #define BITNSLOTS(nb) ((nb + sizeof(uint8_t) - 1) / sizeof(uint8_t))

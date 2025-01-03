@@ -17,6 +17,9 @@ rayClient *createRayClient();
 void destroyRayClient(rayClient *client);
 #endif
 
+const uint8_t TWO_BIT_MASK = 0x3;
+const uint8_t FOUR_BIT_MASK = 0xf;
+
 logBuffer *createLogBuffer(uint16_t capacity) {
     logBuffer *logs = (logBuffer *)fastCalloc(1, sizeof(logBuffer));
     logs->logs = (logEntry *)fastCalloc(capacity, sizeof(logEntry));
@@ -71,124 +74,184 @@ logEntry aggregateAndClearLogBuffer(uint8_t numDrones, logBuffer *logs) {
     return log;
 }
 
+// computes a grid of the types and locations of static walls in the map;
+// since walls never move, this only needs to be computed once per episode
+void computeWallGridObs(env *e) {
+    memset(e->wallObs, 0x0, MAP_OBS_SIZE * sizeof(uint8_t));
+
+    // TODO: needs to be padded for smaller maps then max size
+    uint16_t offset = 0;
+    for (size_t i = 0; i < cc_array_size(e->cells); i++) {
+        const mapCell *cell = safe_array_get_at(e->cells, i);
+        uint8_t wallType = 0;
+        if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
+            wallType = cell->ent->type + 1;
+        }
+        e->wallObs[offset++] = (wallType & TWO_BIT_MASK) << 6;
+
+        ASSERT(i <= MAX_MAP_COLUMNS * MAX_MAP_ROWS);
+        ASSERT(offset <= MAP_OBS_SIZE);
+    }
+}
+
+uint16_t findNearestCell(env *e, const b2Vec2 pos, const uint16_t cellIdx) {
+    uint8_t cellOffsets[8][2] = {
+        {-1, 0},  // left
+        {1, 0},   // right
+        {0, -1},  // up
+        {0, 1},   // down
+        {-1, -1}, // top-left
+        {1, -1},  // top-right
+        {-1, 1},  // bottom-left
+        {1, 1},   // bottom-right
+    };
+
+    uint16_t closestCell = cellIdx;
+    float minDistance = FLT_MAX;
+    const uint8_t cellRow = cellIdx / e->columns;
+    const uint8_t cellCol = cellIdx % e->columns;
+    for (uint8_t i = 0; i < 8; i++) {
+        const uint16_t newCellIdx = ((cellRow + cellOffsets[i][0]) * e->columns) + (cellCol + cellOffsets[i][1]);
+        const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
+        if (minDistance != fminf(minDistance, b2Distance(pos, cell->pos))) {
+            closestCell = newCellIdx;
+        }
+    }
+
+    return closestCell;
+}
+
 void computeObs(env *e) {
-    memset(e->obs, 0x0, OBS_SIZE * e->numAgents * sizeof(uint8_t));
-
     for (uint8_t agent = 0; agent < e->numAgents; agent++) {
-        uint16_t offset = OBS_SIZE * agent;
-        const uint16_t obsStart = offset;
+        //
+        // compute discrete map observations
+        //
+        uint16_t mapObsOffset = e->obsBytes * agent;
+        const uint16_t mapObsStart = mapObsOffset;
 
-        // compute map wall observations
-        // TODO: needs to be padded for smaller maps then max size
-        for (size_t i = 0; i < cc_array_size(e->cells); i++) {
-            const mapCell *cell = safe_array_get_at(e->cells, i);
+        memcpy(e->obs + mapObsOffset, e->wallObs, MAP_OBS_SIZE * sizeof(uint8_t));
 
-            if (cell->ent != NULL) {
-                uint8_t wallType = 0;
-                if (entityTypeIsWall(cell->ent->type)) {
-                    wallType = cell->ent->type + 1;
-                }
-                e->obs[offset++] = wallType;
+        // compute discretized location and type of weapon pickups on grid
+        for (size_t i = 0; i < cc_array_size(e->pickups); i++) {
+            const weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
 
-                uint8_t pickupWeaponType = 0;
-                if (cell->ent->type == WEAPON_PICKUP_ENTITY) {
-                    weaponPickupEntity *pickup = (weaponPickupEntity *)cell->ent->entity;
-                    pickupWeaponType = pickup->weapon + 1;
-                }
-                e->obs[offset++] = pickupWeaponType;
-                offset += MAP_CELL_OBS_SIZE - 2;
-            } else {
-                offset += MAP_CELL_OBS_SIZE;
-            }
-
-            ASSERT(i <= MAX_MAP_COLUMNS * MAX_MAP_ROWS);
-            ASSERT(offset <= (OBS_SIZE * agent) + MAP_OBS_SIZE);
+            mapObsOffset = mapObsStart + pickup->mapCellIdx;
+            ASSERTF(mapObsOffset <= mapObsStart + MAP_OBS_SIZE, "offset: %d", mapObsOffset);
+            const uint8_t weaponType = pickup->weapon + 1;
+            e->obs[mapObsOffset] |= (weaponType & FOUR_BIT_MASK) << 2;
         }
 
-        // compute projectile observations
+        // compute discretized location and index of drones on grid
+        uint8_t newDroneIdx = 1;
+        uint16_t droneCells[e->numDrones];
+        memset(droneCells, 0x0, sizeof(droneCells));
+        for (size_t i = 0; i < cc_array_size(e->drones); i++) {
+            droneEntity *drone = safe_array_get_at(e->drones, i);
+            const b2Vec2 pos = getCachedPos(drone->bodyID, &drone->pos);
+
+            // ensure drones do not share cells in the observation
+            int16_t cellIdx = entityPosToCellIdx(e, pos);
+            if (cellIdx == -1) {
+                ERRORF("drone %zu out of bounds at position %f %f", i, pos.x, pos.y);
+            }
+            if (i != 0) {
+                for (uint8_t j = 0; j < i; j++) {
+                    if (droneCells[j] == cellIdx) {
+                        cellIdx = findNearestCell(e, pos, cellIdx);
+                        break;
+                    }
+                }
+            }
+            droneCells[i] = cellIdx;
+
+            // set the agent's drone to be drone 0
+            uint8_t droneIdx = 0;
+            if (i != agent) {
+                droneIdx = newDroneIdx++;
+            }
+            mapObsOffset = mapObsStart + cellIdx;
+            ASSERTF(mapObsOffset <= mapObsStart + MAP_OBS_SIZE, "offset: %d", mapObsOffset);
+            e->obs[mapObsOffset] |= ((droneIdx + 1) & TWO_BIT_MASK);
+        }
+
+        //
+        // compute continuous scalar observations
+        //
+        uint16_t scalarObsOffset = 0;
+        const uint16_t scalarObsStart = mapObsStart + e->mapObsBytes;
+        float *scalarObs = (float *)(e->obs + scalarObsStart);
+        memset(scalarObs, 0x0, SCALAR_OBS_SIZE * sizeof(float));
+
+        const droneEntity *activeDrone = safe_array_get_at(e->drones, agent);
+        const b2Vec2 activeDronePos = activeDrone->pos.pos;
+
+        // compute type and location of N nearest weapon pickups
+        // TODO: use KD tree here
+        for (uint8_t i = 0; i < NUM_WEAPON_PICKUP_OBS; i++) {
+            const weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
+
+            scalarObsOffset = WEAPON_PICKUP_TYPES_OBS_OFFSET + i;
+            ASSERTF(scalarObsOffset <= WEAPON_PICKUP_POS_OBS_OFFSET, "offset: %d", scalarObsOffset);
+            scalarObs[scalarObsOffset] = pickup->weapon + 1;
+
+            scalarObsOffset = WEAPON_PICKUP_POS_OBS_OFFSET + (i * 2);
+            ASSERTF(scalarObsOffset <= PROJECTILE_TYPES_OBS_OFFSET, "offset: %d", scalarObsOffset);
+            scalarObs[scalarObsOffset++] = scaleValue(pickup->pos.x, MAX_X_POS, false);
+            scalarObs[scalarObsOffset] = scaleValue(pickup->pos.y, MAX_Y_POS, false);
+        }
+
+        // compute type and location of N projectiles
+        uint8_t projIdx = 0;
         for (SNode *cur = e->projectiles->head; cur != NULL; cur = cur->next) {
+            // TODO: handle better
+            if (projIdx == NUM_PROJECTILE_OBS) {
+                break;
+            }
             const projectileEntity *projectile = (projectileEntity *)cur->data;
-            const int16_t cellIdx = entityPosToCellIdx(e, projectile->lastPos);
-            if (cellIdx == -1) {
-                continue;
-            }
-            // don't add the projectile to the obs if it somehow
-            // overlaps with a static wall
-            const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
-            if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
-                continue;
-            }
 
-            const uint8_t projWeapon = projectile->weaponInfo->type + 1;
-            ASSERT(projWeapon <= NUM_WEAPONS + 1);
-            const uint16_t offset = obsStart + (cellIdx * MAP_CELL_OBS_SIZE) + PROJECTILE_OBS_OFFSET;
-            ASSERTF(offset <= OBS_SIZE * (agent + 1), "offset: %d, max offset: %d, last pos: %f %f", offset, OBS_SIZE * (agent + 1), projectile->lastPos.x, projectile->lastPos.y);
-            e->obs[offset] = projWeapon;
-        }
-        // compute floating wall observations
-        for (size_t i = 0; i < cc_array_size(e->floatingWalls); i++) {
-            const wallEntity *wall = safe_array_get_at(e->floatingWalls, i);
-            const int16_t cellIdx = entityPosToCellIdx(e, wall->pos.pos);
-            if (cellIdx == -1) {
-                continue;
-            }
-            // don't add the floating wall to the obs if it somehow
-            // overlaps with a static wall
-            const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
-            if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
-                continue;
-            }
+            scalarObsOffset = PROJECTILE_TYPES_OBS_OFFSET + projIdx;
+            ASSERTF(scalarObsOffset <= PROJECTILE_POS_OBS_OFFSET, "offset: %d", scalarObsOffset);
+            scalarObs[scalarObsOffset] = projectile->weaponInfo->type + 1;
 
-            const uint8_t wallType = wall->type + 1;
-            ASSERT(wallType <= NUM_WALL_TYPES + 1);
-            const uint16_t offset = obsStart + (cellIdx * MAP_CELL_OBS_SIZE) + FLOATING_WALL_OBS_OFFSET;
-            ASSERT(offset <= OBS_SIZE * (agent + 1));
-            e->obs[offset] = wallType;
-        }
-        // compute drone observations
-        for (uint8_t i = 0; i < e->numDrones; i++) {
-            const droneEntity *drone = safe_array_get_at(e->drones, i);
-            const int16_t cellIdx = entityPosToCellIdx(e, drone->pos.pos);
-            if (cellIdx == -1) {
-                continue;
-            }
-            // don't add the drone to the obs if it somehow
-            // overlaps with a static wall
-            const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
-            if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
-                continue;
-            }
+            scalarObsOffset = PROJECTILE_POS_OBS_OFFSET + (projIdx * 2);
+            ASSERTF(scalarObsOffset <= ENEMY_DRONE_OBS_OFFSET, "offset: %d", scalarObsOffset);
+            scalarObs[scalarObsOffset++] = scaleValue(projectile->lastPos.x, MAX_X_POS, false);
+            scalarObs[scalarObsOffset] = scaleValue(projectile->lastPos.y, MAX_Y_POS, false);
 
-            const uint8_t droneWeapon = drone->weaponInfo->type + 1;
-            ASSERT(droneWeapon <= NUM_WEAPONS + 1);
-            const uint16_t offset = obsStart + (cellIdx * MAP_CELL_OBS_SIZE) + DRONE_OBS_OFFSET;
-            ASSERT(offset <= OBS_SIZE * (agent + 1));
-            e->obs[offset] = droneWeapon;
+            projIdx++;
         }
+
+        // compute enemy drone observations
+        // TODO: handle multiple enemy drones
+        const droneEntity *enemyDrone = safe_array_get_at(e->drones, 1);
+        const b2Vec2 enemyDronePos = enemyDrone->pos.pos;
+        const b2Vec2 enemyDroneVel = b2Body_GetLinearVelocity(enemyDrone->bodyID);
+        scalarObsOffset = ENEMY_DRONE_OBS_OFFSET;
+        scalarObs[scalarObsOffset++] = scaleValue(enemyDronePos.x, MAX_X_POS, false);
+        scalarObs[scalarObsOffset++] = scaleValue(enemyDronePos.y, MAX_Y_POS, false);
+        scalarObs[scalarObsOffset++] = scaleValue(enemyDroneVel.x, MAX_SPEED, false);
+        scalarObs[scalarObsOffset++] = scaleValue(enemyDroneVel.y, MAX_SPEED, false);
 
         // compute active drone observations
-        offset = obsStart + MAP_OBS_SIZE;
-        droneEntity *activeDrone = safe_array_get_at(e->drones, agent);
-        const b2Vec2 pos = getCachedPos(activeDrone->bodyID, &activeDrone->pos);
-        const b2Vec2 vel = b2Body_GetLinearVelocity(activeDrone->bodyID);
-
+        ASSERTF(scalarObsOffset == DRONE_OBS_OFFSET, "offset: %d", scalarObsOffset);
+        const b2Vec2 activeDroneVel = b2Body_GetLinearVelocity(activeDrone->bodyID);
         int8_t maxAmmo = weaponAmmo(e->defaultWeapon->type, activeDrone->weaponInfo->type);
         uint8_t scaledAmmo = 0;
         if (activeDrone->ammo != INFINITE) {
             scaledAmmo = scaleValue(activeDrone->ammo, maxAmmo, true);
         }
 
-        e->obs[offset++] = scaleValue(e->stepsLeft, ROUND_STEPS, true) * 255;
-        e->obs[offset++] = scaleValue(pos.x, MAX_X_POS, false) * 255;
-        e->obs[offset++] = scaleValue(pos.y, MAX_Y_POS, false) * 255;
-        e->obs[offset++] = scaleValue(vel.x, MAX_SPEED, false) * 255;
-        e->obs[offset++] = scaleValue(vel.y, MAX_SPEED, false) * 255;
-        e->obs[offset++] = scaleValue(activeDrone->lastAim.x, 1.0f, false) * 255;
-        e->obs[offset++] = scaleValue(activeDrone->lastAim.y, 1.0f, false) * 255;
-        e->obs[offset++] = scaledAmmo * 255;
-        e->obs[offset++] = scaleValue(activeDrone->weaponCooldown, activeDrone->weaponInfo->coolDown, true) * 255;
-        e->obs[offset++] = scaleValue(activeDrone->charge, weaponCharge(activeDrone->weaponInfo->type), true) * 255;
-        oneHotEncode(e->obs, offset, activeDrone->weaponInfo->type, NUM_WEAPONS);
+        scalarObs[scalarObsOffset++] = scaleValue(e->stepsLeft, ROUND_STEPS, true);
+        scalarObs[scalarObsOffset++] = scaleValue(activeDronePos.x, MAX_X_POS, false);
+        scalarObs[scalarObsOffset++] = scaleValue(activeDronePos.y, MAX_Y_POS, false);
+        scalarObs[scalarObsOffset++] = scaleValue(activeDroneVel.x, MAX_SPEED, false);
+        scalarObs[scalarObsOffset++] = scaleValue(activeDroneVel.y, MAX_SPEED, false);
+        scalarObs[scalarObsOffset++] = scaleValue(activeDrone->lastAim.x, 1.0f, false);
+        scalarObs[scalarObsOffset++] = scaleValue(activeDrone->lastAim.y, 1.0f, false);
+        scalarObs[scalarObsOffset++] = scaledAmmo;
+        scalarObs[scalarObsOffset++] = scaleValue(activeDrone->weaponCooldown, activeDrone->weaponInfo->coolDown, true);
+        scalarObs[scalarObsOffset++] = scaleValue(activeDrone->charge, weaponCharge(activeDrone->weaponInfo->type), true);
+        scalarObs[scalarObsOffset] = activeDrone->weaponInfo->type + 1;
     }
 }
 
@@ -230,12 +293,16 @@ void setupEnv(env *e) {
         createWeaponPickup(e);
     }
 
+    computeWallGridObs(e);
     computeObs(e);
 }
 
 env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool discretizeActions, float *contActions, int32_t *discActions, float *rewards, uint8_t *terminals, logBuffer *logs, uint64_t seed) {
     e->numDrones = numDrones;
     e->numAgents = numAgents;
+
+    e->obsBytes = obsBytes();
+    e->mapObsBytes = alignedSize(MAP_OBS_SIZE * sizeof(uint8_t), sizeof(float));
 
     e->obs = obs;
     e->discretizeActions = discretizeActions;
@@ -249,11 +316,14 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
 
     e->logs = logs;
 
+    e->wallObs = fastCalloc(MAP_OBS_SIZE, sizeof(uint8_t));
     cc_array_new(&e->cells);
     cc_array_new(&e->walls);
+    // e->wallTree = kd_create(2);
     cc_array_new(&e->floatingWalls);
     cc_array_new(&e->drones);
     cc_array_new(&e->pickups);
+    // e->pickupTree = kd_create(2);
     cc_slist_new(&e->projectiles);
 
     setupEnv(e);
@@ -262,6 +332,8 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
 }
 
 void clearEnv(env *e) {
+    memset(e->wallObs, 0x0, MAP_OBS_SIZE * sizeof(uint8_t));
+
     // rewards get cleared in stepEnv every step
     memset(e->terminals, 0x0, e->numAgents * sizeof(uint8_t));
 
@@ -270,7 +342,7 @@ void clearEnv(env *e) {
 
     for (size_t i = 0; i < cc_array_size(e->pickups); i++) {
         weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
-        destroyWeaponPickup(pickup);
+        destroyWeaponPickup(e, pickup, false);
     }
 
     for (uint8_t i = 0; i < e->numDrones; i++) {
@@ -297,9 +369,11 @@ void clearEnv(env *e) {
 
     cc_array_remove_all(e->cells);
     cc_array_remove_all(e->walls);
+    // kd_clear(e->wallTree);
     cc_array_remove_all(e->floatingWalls);
     cc_array_remove_all(e->drones);
     cc_array_remove_all(e->pickups);
+    // kd_clear(e->pickupTree);
     cc_slist_remove_all(e->projectiles);
 
     b2DestroyWorld(e->worldID);
@@ -308,11 +382,14 @@ void clearEnv(env *e) {
 void destroyEnv(env *e) {
     clearEnv(e);
 
+    fastFree(e->wallObs);
     cc_array_destroy(e->cells);
     cc_array_destroy(e->walls);
+    free(e->wallTree);
     cc_array_destroy(e->floatingWalls);
     cc_array_destroy(e->drones);
     cc_array_destroy(e->pickups);
+    free(e->pickupTree);
     cc_slist_destroy(e->projectiles);
 }
 
@@ -348,6 +425,13 @@ float computeReward(env *e, const droneEntity *drone) {
         }
         if (drone->stepInfo.explosionHit[i]) {
             reward += computeShotHitReward(e, i);
+        }
+
+        const droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
+        const b2Vec2 directionVec = b2Normalize(b2Sub(enemyDrone->pos.pos, drone->pos.pos));
+        const float aimDot = b2Dot(drone->lastAim, directionVec);
+        if (aimDot >= AIM_TOLERANCE) {
+            reward += AIM_REWARD;
         }
     }
 

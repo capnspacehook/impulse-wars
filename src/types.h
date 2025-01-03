@@ -5,6 +5,7 @@
 
 #include "include/cc_array.h"
 #include "include/cc_slist.h"
+#include "include/kdtree.h"
 
 #include "settings.h"
 
@@ -103,6 +104,7 @@ typedef struct weaponPickupEntity {
     enum weaponType weapon;
     float respawnWait;
     uint8_t floatingWallsTouching;
+    b2Vec2 pos;
     uint16_t mapCellIdx;
 } weaponPickupEntity;
 
@@ -183,6 +185,10 @@ typedef struct env {
     uint8_t numDrones;
     uint8_t numAgents;
 
+    uint16_t obsBytes;
+    uint16_t mapObsBytes;
+
+    uint8_t *wallObs;
     uint8_t *obs;
     float *rewards;
     bool discretizeActions;
@@ -204,9 +210,11 @@ typedef struct env {
     weaponInformation *defaultWeapon;
     CC_Array *cells;
     CC_Array *walls;
+    kdtree *wallTree;
     CC_Array *floatingWalls;
     CC_Array *drones;
     CC_Array *pickups;
+    kdtree *pickupTree;
     CC_SList *projectiles;
 
     // steps left until sudden death

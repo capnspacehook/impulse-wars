@@ -4,6 +4,7 @@ import gymnasium
 import numpy as np
 
 import pufferlib
+import pufferlib.emulation
 
 from cy_impulse_wars import (
     maxDrones,
@@ -57,8 +58,10 @@ class ImpulseWars(pufferlib.PufferEnv):
         self.obsInfo = obsConstants(num_drones)
         self.tick = 0
 
+        # map observations are bit packed to save space, and scalar
+        # observations need to be floats
         self.single_observation_space = gymnasium.spaces.Box(
-            low=0.0, high=255, shape=(self.obsInfo.obsSize,), dtype=np.uint8
+            low=0, high=255, shape=(self.obsInfo.obsBytes,), dtype=np.uint8
         )
 
         if discretize_actions:

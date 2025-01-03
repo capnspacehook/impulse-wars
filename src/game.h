@@ -151,6 +151,8 @@ entity *createWall(env *e, const float posX, const float posY, const float width
         cc_array_add(e->floatingWalls, wall);
     } else {
         cc_array_add(e->walls, wall);
+        DEBUG_LOGF("adding wall at (%f, %f) to KD tree", pos.x, pos.y);
+        // kd_insert(e->wallTree, pos.x, pos.y, wall);
     }
 
     return ent;
@@ -235,9 +237,11 @@ enum weaponType randWeaponPickupType(env *e) {
 
 void createWeaponPickup(env *e) {
     b2BodyDef pickupBodyDef = b2DefaultBodyDef();
-    if (!findOpenPos(e, WEAPON_PICKUP_SHAPE, &pickupBodyDef.position)) {
+    b2Vec2 pos;
+    if (!findOpenPos(e, WEAPON_PICKUP_SHAPE, &pos)) {
         ERROR("no open position for weapon pickup");
     }
+    pickupBodyDef.position = pos;
     b2BodyId pickupBodyID = b2CreateBody(e->worldID, &pickupBodyDef);
     b2ShapeDef pickupShapeDef = b2DefaultShapeDef();
     pickupShapeDef.filter.categoryBits = WEAPON_PICKUP_SHAPE;
@@ -249,14 +253,15 @@ void createWeaponPickup(env *e) {
     pickup->weapon = randWeaponPickupType(e);
     pickup->respawnWait = 0.0f;
     pickup->floatingWallsTouching = 0;
+    pickup->pos = pos;
 
     entity *ent = (entity *)fastMalloc(sizeof(entity));
     ent->type = WEAPON_PICKUP_ENTITY;
     ent->entity = pickup;
 
-    const int16_t cellIdx = entityPosToCellIdx(e, pickupBodyDef.position);
+    const int16_t cellIdx = entityPosToCellIdx(e, pos);
     if (cellIdx == -1) {
-        ERRORF("invalid position for weapon pickup spawn: (%f, %f)", pickupBodyDef.position.x, pickupBodyDef.position.y);
+        ERRORF("invalid position for weapon pickup spawn: (%f, %f)", pos.x, pos.y);
     }
     pickup->mapCellIdx = cellIdx;
     mapCell *cell = safe_array_get_at(e->cells, cellIdx);
@@ -267,13 +272,21 @@ void createWeaponPickup(env *e) {
     pickup->shapeID = b2CreatePolygonShape(pickupBodyID, &pickupShapeDef, &pickupPolygon);
 
     cc_array_add(e->pickups, pickup);
+    // kd_insert(e->pickupTree, pos.x, pos.y, pickup);
 }
 
-void destroyWeaponPickup(weaponPickupEntity *pickup) {
+void destroyWeaponPickup(env *e, weaponPickupEntity *pickup, const bool full) {
     entity *ent = (entity *)b2Shape_GetUserData(pickup->shapeID);
     fastFree(ent);
 
-    b2DestroyBody(pickup->bodyID);
+    if (full) {
+        MAYBE_UNUSED(e);
+        // const bool deleted = kd_delete(e->pickupTree, pickup->pos.x, pickup->pos.y);
+        // MAYBE_UNUSED(deleted);
+        // ASSERT(deleted);
+        b2DestroyBody(pickup->bodyID);
+    }
+
     fastFree(pickup);
 }
 
@@ -665,16 +678,18 @@ void weaponPickupsStep(env *e, const float frameTime) {
         if (pickup->respawnWait != 0.0f) {
             pickup->respawnWait = fmaxf(pickup->respawnWait - frameTime, 0.0f);
             if (pickup->respawnWait == 0.0f) {
+                // b2Vec2 oldPos = pickup->pos;
                 b2Vec2 pos;
                 if (!findOpenPos(e, WEAPON_PICKUP_SHAPE, &pos)) {
                     const enum cc_stat res = cc_array_iter_remove(&iter, NULL);
                     MAYBE_UNUSED(res);
                     ASSERT(res == CC_OK);
                     DEBUG_LOG("destroying weapon pickup");
-                    destroyWeaponPickup(pickup);
+                    destroyWeaponPickup(e, pickup, true);
                     continue;
                 }
                 b2Body_SetTransform(pickup->bodyID, pos, b2Rot_identity);
+                pickup->pos = pos;
                 pickup->weapon = randWeaponPickupType(e);
 
                 DEBUG_LOGF("respawned weapon pickup at %f, %f", pos.x, pos.y);
@@ -686,6 +701,11 @@ void weaponPickupsStep(env *e, const float frameTime) {
                 mapCell *cell = safe_array_get_at(e->cells, cellIdx);
                 entity *ent = (entity *)b2Shape_GetUserData(pickup->shapeID);
                 cell->ent = ent;
+
+                // const bool deleted = kd_delete(e->pickupTree, oldPos.x, oldPos.y);
+                // MAYBE_UNUSED(deleted);
+                // ASSERT(deleted);
+                // kd_insert(e->pickupTree, pickup->pos.x, pickup->pos.y, pickup);
             }
         }
     }

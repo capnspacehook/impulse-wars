@@ -370,13 +370,11 @@ void renderEnv(env *e) {
         renderDroneLabels(e, drone);
     }
 
-    // for (size_t i = 0; i < cc_array_size(e->cells); i++)
-    // {
+    // for (size_t i = 0; i < cc_array_size(e->cells); i++) {
     //     mapCell *cell;
     //     cc_array_get_at(e->cells, i, (void **)&cell);
-    //     if (cell->ent == NULL)
-    //     {
-    //         renderEmptyCell(cell->pos, i);
+    //     if (cell->ent == NULL) {
+    //         renderEmptyCell(e, cell->pos, i);
     //     }
     // }
 
