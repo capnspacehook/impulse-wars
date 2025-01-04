@@ -107,7 +107,11 @@ class Policy(nn.Module):
             self.actionDim = env.single_action_space.nvec.tolist()
             self.actor = layer_init(nn.Linear(lstmOutputSize, sum(self.actionDim)), std=0.01)
 
-        self.critic = layer_init(nn.Linear(lstmOutputSize, 1), std=1.0)
+        self.critic = nn.Sequential(
+            layer_init(nn.Linear(lstmOutputSize, 128)),
+            nn.LeakyReLU(),
+            layer_init(nn.Linear(128, 1), std=1.0),
+        )
 
     def forward(self, obs: th.Tensor) -> Tuple[th.Tensor, th.Tensor]:
         hidden = self.encode_observations(obs)

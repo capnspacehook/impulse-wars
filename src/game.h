@@ -151,8 +151,8 @@ entity *createWall(env *e, const float posX, const float posY, const float width
         cc_array_add(e->floatingWalls, wall);
     } else {
         cc_array_add(e->walls, wall);
-        DEBUG_LOGF("adding wall at (%f, %f) to KD tree", pos.x, pos.y);
-        // kd_insert(e->wallTree, pos.x, pos.y, wall);
+        // DEBUG_LOGF("adding wall at (%f, %f) to KD tree", pos.x, pos.y);
+        //  kd_insert(e->wallTree, pos.x, pos.y, wall);
     }
 
     return ent;
@@ -614,6 +614,7 @@ void droneShoot(env *e, droneEntity *drone, const b2Vec2 aim) {
         e->stats[drone->idx].shotsFired[drone->weaponInfo->type]++;
         DEBUG_LOGF("drone %d fired %d weapon", drone->idx, drone->weaponInfo->type);
     }
+    drone->stepInfo.firedShot = true;
 
     if (drone->ammo == 0) {
         droneChangeWeapon(e, drone, e->defaultWeapon->type);

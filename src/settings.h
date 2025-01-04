@@ -20,7 +20,7 @@
 
 #define MIN_SPAWN_DISTANCE 6.0f
 
-#define ROUND_STEPS 91.0f * FRAME_RATE
+#define ROUND_STEPS 91 * FRAME_RATE
 #define SUDDEN_DEATH_STEPS 5.0f * FRAME_RATE
 
 const uint8_t MAX_DRONES = _MAX_DRONES;
@@ -32,13 +32,13 @@ const uint16_t LOG_BUFFER_SIZE = 1024;
 // reward settings
 #define WIN_REWARD 1.0f
 #define KILL_REWARD 0.5f
-#define DEATH_REWARD 0.0f
-#define AIM_REWARD 0.05f
+#define DEATH_PUNISHMENT -1.0f
+#define AIM_REWARD 0.01f
+#define AIMED_SHOT_REWARD 0.1f
 #define WEAPON_PICKUP_REWARD 0.25f
-#define SHOT_HIT_REWARD_COEF 2.0f
+#define SHOT_HIT_REWARD_COEF 5.0f
 
-// cosine of 3 degrees
-#define AIM_TOLERANCE 0.9986295346268652f
+#define AIM_TOLERANCE 1.0f
 
 // observation constants
 const uint8_t MAX_MAP_COLUMNS = _MAX_MAP_COLUMNS;

@@ -182,8 +182,8 @@ void computeObs(env *e) {
         float *scalarObs = (float *)(e->obs + scalarObsStart);
         memset(scalarObs, 0x0, SCALAR_OBS_SIZE * sizeof(float));
 
-        const droneEntity *activeDrone = safe_array_get_at(e->drones, agent);
-        const b2Vec2 activeDronePos = activeDrone->pos.pos;
+        const droneEntity *agentDrone = safe_array_get_at(e->drones, agent);
+        const b2Vec2 agentDronePos = agentDrone->pos.pos;
 
         // compute type and location of N nearest weapon pickups
         // TODO: use KD tree here
@@ -196,8 +196,9 @@ void computeObs(env *e) {
 
             scalarObsOffset = WEAPON_PICKUP_POS_OBS_OFFSET + (i * 2);
             ASSERTF(scalarObsOffset <= PROJECTILE_TYPES_OBS_OFFSET, "offset: %d", scalarObsOffset);
-            scalarObs[scalarObsOffset++] = scaleValue(pickup->pos.x, MAX_X_POS, false);
-            scalarObs[scalarObsOffset] = scaleValue(pickup->pos.y, MAX_Y_POS, false);
+            const b2Vec2 pickupPos = b2Sub(pickup->pos, agentDronePos);
+            scalarObs[scalarObsOffset++] = scaleValue(pickupPos.x, MAX_X_POS, false);
+            scalarObs[scalarObsOffset] = scaleValue(pickupPos.y, MAX_Y_POS, false);
         }
 
         // compute type and location of N projectiles
@@ -215,8 +216,9 @@ void computeObs(env *e) {
 
             scalarObsOffset = PROJECTILE_POS_OBS_OFFSET + (projIdx * 2);
             ASSERTF(scalarObsOffset <= ENEMY_DRONE_OBS_OFFSET, "offset: %d", scalarObsOffset);
-            scalarObs[scalarObsOffset++] = scaleValue(projectile->lastPos.x, MAX_X_POS, false);
-            scalarObs[scalarObsOffset] = scaleValue(projectile->lastPos.y, MAX_Y_POS, false);
+            const b2Vec2 projectilePos = b2Sub(projectile->lastPos, agentDronePos);
+            scalarObs[scalarObsOffset++] = scaleValue(projectilePos.x, MAX_X_POS, false);
+            scalarObs[scalarObsOffset] = scaleValue(projectilePos.y, MAX_Y_POS, false);
 
             projIdx++;
         }
@@ -224,7 +226,7 @@ void computeObs(env *e) {
         // compute enemy drone observations
         // TODO: handle multiple enemy drones
         const droneEntity *enemyDrone = safe_array_get_at(e->drones, 1);
-        const b2Vec2 enemyDronePos = enemyDrone->pos.pos;
+        const b2Vec2 enemyDronePos = b2Sub(enemyDrone->pos.pos, agentDronePos);
         const b2Vec2 enemyDroneVel = b2Body_GetLinearVelocity(enemyDrone->bodyID);
         scalarObsOffset = ENEMY_DRONE_OBS_OFFSET;
         scalarObs[scalarObsOffset++] = scaleValue(enemyDronePos.x, MAX_X_POS, false);
@@ -234,24 +236,24 @@ void computeObs(env *e) {
 
         // compute active drone observations
         ASSERTF(scalarObsOffset == DRONE_OBS_OFFSET, "offset: %d", scalarObsOffset);
-        const b2Vec2 activeDroneVel = b2Body_GetLinearVelocity(activeDrone->bodyID);
-        int8_t maxAmmo = weaponAmmo(e->defaultWeapon->type, activeDrone->weaponInfo->type);
+        const b2Vec2 agentDroneVel = b2Body_GetLinearVelocity(agentDrone->bodyID);
+        int8_t maxAmmo = weaponAmmo(e->defaultWeapon->type, agentDrone->weaponInfo->type);
         uint8_t scaledAmmo = 0;
-        if (activeDrone->ammo != INFINITE) {
-            scaledAmmo = scaleValue(activeDrone->ammo, maxAmmo, true);
+        if (agentDrone->ammo != INFINITE) {
+            scaledAmmo = scaleValue(agentDrone->ammo, maxAmmo, true);
         }
 
         scalarObs[scalarObsOffset++] = scaleValue(e->stepsLeft, ROUND_STEPS, true);
-        scalarObs[scalarObsOffset++] = scaleValue(activeDronePos.x, MAX_X_POS, false);
-        scalarObs[scalarObsOffset++] = scaleValue(activeDronePos.y, MAX_Y_POS, false);
-        scalarObs[scalarObsOffset++] = scaleValue(activeDroneVel.x, MAX_SPEED, false);
-        scalarObs[scalarObsOffset++] = scaleValue(activeDroneVel.y, MAX_SPEED, false);
-        scalarObs[scalarObsOffset++] = scaleValue(activeDrone->lastAim.x, 1.0f, false);
-        scalarObs[scalarObsOffset++] = scaleValue(activeDrone->lastAim.y, 1.0f, false);
+        scalarObs[scalarObsOffset++] = scaleValue(agentDronePos.x, MAX_X_POS, false);
+        scalarObs[scalarObsOffset++] = scaleValue(agentDronePos.y, MAX_Y_POS, false);
+        scalarObs[scalarObsOffset++] = scaleValue(agentDroneVel.x, MAX_SPEED, false);
+        scalarObs[scalarObsOffset++] = scaleValue(agentDroneVel.y, MAX_SPEED, false);
+        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->lastAim.x, 1.0f, false);
+        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->lastAim.y, 1.0f, false);
         scalarObs[scalarObsOffset++] = scaledAmmo;
-        scalarObs[scalarObsOffset++] = scaleValue(activeDrone->weaponCooldown, activeDrone->weaponInfo->coolDown, true);
-        scalarObs[scalarObsOffset++] = scaleValue(activeDrone->charge, weaponCharge(activeDrone->weaponInfo->type), true);
-        scalarObs[scalarObsOffset] = activeDrone->weaponInfo->type + 1;
+        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->weaponCooldown, agentDrone->weaponInfo->coolDown, true);
+        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->charge, weaponCharge(agentDrone->weaponInfo->type), true);
+        scalarObs[scalarObsOffset] = agentDrone->weaponInfo->type + 1;
     }
 }
 
@@ -410,7 +412,7 @@ float computeShotHitReward(env *e, const uint8_t enemyIdx) {
 float computeReward(env *e, const droneEntity *drone) {
     float reward = 0.0f;
     if (drone->dead) {
-        reward += DEATH_REWARD;
+        reward += DEATH_PUNISHMENT;
     }
     // TODO: compute kill reward
     for (uint8_t i = 0; i < e->numDrones; i++) {
@@ -420,18 +422,20 @@ float computeReward(env *e, const droneEntity *drone) {
         if (drone->stepInfo.pickedUpWeapon) {
             reward += WEAPON_PICKUP_REWARD;
         }
-        if (drone->stepInfo.shotHit[i]) {
-            reward += computeShotHitReward(e, i);
-        }
-        if (drone->stepInfo.explosionHit[i]) {
+        if (drone->stepInfo.shotHit[i] || drone->stepInfo.explosionHit[i]) {
             reward += computeShotHitReward(e, i);
         }
 
         const droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
         const b2Vec2 directionVec = b2Normalize(b2Sub(enemyDrone->pos.pos, drone->pos.pos));
         const float aimDot = b2Dot(drone->lastAim, directionVec);
-        if (aimDot >= AIM_TOLERANCE) {
+        const float distance = b2Distance(drone->pos.pos, enemyDrone->pos.pos);
+        const float aimThreshold = cosf(atanf(AIM_TOLERANCE / distance));
+        if (aimDot >= aimThreshold) {
             reward += AIM_REWARD;
+            if (drone->stepInfo.firedShot) {
+                reward += AIMED_SHOT_REWARD;
+            }
         }
     }
 
@@ -455,7 +459,7 @@ void computeRewards(env *e, const bool roundOver, const uint8_t winner) {
         e->stats[i].reward += reward;
 
         if (reward != 0.0f) {
-            DEBUG_LOGF("reward[%d]: %f", i, reward);
+            DEBUG_LOGF("step: %f drone: %d reward: %f", ROUND_STEPS - e->stepsLeft, i, reward);
         }
     }
 }
