@@ -5,6 +5,7 @@ import numpy as np
 import torch as th
 from torch import nn
 from torch.distributions.normal import Normal
+from torch.nn.functional import one_hot
 
 import pufferlib
 from pufferlib.models import LSTMWrapper
@@ -48,16 +49,16 @@ class Policy(nn.Module):
 
         # each byte in the map observation contains 3 values:
         # - 2 bits for wall type
-        # - 4 bits for weapon type
-        # - 2 bits for drone index
+        # - 1 bit for weapon pickup
+        # - 3 bits for drone index
         self.register_buffer(
             "unpackMask",
-            th.tensor([0xC0, 0x3C, 0x03], dtype=th.uint8),
+            th.tensor([0x30, 0x08, 0x07], dtype=th.uint8),
             persistent=False,
         )
-        self.register_buffer("unpackShift", th.tensor([6, 2, 0], dtype=th.uint8), persistent=False)
+        self.register_buffer("unpackShift", th.tensor([4, 3, 0], dtype=th.uint8), persistent=False)
 
-        self.mapObsInputChannels = self.obsInfo.wallTypes + weaponTypeEmbeddingDims + numDrones + 1
+        self.mapObsInputChannels = self.obsInfo.wallTypes + 2 + numDrones + 1
         self.mapCNN = nn.Sequential(
             layer_init(
                 nn.Conv2d(
@@ -113,49 +114,36 @@ class Policy(nn.Module):
         actions, value = self.decode_actions(hidden)
         return actions, value
 
-    def encode_observations(self, obs: th.Tensor) -> th.Tensor:
-        batchSize = obs.shape[0]
-
+    @th.compiler.disable
+    def unpack(self, batchSize: int, obs: th.Tensor) -> th.Tensor:
         # prepare map obs to be unpacked
         mapObs = obs[:, : self.obsInfo.mapObsSize].reshape((batchSize, -1, 1))
         # unpack wall types, weapon pickup types, and drone indexes
         mapObs = (mapObs & self.unpackMask) >> self.unpackShift
         # reshape to 3D map
-        mapObs = mapObs.permute(0, 2, 1).reshape(
+        return mapObs.permute(0, 2, 1).reshape(
             (batchSize, 3, self.obsInfo.maxMapColumns, self.obsInfo.maxMapRows)
         )
 
-        # one hot encode wall types
-        wallTypeObs = mapObs[:, 0, :, :].unsqueeze(1).long()
-        wallTypes = th.zeros(
-            batchSize,
-            self.obsInfo.wallTypes,
-            self.obsInfo.maxMapColumns,
-            self.obsInfo.maxMapRows,
-            dtype=th.float32,
-            device=obs.device,
-        )
-        wallTypes.scatter_(1, wallTypeObs, 1)
+    def encode_observations(self, obs: th.Tensor) -> th.Tensor:
+        batchSize = obs.shape[0]
 
-        # embed weapon pickup types
-        mapPickupTypes = mapObs[:, 1, :, :].int()
-        mapPickupTypes = self.weaponTypeEmbedding(mapPickupTypes).float()
-        mapPickupTypes = mapPickupTypes.permute(0, 3, 1, 2)
+        mapObs = self.unpack(batchSize, obs)
+
+        # one hot encode wall types
+        wallTypeObs = mapObs[:, 0, :, :].long()
+        wallTypes = droneIndexes = one_hot(wallTypeObs, self.obsInfo.wallTypes).permute(0, 3, 1, 2).float()
+
+        # one hot weapon pickups
+        mapPickupObs = mapObs[:, 1, :, :].long()
+        mapPickups = one_hot(mapPickupObs, 2).permute(0, 3, 1, 2).float()
 
         # one hot drone indexes
-        droneIndexObs = mapObs[:, 2, :, :].unsqueeze(1).long()
-        droneIndexes = th.zeros(
-            batchSize,
-            self.numDrones + 1,
-            self.obsInfo.maxMapColumns,
-            self.obsInfo.maxMapRows,
-            dtype=th.float32,
-            device=obs.device,
-        )
-        droneIndexes.scatter_(1, droneIndexObs, 1)
+        droneIndexObs = mapObs[:, 2, :, :].long()
+        droneIndexes = one_hot(droneIndexObs, self.numDrones + 1).permute(0, 3, 1, 2).float()
 
         # combine all map observations and feed through CNN
-        mapObs = th.cat((wallTypes.float(), mapPickupTypes, droneIndexes.float()), dim=1)
+        mapObs = th.cat((wallTypes, mapPickups, droneIndexes), dim=1)
         map = self.mapCNN(mapObs)
 
         # process scalar observations

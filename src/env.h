@@ -18,6 +18,7 @@ void destroyRayClient(rayClient *client);
 #endif
 
 const uint8_t TWO_BIT_MASK = 0x3;
+const uint8_t THREE_BIT_MASK = 0x7;
 const uint8_t FOUR_BIT_MASK = 0xf;
 
 logBuffer *createLogBuffer(uint16_t capacity) {
@@ -87,7 +88,7 @@ void computeWallGridObs(env *e) {
         if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
             wallType = cell->ent->type + 1;
         }
-        e->wallObs[offset++] = (wallType & TWO_BIT_MASK) << 6;
+        e->wallObs[offset++] = (wallType & TWO_BIT_MASK) << 4;
 
         ASSERT(i <= MAX_MAP_COLUMNS * MAX_MAP_ROWS);
         ASSERT(offset <= MAP_OBS_SIZE);
@@ -137,8 +138,7 @@ void computeObs(env *e) {
 
             mapObsOffset = mapObsStart + pickup->mapCellIdx;
             ASSERTF(mapObsOffset <= mapObsStart + MAP_OBS_SIZE, "offset: %d", mapObsOffset);
-            const uint8_t weaponType = pickup->weapon + 1;
-            e->obs[mapObsOffset] |= (weaponType & FOUR_BIT_MASK) << 2;
+            e->obs[mapObsOffset] |= 1 << 3;
         }
 
         // compute discretized location and index of drones on grid
@@ -171,7 +171,7 @@ void computeObs(env *e) {
             }
             mapObsOffset = mapObsStart + cellIdx;
             ASSERTF(mapObsOffset <= mapObsStart + MAP_OBS_SIZE, "offset: %d", mapObsOffset);
-            e->obs[mapObsOffset] |= ((droneIdx + 1) & TWO_BIT_MASK);
+            e->obs[mapObsOffset] |= ((droneIdx + 1) & THREE_BIT_MASK);
         }
 
         //

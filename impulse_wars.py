@@ -141,11 +141,7 @@ def testPerf(timeout, actionCache, numEnvs):
     import time
 
     np.random.seed(int(time.time()))
-    actions = np.random.uniform(
-        env.single_action_space.low[0],
-        env.single_action_space.high[0],
-        (actionCache, env.num_agents, continuousActionsSize()),
-    )
+    actions = np.random.uniform(-1, 1, (actionCache, env.num_agents, continuousActionsSize()))
 
     tick = 0
     start = time.time()
@@ -154,11 +150,12 @@ def testPerf(timeout, actionCache, numEnvs):
         env.step(action)
         tick += 1
 
-    sps = numEnvs * tick / (time.time() - start)
+    sps = numEnvs * (tick / (time.time() - start))
     print(f"SPS: {sps:,}")
+    print(f"Steps: {numEnvs * tick}")
 
     env.close()
 
 
 if __name__ == "__main__":
-    testPerf(timeout=5, actionCache=1024, numEnvs=1)
+    testPerf(timeout=500000, actionCache=1024, numEnvs=1)

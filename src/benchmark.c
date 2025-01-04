@@ -4,7 +4,7 @@ void perfTest(const float testTime) {
     const uint8_t NUM_DRONES = 2;
 
     env *e = (env *)fastCalloc(1, sizeof(env));
-    float *obs = (float *)fastCalloc(NUM_DRONES * OBS_SIZE, sizeof(float));
+    uint8_t *obs = (uint8_t *)aligned_alloc(sizeof(float), alignedSize(NUM_DRONES * obsBytes(), sizeof(float)));
     float *rewards = (float *)fastCalloc(NUM_DRONES, sizeof(float));
     float *actions = (float *)fastCalloc(NUM_DRONES * CONTINUOUS_ACTION_SIZE, sizeof(float));
     unsigned char *terminals = (unsigned char *)fastCalloc(NUM_DRONES, sizeof(bool));
@@ -31,8 +31,8 @@ void perfTest(const float testTime) {
     }
 
     const time_t end = time(NULL);
-    printf("SPS: %f\n", (float)(NUM_DRONES * FRAMESKIP * steps) / (float)(end - start));
-    printf("Steps: %d\n", steps * FRAMESKIP);
+    printf("SPS: %f\n", (float)NUM_DRONES * ((float)steps / (float)(end - start)));
+    printf("Steps: %d\n", NUM_DRONES * steps);
 
     destroyEnv(e);
 
@@ -45,6 +45,6 @@ void perfTest(const float testTime) {
 }
 
 int main(void) {
-    perfTest(1000.0f);
+    perfTest(5.0f);
     return 0;
 }
