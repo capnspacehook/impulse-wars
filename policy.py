@@ -35,6 +35,9 @@ class Policy(nn.Module):
         self.numDrones = numDrones
         self.obsInfo = obsConstants(numDrones)
 
+        # most of the observation is a 2D array of bytes, but the end
+        # contains around 100 floats; this allows us to treat the end
+        # of the observation as a float array
         _, *self.dtype = _nativize_dtype(
             np.dtype((np.uint8, (self.obsInfo.scalarObsBytes,))),
             np.dtype((np.float32, (self.obsInfo.scalarObsSize,))),
@@ -43,6 +46,10 @@ class Policy(nn.Module):
 
         self.weaponTypeEmbedding = nn.Embedding(self.obsInfo.weaponTypes, weaponTypeEmbeddingDims)
 
+        # each byte in the map observation contains 3 values:
+        # - 2 bits for wall type
+        # - 4 bits for weapon type
+        # - 2 bits for drone index
         self.register_buffer(
             "unpackMask",
             th.tensor([0xC0, 0x3C, 0x03], dtype=th.uint8),
@@ -137,7 +144,6 @@ class Policy(nn.Module):
 
         # one hot drone indexes
         droneIndexObs = mapObs[:, 2, :, :].unsqueeze(1).long()
-        assert th.max(droneIndexObs) == 2
         droneIndexes = th.zeros(
             batchSize,
             self.numDrones + 1,
@@ -148,6 +154,7 @@ class Policy(nn.Module):
         )
         droneIndexes.scatter_(1, droneIndexObs, 1)
 
+        # combine all map observations and feed through CNN
         mapObs = th.cat((wallTypes.float(), mapPickupTypes, droneIndexes.float()), dim=1)
         map = self.mapCNN(mapObs)
 
@@ -195,9 +202,9 @@ class Policy(nn.Module):
         droneWeapon = scalarObs[:, -1].int()
         droneWeapon = self.weaponTypeEmbedding(droneWeapon).float()
         droneObs = th.cat((droneObs, droneWeapon), dim=-1)
-
         drone = self.droneEncoder(droneObs)
 
+        # combine all observations and feed through final linear encoder
         features = th.cat((map, nearPickupObs, projObs, enemyDrone, drone), dim=-1)
 
         return self.encoder(features), None
