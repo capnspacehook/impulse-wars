@@ -20,6 +20,8 @@ enemyDroneEncOutputSize = 32
 droneEncOutputSize = 64
 encoderOutputSize = 128
 lstmOutputSize = 128
+actorSize = 128
+criticSize = 128
 
 
 class Recurrent(LSTMWrapper):
@@ -101,16 +103,20 @@ class Policy(nn.Module):
         )
 
         if self.is_continuous:
-            self.actorMean = layer_init(nn.Linear(lstmOutputSize, env.single_action_space.shape[0]), std=0.01)
+            self.actorMean = nn.Sequential(
+                layer_init(nn.Linear(lstmOutputSize, actorSize)),
+                nn.LeakyReLU(),
+                layer_init(nn.Linear(actorSize, env.single_action_space.shape[0]), std=0.01),
+            )
             self.actorLogStd = nn.Parameter(th.zeros(1, env.single_action_space.shape[0]))
         else:
             self.actionDim = env.single_action_space.nvec.tolist()
             self.actor = layer_init(nn.Linear(lstmOutputSize, sum(self.actionDim)), std=0.01)
 
         self.critic = nn.Sequential(
-            layer_init(nn.Linear(lstmOutputSize, 128)),
+            layer_init(nn.Linear(lstmOutputSize, criticSize)),
             nn.LeakyReLU(),
-            layer_init(nn.Linear(128, 1), std=1.0),
+            layer_init(nn.Linear(criticSize, 1), std=1.0),
         )
 
     def forward(self, obs: th.Tensor) -> Tuple[th.Tensor, th.Tensor]:
