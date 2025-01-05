@@ -67,8 +67,8 @@ uint16_t obsBytes() {
     return alignedSize((MAP_OBS_SIZE * sizeof(uint8_t)) + (SCALAR_OBS_SIZE * sizeof(float)), sizeof(float));
 }
 
-#define MAX_X_POS 40.0f
-#define MAX_Y_POS 40.0f
+#define MAX_X_POS 75.0f
+#define MAX_Y_POS 75.0f
 #define MAX_SPEED 250.0f
 
 // action constants

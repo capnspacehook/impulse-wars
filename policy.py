@@ -111,7 +111,11 @@ class Policy(nn.Module):
             self.actorLogStd = nn.Parameter(th.zeros(1, env.single_action_space.shape[0]))
         else:
             self.actionDim = env.single_action_space.nvec.tolist()
-            self.actor = layer_init(nn.Linear(lstmOutputSize, sum(self.actionDim)), std=0.01)
+            self.actor = nn.Sequential(
+                layer_init(nn.Linear(lstmOutputSize, actorSize)),
+                nn.LeakyReLU(),
+                layer_init(nn.Linear(actorSize, sum(self.actionDim)), std=0.01),
+            )
 
         self.critic = nn.Sequential(
             layer_init(nn.Linear(lstmOutputSize, criticSize)),

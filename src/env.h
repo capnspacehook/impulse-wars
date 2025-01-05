@@ -15,6 +15,10 @@
 #else
 rayClient *createRayClient();
 void destroyRayClient(rayClient *client);
+typedef struct Vector2 {
+    float x;
+    float y;
+} Vector2;
 #endif
 
 const uint8_t TWO_BIT_MASK = 0x3;
@@ -474,11 +478,11 @@ static inline bool isActionNoop(const b2Vec2 action) {
     return b2Length(action) < ACTION_NOOP_MAGNITUDE;
 }
 
-agentActions computeActions(env *e, const uint8_t droneIdx) {
+agentActions _computeActions(env *e, droneEntity *drone, const bool humanInputs) {
     agentActions actions = {0};
 
-    if (e->discretizeActions) {
-        const uint8_t offset = droneIdx * DISCRETE_ACTION_SIZE;
+    if (e->discretizeActions && !humanInputs) {
+        const uint8_t offset = drone->idx * DISCRETE_ACTION_SIZE;
 
         // 8 is no-op for both move and aim
         const uint8_t move = e->discActions[offset + 0];
@@ -498,9 +502,13 @@ agentActions computeActions(env *e, const uint8_t droneIdx) {
         actions.shoot = (bool)shoot;
         return actions;
     }
-    const uint8_t offset = droneIdx * CONTINUOUS_ACTION_SIZE;
+    const uint8_t offset = drone->idx * CONTINUOUS_ACTION_SIZE;
 
-    b2Vec2 move = (b2Vec2){.x = tanhf(e->contActions[offset + 0]), .y = tanhf(e->contActions[offset + 1])};
+    b2Vec2 move = (b2Vec2){.x = e->contActions[offset + 0], .y = e->contActions[offset + 1]};
+    if (!humanInputs) {
+        move.x = tanhf(move.x);
+        move.y = tanhf(move.y);
+    }
     ASSERT_VEC_BOUNDED(move);
     // cap movement magnitude to 1.0
     if (b2Length(move) > 1.0f) {
@@ -510,7 +518,11 @@ agentActions computeActions(env *e, const uint8_t droneIdx) {
     }
     actions.move = move;
 
-    const b2Vec2 rawAim = (b2Vec2){.x = tanhf(e->contActions[offset + 2]), .y = tanhf(e->contActions[offset + 3])};
+    b2Vec2 rawAim = (b2Vec2){.x = e->contActions[offset + 2], .y = e->contActions[offset + 3]};
+    if (!humanInputs) {
+        rawAim.x = tanhf(rawAim.x);
+        rawAim.y = tanhf(rawAim.y);
+    }
     ASSERT_VEC_BOUNDED(rawAim);
     b2Vec2 aim;
     if (isActionNoop(rawAim)) {
@@ -524,6 +536,76 @@ agentActions computeActions(env *e, const uint8_t droneIdx) {
     return actions;
 }
 
+agentActions computeActions(env *e, droneEntity *drone, const bool humanInputs) {
+    const agentActions actions = _computeActions(e, drone, humanInputs);
+    drone->lastMove = actions.move;
+    if (!b2VecEqual(actions.aim, b2Vec2_zero)) {
+        drone->lastAim = actions.aim;
+    }
+    return actions;
+}
+
+agentActions getPlayerInputs(env *e, droneEntity *drone, const uint8_t gamepadIdx) {
+    // TODO: allow user to choose what drone they're controlling
+    uint8_t offset = drone->idx * CONTINUOUS_ACTION_SIZE;
+
+    if (IsGamepadAvailable(gamepadIdx)) {
+        float lStickX = GetGamepadAxisMovement(gamepadIdx, GAMEPAD_AXIS_LEFT_X);
+        float lStickY = GetGamepadAxisMovement(gamepadIdx, GAMEPAD_AXIS_LEFT_Y);
+        float rStickX = GetGamepadAxisMovement(gamepadIdx, GAMEPAD_AXIS_RIGHT_X);
+        float rStickY = GetGamepadAxisMovement(gamepadIdx, GAMEPAD_AXIS_RIGHT_Y);
+
+        bool shoot = IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_RIGHT_TRIGGER_2);
+        if (!shoot) {
+            shoot = IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_RIGHT_TRIGGER_1);
+        }
+
+        e->contActions[offset++] = lStickX;
+        e->contActions[offset++] = lStickY;
+        e->contActions[offset++] = rStickX;
+        e->contActions[offset++] = rStickY;
+        e->contActions[offset] = shoot;
+
+        return computeActions(e, drone, true);
+    }
+    // keyboard and mouse controls one drone only
+    if (gamepadIdx != 0) {
+        return computeActions(e, drone, false);
+    }
+
+    b2Vec2 move = b2Vec2_zero;
+    if (IsKeyDown(KEY_W)) {
+        move.y += -1.0f;
+    }
+    if (IsKeyDown(KEY_S)) {
+        move.y += 1.0f;
+    }
+    if (IsKeyDown(KEY_A)) {
+        move.x += -1.0f;
+    }
+    if (IsKeyDown(KEY_D)) {
+        move.x += 1.0f;
+    }
+    move = b2Normalize(move);
+
+    Vector2 mousePos = (Vector2){.x = (float)GetMouseX(), .y = (float)GetMouseY()};
+    b2Vec2 dronePos = b2Body_GetPosition(drone->bodyID);
+    const b2Vec2 aim = b2Normalize(b2Sub(rayVecToB2Vec(e->client, mousePos), dronePos));
+
+    bool shoot = false;
+    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        shoot = true;
+    }
+
+    e->contActions[offset++] = move.x;
+    e->contActions[offset++] = move.y;
+    e->contActions[offset++] = aim.x;
+    e->contActions[offset++] = aim.y;
+    e->contActions[offset] = shoot;
+
+    return computeActions(e, drone, true);
+}
+
 void stepEnv(env *e) {
     if (e->needsReset) {
         DEBUG_LOG("Resetting environment");
@@ -534,15 +616,9 @@ void stepEnv(env *e) {
     memset(stepActions, 0x0, e->numAgents * sizeof(agentActions));
 
     // handle actions
-    // TODO: don't use tanh on human actions
     for (uint8_t i = 0; i < e->numAgents; i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
-
-        stepActions[i] = computeActions(e, i);
-        drone->lastMove = stepActions[i].move;
-        if (!b2VecEqual(stepActions[i].aim, b2Vec2_zero)) {
-            drone->lastAim = stepActions[i].aim;
-        }
+        stepActions[i] = computeActions(e, drone, false);
     }
 
     // reset reward buffer
@@ -556,11 +632,19 @@ void stepEnv(env *e) {
             droneEntity *drone = safe_array_get_at(e->drones, i);
             drone->lastVelocity = b2Body_GetLinearVelocity(drone->bodyID);
             memset(&drone->stepInfo, 0x0, sizeof(droneStepInfo));
-            if (i >= e->numAgents) {
+            if (i >= e->numAgents && e->client == NULL) {
                 break;
             }
 
-            const agentActions actions = stepActions[i];
+            agentActions actions;
+            // TODO: allow first drone to be controllable by humans once
+            // a scripted bot is implemented
+            if (i != 0) {
+                actions = getPlayerInputs(e, drone, i - 1);
+            } else {
+                actions = stepActions[i];
+            }
+
             if (!b2VecEqual(actions.move, b2Vec2_zero)) {
                 droneMove(drone, actions.move);
             }
