@@ -74,7 +74,7 @@ const mapEntry prototypeArenaMap = {
     .floatingStandardWalls = 0,
     .floatingBouncyWalls = 0,
     .floatingDeathWalls = 0,
-    .weaponPickups = 12,
+    .weaponPickups = 8,
     .defaultWeapon = STANDARD_WEAPON,
 };
 
@@ -204,6 +204,9 @@ void createMap(env *e, const int mapIdx) {
     e->columns = columns;
     e->rows = rows;
     e->defaultWeapon = weaponInfos[maps[mapIdx]->defaultWeapon];
+    if (randFloat(&e->randState, 0.0f, 1.0f) < 0.25f) {
+        e->defaultWeapon = weaponInfos[randInt(&e->randState, 0, NUM_WEAPONS - 1)];
+    }
 
     for (int row = 0; row < rows; row++) {
         for (int col = 0; col < columns; col++) {

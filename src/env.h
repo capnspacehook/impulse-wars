@@ -84,22 +84,35 @@ logEntry aggregateAndClearLogBuffer(uint8_t numDrones, logBuffer *logs) {
 void computeWallGridObs(env *e) {
     memset(e->wallObs, 0x0, MAP_OBS_SIZE * sizeof(uint8_t));
 
-    // TODO: needs to be padded for smaller maps then max size
+    uint8_t skippedCells = 0;
     uint16_t offset = 0;
-    for (size_t i = 0; i < cc_array_size(e->cells); i++) {
-        const mapCell *cell = safe_array_get_at(e->cells, i);
+    for (size_t i = 0; i < MAX_MAP_COLUMNS * MAX_MAP_ROWS; i++) {
+        if (e->columns != MAX_MAP_COLUMNS) {
+            const uint8_t cellCol = i % MAX_MAP_COLUMNS;
+            if (cellCol >= e->columns) {
+                skippedCells++;
+                offset++;
+                continue;
+            }
+        }
+
+        const uint16_t cellIdx = i - skippedCells;
+        if (cellIdx >= e->columns * e->rows) {
+            break;
+        }
+        const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
         uint8_t wallType = 0;
         if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
             wallType = cell->ent->type + 1;
         }
         e->wallObs[offset++] = (wallType & TWO_BIT_MASK) << 4;
 
-        ASSERT(i <= MAX_MAP_COLUMNS * MAX_MAP_ROWS);
+        ASSERT(cellIdx <= e->columns * e->rows);
         ASSERT(offset <= MAP_OBS_SIZE);
     }
 }
 
-uint16_t findNearestCell(env *e, const b2Vec2 pos, const uint16_t cellIdx) {
+uint16_t findNearestCell(const env *e, const b2Vec2 pos, const uint16_t cellIdx) {
     uint8_t cellOffsets[8][2] = {
         {-1, 0},  // left
         {1, 0},   // right
@@ -126,6 +139,15 @@ uint16_t findNearestCell(env *e, const b2Vec2 pos, const uint16_t cellIdx) {
     return closestCell;
 }
 
+static inline uint16_t mapObsCellIdxOffset(const env *e, const uint16_t cellIdx) {
+    if (e->columns == MAX_MAP_COLUMNS && e->rows == MAX_MAP_ROWS) {
+        return cellIdx;
+    }
+
+    const uint8_t cellRow = cellIdx / e->rows;
+    return cellIdx + (cellRow * (MAX_MAP_ROWS - e->rows));
+}
+
 void computeObs(env *e) {
     for (uint8_t agent = 0; agent < e->numAgents; agent++) {
         //
@@ -140,7 +162,7 @@ void computeObs(env *e) {
         for (size_t i = 0; i < cc_array_size(e->pickups); i++) {
             const weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
 
-            mapObsOffset = mapObsStart + pickup->mapCellIdx;
+            mapObsOffset = mapObsStart + mapObsCellIdxOffset(e, pickup->mapCellIdx);
             ASSERTF(mapObsOffset <= mapObsStart + MAP_OBS_SIZE, "offset: %d", mapObsOffset);
             e->obs[mapObsOffset] |= 1 << 3;
         }
@@ -158,10 +180,12 @@ void computeObs(env *e) {
             if (cellIdx == -1) {
                 ERRORF("drone %zu out of bounds at position %f %f", i, pos.x, pos.y);
             }
+            cellIdx = mapObsCellIdxOffset(e, cellIdx);
             if (i != 0) {
                 for (uint8_t j = 0; j < i; j++) {
                     if (droneCells[j] == cellIdx) {
                         cellIdx = findNearestCell(e, pos, cellIdx);
+                        cellIdx = mapObsCellIdxOffset(e, cellIdx);
                         break;
                     }
                 }
@@ -189,16 +213,37 @@ void computeObs(env *e) {
         const droneEntity *agentDrone = safe_array_get_at(e->drones, agent);
         const b2Vec2 agentDronePos = agentDrone->pos.pos;
 
+        // compute type, position, angle and velocity of floating walls
+        for (size_t i = 0; i < cc_array_size(e->floatingWalls); i++) {
+            const wallEntity *wall = safe_array_get_at(e->floatingWalls, i);
+            const b2Transform wallTransform = b2Body_GetTransform(wall->bodyID);
+            const b2Vec2 wallPos = b2Sub(wallTransform.p, agentDronePos);
+            const float angle = b2Rot_GetAngle(wallTransform.q);
+            const b2Vec2 wallVel = b2Body_GetLinearVelocity(wall->bodyID);
+
+            scalarObsOffset = FLOATING_WALL_TYPES_OBS_OFFSET + i;
+            ASSERTF(scalarObsOffset <= FLOATING_WALL_INFO_OBS_OFFSET, "offset: %d", scalarObsOffset);
+            scalarObs[scalarObsOffset] = wall->type + 1;
+
+            scalarObsOffset = FLOATING_WALL_INFO_OBS_OFFSET + (i * FLOATING_WALL_INFO_OBS_SIZE);
+            ASSERTF(scalarObsOffset <= WEAPON_PICKUP_POS_OBS_OFFSET, "offset: %d", scalarObsOffset);
+            scalarObs[scalarObsOffset++] = scaleValue(wallPos.x, MAX_X_POS, false);
+            scalarObs[scalarObsOffset++] = scaleValue(wallPos.y, MAX_Y_POS, false);
+            scalarObs[scalarObsOffset++] = scaleValue(angle, MAX_ANGLE, false);
+            scalarObs[scalarObsOffset++] = scaleValue(wallVel.x, MAX_SPEED, false);
+            scalarObs[scalarObsOffset] = scaleValue(wallVel.y, MAX_SPEED, false);
+        }
+
         // compute type and location of N nearest weapon pickups
         // TODO: use KD tree here
-        for (uint8_t i = 0; i < NUM_WEAPON_PICKUP_OBS; i++) {
+        for (uint8_t i = 0; i < cc_array_size(e->pickups); i++) {
             const weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
 
             scalarObsOffset = WEAPON_PICKUP_TYPES_OBS_OFFSET + i;
             ASSERTF(scalarObsOffset <= WEAPON_PICKUP_POS_OBS_OFFSET, "offset: %d", scalarObsOffset);
             scalarObs[scalarObsOffset] = pickup->weapon + 1;
 
-            scalarObsOffset = WEAPON_PICKUP_POS_OBS_OFFSET + (i * 2);
+            scalarObsOffset = WEAPON_PICKUP_POS_OBS_OFFSET + (i * WEAPON_PICKUP_POS_OBS_SIZE);
             ASSERTF(scalarObsOffset <= PROJECTILE_TYPES_OBS_OFFSET, "offset: %d", scalarObsOffset);
             const b2Vec2 pickupPos = b2Sub(pickup->pos, agentDronePos);
             scalarObs[scalarObsOffset++] = scaleValue(pickupPos.x, MAX_X_POS, false);
@@ -218,7 +263,7 @@ void computeObs(env *e) {
             ASSERTF(scalarObsOffset <= PROJECTILE_POS_OBS_OFFSET, "offset: %d", scalarObsOffset);
             scalarObs[scalarObsOffset] = projectile->weaponInfo->type + 1;
 
-            scalarObsOffset = PROJECTILE_POS_OBS_OFFSET + (projIdx * 2);
+            scalarObsOffset = PROJECTILE_POS_OBS_OFFSET + (projIdx * PROJECTILE_POS_OBS_SIZE);
             ASSERTF(scalarObsOffset <= ENEMY_DRONE_OBS_OFFSET, "offset: %d", scalarObsOffset);
             const b2Vec2 projectilePos = b2Sub(projectile->lastPos, agentDronePos);
             scalarObs[scalarObsOffset++] = scaleValue(projectilePos.x, MAX_X_POS, false);
@@ -273,7 +318,7 @@ void setupEnv(env *e) {
     e->suddenDeathWallCounter = 0;
 
     DEBUG_LOG("creating map");
-    const int mapIdx = 0; // randInt(&e->randState, 0, NUM_MAPS - 1);
+    const int mapIdx = 1; // randInt(&e->randState, 0, NUM_MAPS - 1);
     createMap(e, mapIdx);
 
     mapBounds bounds = {.min = {.x = FLT_MAX, .y = FLT_MAX}, .max = {.x = FLT_MIN, .y = FLT_MIN}};
@@ -325,7 +370,7 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
     e->wallObs = fastCalloc(MAP_OBS_SIZE, sizeof(uint8_t));
     cc_array_new(&e->cells);
     cc_array_new(&e->walls);
-    // e->wallTree = kd_create(2);
+    e->wallTree = kd_create(2);
     cc_array_new(&e->floatingWalls);
     cc_array_new(&e->drones);
     cc_array_new(&e->pickups);
@@ -375,7 +420,7 @@ void clearEnv(env *e) {
 
     cc_array_remove_all(e->cells);
     cc_array_remove_all(e->walls);
-    // kd_clear(e->wallTree);
+    kd_clear(e->wallTree);
     cc_array_remove_all(e->floatingWalls);
     cc_array_remove_all(e->drones);
     cc_array_remove_all(e->pickups);
@@ -413,7 +458,7 @@ float computeShotHitReward(env *e, const uint8_t enemyIdx) {
     return scaleValue(fabsf(curEnemySpeed - prevEnemySpeed), MAX_SPEED, true) * SHOT_HIT_REWARD_COEF;
 }
 
-float computeReward(env *e, const droneEntity *drone) {
+float computeReward(env *e, droneEntity *drone) {
     float reward = 0.0f;
     if (drone->dead) {
         reward += DEATH_PUNISHMENT;
@@ -423,19 +468,17 @@ float computeReward(env *e, const droneEntity *drone) {
         if (i == drone->idx) {
             continue;
         }
-        if (drone->stepInfo.pickedUpWeapon) {
+        if (drone->stepInfo.pickedUpWeapon && drone->stepInfo.prevWeapon != drone->weaponInfo->type && drone->stepInfo.prevWeapon == STANDARD_WEAPON) {
             reward += WEAPON_PICKUP_REWARD;
         }
         if (drone->stepInfo.shotHit[i] || drone->stepInfo.explosionHit[i]) {
             reward += computeShotHitReward(e, i);
         }
 
-        const droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
-        const b2Vec2 directionVec = b2Normalize(b2Sub(enemyDrone->pos.pos, drone->pos.pos));
-        const float aimDot = b2Dot(drone->lastAim, directionVec);
-        const float distance = b2Distance(drone->pos.pos, enemyDrone->pos.pos);
-        const float aimThreshold = cosf(atanf(AIM_TOLERANCE / distance));
-        if (aimDot >= aimThreshold) {
+        const b2RayResult rayRes = droneAimingAt(e, drone);
+        ASSERT(b2Shape_IsValid(rayRes.shapeId));
+        const entity *ent = (entity *)b2Shape_GetUserData(rayRes.shapeId);
+        if (ent->type == DRONE_ENTITY) {
             reward += AIM_REWARD;
             if (drone->stepInfo.firedShot) {
                 reward += AIMED_SHOT_REWARD;
@@ -455,7 +498,7 @@ void computeRewards(env *e, const bool roundOver, const uint8_t winner) {
     }
 
     for (int i = 0; i < e->numDrones; i++) {
-        const droneEntity *drone = safe_array_get_at(e->drones, i);
+        droneEntity *drone = safe_array_get_at(e->drones, i);
         const float reward = computeReward(e, drone);
         if (i < e->numAgents) {
             e->rewards[i] += reward;
@@ -478,14 +521,13 @@ static inline bool isActionNoop(const b2Vec2 action) {
     return b2Length(action) < ACTION_NOOP_MAGNITUDE;
 }
 
-agentActions _computeActions(env *e, droneEntity *drone, const bool humanInputs) {
+agentActions _computeActions(env *e, droneEntity *drone, const agentActions *humanActions) {
     agentActions actions = {0};
 
-    if (e->discretizeActions && !humanInputs) {
+    if (e->discretizeActions && humanActions == NULL) {
         const uint8_t offset = drone->idx * DISCRETE_ACTION_SIZE;
-
-        // 8 is no-op for both move and aim
         const uint8_t move = e->discActions[offset + 0];
+        // 8 is no-op for both move and aim
         ASSERT(move <= 8);
         if (move != 8) {
             actions.move.x = discToContActionMap[0][move];
@@ -502,42 +544,38 @@ agentActions _computeActions(env *e, droneEntity *drone, const bool humanInputs)
         actions.shoot = (bool)shoot;
         return actions;
     }
+
     const uint8_t offset = drone->idx * CONTINUOUS_ACTION_SIZE;
-
-    b2Vec2 move = (b2Vec2){.x = e->contActions[offset + 0], .y = e->contActions[offset + 1]};
-    if (!humanInputs) {
-        move.x = tanhf(move.x);
-        move.y = tanhf(move.y);
-    }
-    ASSERT_VEC_BOUNDED(move);
-    // cap movement magnitude to 1.0
-    if (b2Length(move) > 1.0f) {
-        move = b2Normalize(move);
-    } else if (isActionNoop(move)) {
-        move = b2Vec2_zero;
-    }
-    actions.move = move;
-
-    b2Vec2 rawAim = (b2Vec2){.x = e->contActions[offset + 2], .y = e->contActions[offset + 3]};
-    if (!humanInputs) {
-        rawAim.x = tanhf(rawAim.x);
-        rawAim.y = tanhf(rawAim.y);
-    }
-    ASSERT_VEC_BOUNDED(rawAim);
-    b2Vec2 aim;
-    if (isActionNoop(rawAim)) {
-        aim = b2Vec2_zero;
+    if (humanActions == NULL) {
+        actions.move = (b2Vec2){.x = tanhf(e->contActions[offset + 0]), .y = tanhf(e->contActions[offset + 1])};
+        actions.aim = (b2Vec2){.x = tanhf(e->contActions[offset + 2]), .y = tanhf(e->contActions[offset + 3])};
+        actions.shoot = (bool)e->contActions[offset + 4];
     } else {
-        aim = b2Normalize(rawAim);
+        actions.move = humanActions->move;
+        actions.aim = humanActions->aim;
+        actions.shoot = humanActions->shoot;
     }
-    actions.aim = aim;
-    actions.shoot = e->contActions[offset + 4] > 0.0f;
+
+    ASSERT_VEC_BOUNDED(actions.move);
+    // cap movement magnitude to 1.0
+    if (b2Length(actions.move) > 1.0f) {
+        actions.move = b2Normalize(actions.move);
+    } else if (isActionNoop(actions.move)) {
+        actions.move = b2Vec2_zero;
+    }
+
+    ASSERT_VEC_BOUNDED(actions.aim);
+    if (isActionNoop(actions.aim)) {
+        actions.aim = b2Vec2_zero;
+    } else {
+        actions.aim = b2Normalize(actions.aim);
+    }
 
     return actions;
 }
 
-agentActions computeActions(env *e, droneEntity *drone, const bool humanInputs) {
-    const agentActions actions = _computeActions(e, drone, humanInputs);
+agentActions computeActions(env *e, droneEntity *drone, const agentActions *humanActions) {
+    const agentActions actions = _computeActions(e, drone, humanActions);
     drone->lastMove = actions.move;
     if (!b2VecEqual(actions.aim, b2Vec2_zero)) {
         drone->lastAim = actions.aim;
@@ -546,8 +584,7 @@ agentActions computeActions(env *e, droneEntity *drone, const bool humanInputs) 
 }
 
 agentActions getPlayerInputs(env *e, droneEntity *drone, const uint8_t gamepadIdx) {
-    // TODO: allow user to choose what drone they're controlling
-    uint8_t offset = drone->idx * CONTINUOUS_ACTION_SIZE;
+    agentActions actions = {0};
 
     if (IsGamepadAvailable(gamepadIdx)) {
         float lStickX = GetGamepadAxisMovement(gamepadIdx, GAMEPAD_AXIS_LEFT_X);
@@ -560,13 +597,10 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, const uint8_t gamepadId
             shoot = IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_RIGHT_TRIGGER_1);
         }
 
-        e->contActions[offset++] = lStickX;
-        e->contActions[offset++] = lStickY;
-        e->contActions[offset++] = rStickX;
-        e->contActions[offset++] = rStickY;
-        e->contActions[offset] = shoot;
-
-        return computeActions(e, drone, true);
+        actions.move = (b2Vec2){.x = lStickX, .y = lStickY};
+        actions.aim = (b2Vec2){.x = rStickX, .y = rStickY};
+        actions.shoot = shoot;
+        return computeActions(e, drone, &actions);
     }
     // keyboard and mouse controls one drone only
     if (gamepadIdx != 0) {
@@ -586,24 +620,17 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, const uint8_t gamepadId
     if (IsKeyDown(KEY_D)) {
         move.x += 1.0f;
     }
-    move = b2Normalize(move);
+    actions.move = b2Normalize(move);
 
     Vector2 mousePos = (Vector2){.x = (float)GetMouseX(), .y = (float)GetMouseY()};
     b2Vec2 dronePos = b2Body_GetPosition(drone->bodyID);
-    const b2Vec2 aim = b2Normalize(b2Sub(rayVecToB2Vec(e->client, mousePos), dronePos));
+    actions.aim = b2Normalize(b2Sub(rayVecToB2Vec(e->client, mousePos), dronePos));
 
-    bool shoot = false;
     if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-        shoot = true;
+        actions.shoot = true;
     }
 
-    e->contActions[offset++] = move.x;
-    e->contActions[offset++] = move.y;
-    e->contActions[offset++] = aim.x;
-    e->contActions[offset++] = aim.y;
-    e->contActions[offset] = shoot;
-
-    return computeActions(e, drone, true);
+    return computeActions(e, drone, &actions);
 }
 
 void stepEnv(env *e) {
@@ -615,10 +642,10 @@ void stepEnv(env *e) {
     agentActions stepActions[e->numAgents];
     memset(stepActions, 0x0, e->numAgents * sizeof(agentActions));
 
-    // handle actions
+    // preprocess actions for the next N steps
     for (uint8_t i = 0; i < e->numAgents; i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
-        stepActions[i] = computeActions(e, drone, false);
+        stepActions[i] = computeActions(e, drone, NULL);
     }
 
     // reset reward buffer
@@ -637,9 +664,10 @@ void stepEnv(env *e) {
             }
 
             agentActions actions;
+            // take inputs from humans every frame
             // TODO: allow first drone to be controllable by humans once
             // a scripted bot is implemented
-            if (i != 0) {
+            if (i != 0 && e->client != NULL) {
                 actions = getPlayerInputs(e, drone, i - 1);
             } else {
                 actions = stepActions[i];
@@ -691,7 +719,9 @@ void stepEnv(env *e) {
             droneStep(e, drone, DELTA_TIME);
             if (drone->dead) {
                 deadDrones++;
-                e->terminals[i] = 1;
+                if (i < e->numAgents) {
+                    e->terminals[i] = 1;
+                }
             } else {
                 lastAlive = i;
             }

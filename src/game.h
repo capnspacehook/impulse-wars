@@ -152,7 +152,7 @@ entity *createWall(env *e, const float posX, const float posY, const float width
     } else {
         cc_array_add(e->walls, wall);
         // DEBUG_LOGF("adding wall at (%f, %f) to KD tree", pos.x, pos.y);
-        //  kd_insert(e->wallTree, pos.x, pos.y, wall);
+        kd_insert(e->wallTree, pos.x, pos.y, wall);
     }
 
     return ent;
@@ -640,6 +640,14 @@ void droneStep(env *e, droneEntity *drone, const float frameTime) {
     drone->lastPos = pos;
 }
 
+b2RayResult droneAimingAt(const env *e, droneEntity *drone) {
+    const b2Vec2 pos = getCachedPos(drone->bodyID, &drone->pos);
+    const b2Vec2 rayEnd = b2MulAdd(pos, 150.0f, drone->lastAim);
+    const b2Vec2 translation = b2Sub(rayEnd, pos);
+    const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | DRONE_SHAPE};
+    return b2World_CastRayClosest(e->worldID, pos, translation, filter);
+}
+
 void projectilesStep(env *e) {
     CC_SListIter iter;
     cc_slist_iter_init(&iter, e->projectiles);
@@ -835,6 +843,7 @@ void handleWeaponPickupBeginTouch(env *e, const entity *sensor, entity *visitor)
 
         droneEntity *drone = (droneEntity *)visitor->entity;
         drone->stepInfo.pickedUpWeapon = true;
+        drone->stepInfo.prevWeapon = drone->weaponInfo->type;
         droneChangeWeapon(e, drone, pickup->weapon);
 
         e->stats[drone->idx].weaponsPickedUp[pickup->weapon]++;

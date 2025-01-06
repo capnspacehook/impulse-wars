@@ -91,8 +91,15 @@ class Policy(nn.Module):
 
         featuresSize = (
             cnnOutputSize
-            + (self.obsInfo.numWeaponPickupObs * (weaponTypeEmbeddingDims + 2))
-            + (self.obsInfo.numProjectileObs * (weaponTypeEmbeddingDims + 2))
+            + (
+                self.obsInfo.numFloatingWallObs
+                * (self.obsInfo.wallTypes + self.obsInfo.floatingWallInfoObsSize)
+            )
+            + (
+                self.obsInfo.numWeaponPickupObs
+                * (weaponTypeEmbeddingDims + self.obsInfo.weaponPickupPosObsSize)
+            )
+            + (self.obsInfo.numProjectileObs * (weaponTypeEmbeddingDims + self.obsInfo.projectilePosObsSize))
             + enemyDroneEncOutputSize
             + droneEncOutputSize
         )
@@ -146,7 +153,7 @@ class Policy(nn.Module):
 
         # one hot encode wall types
         wallTypeObs = mapObs[:, 0, :, :].long()
-        wallTypes = droneIndexes = one_hot(wallTypeObs, self.obsInfo.wallTypes).permute(0, 3, 1, 2).float()
+        wallTypes = one_hot(wallTypeObs, self.obsInfo.wallTypes).permute(0, 3, 1, 2).float()
 
         # one hot weapon pickups
         mapPickupObs = mapObs[:, 1, :, :].long()
@@ -163,17 +170,32 @@ class Policy(nn.Module):
         # process scalar observations
         scalarObs = nativize_tensor(obs[:, self.obsInfo.scalarObsOffset :], self.dtype)
 
+        nearFloatingWallTypeObs = scalarObs[
+            :, self.obsInfo.floatingWallTypesObsOffset : self.obsInfo.floatingWallInfoObsOffset
+        ].long()
+        nearFloatingWallTypes = one_hot(nearFloatingWallTypeObs, self.obsInfo.wallTypes).float()
+        nearFloatingWallInfoObs = scalarObs[
+            :, self.obsInfo.floatingWallInfoObsOffset : self.obsInfo.weaponPickupTypesObsOffset
+        ]
+        nearFloatingWallInfoObs = nearFloatingWallInfoObs.view(
+            batchSize, self.obsInfo.numFloatingWallObs, self.obsInfo.floatingWallInfoObsSize
+        )
+        nearFloatingWalls = th.cat((nearFloatingWallTypes, nearFloatingWallInfoObs), dim=-1)
+        nearFloatingWalls = th.flatten(nearFloatingWalls, start_dim=1, end_dim=-1)
+
         # process weapon pickup types and positions
-        nearPickupTypes = scalarObs[
+        nearPickupTypeObs = scalarObs[
             :, self.obsInfo.weaponPickupTypesObsOffset : self.obsInfo.weaponPickupPosObsOffset
         ].int()
-        nearPickupTypes = self.weaponTypeEmbedding(nearPickupTypes).float()
-        nearPickupPos = scalarObs[
+        nearPickupTypes = self.weaponTypeEmbedding(nearPickupTypeObs).float()
+        nearPickupPosObs = scalarObs[
             :, self.obsInfo.weaponPickupPosObsOffset : self.obsInfo.projectileTypesObsOffset
         ]
-        nearPickupPos = nearPickupPos.view(batchSize, self.obsInfo.numWeaponPickupObs, 2)
-        nearPickupObs = th.cat((nearPickupTypes, nearPickupPos), dim=-1)
-        nearPickupObs = th.flatten(nearPickupObs, start_dim=1, end_dim=-1)
+        nearPickupPosObs = nearPickupPosObs.view(
+            batchSize, self.obsInfo.numWeaponPickupObs, self.obsInfo.weaponPickupPosObsSize
+        )
+        nearPickups = th.cat((nearPickupTypes, nearPickupPosObs), dim=-1)
+        nearPickups = th.flatten(nearPickups, start_dim=1, end_dim=-1)
 
         # process projectile types and positions
         projTypes = scalarObs[
@@ -184,12 +206,11 @@ class Policy(nn.Module):
         projTypes = self.weaponTypeEmbedding(projTypes).float()
         projPos = scalarObs[
             :,
-            self.obsInfo.projectilePosObsOffset : self.obsInfo.projectilePosObsOffset
-            + (self.obsInfo.numProjectileObs * 2),
+            self.obsInfo.projectilePosObsOffset : self.obsInfo.enemyDroneObsOffset,
         ]
-        projPos = projPos.view(batchSize, self.obsInfo.numProjectileObs, 2)
-        projObs = th.cat((projTypes, projPos), dim=-1)
-        projObs = th.flatten(projObs, start_dim=1, end_dim=-1)
+        projPos = projPos.view(batchSize, self.obsInfo.numProjectileObs, self.obsInfo.projectilePosObsSize)
+        projectiles = th.cat((projTypes, projPos), dim=-1)
+        projectiles = th.flatten(projectiles, start_dim=1, end_dim=-1)
 
         # process enemy drone observations
         enemyDroneObs = scalarObs[
@@ -206,8 +227,10 @@ class Policy(nn.Module):
         droneObs = th.cat((droneObs, droneWeapon), dim=-1)
         drone = self.droneEncoder(droneObs)
 
+        breakpoint()
+
         # combine all observations and feed through final linear encoder
-        features = th.cat((map, nearPickupObs, projObs, enemyDrone, drone), dim=-1)
+        features = th.cat((map, nearFloatingWalls, nearPickups, projectiles, enemyDrone, drone), dim=-1)
 
         return self.encoder(features), None
 

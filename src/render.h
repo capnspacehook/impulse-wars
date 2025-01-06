@@ -33,6 +33,7 @@ static inline b2Vec2 rayVecToB2Vec(const rayClient *c, const Vector2 v) {
 }
 
 rayClient *createRayClient() {
+    SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(DEFAULT_WIDTH, DEFAULT_HEIGHT, "Impulse Wars");
     const int monitor = GetCurrentMonitor();
 
@@ -49,7 +50,6 @@ rayClient *createRayClient() {
     client->halfWidth = client->width / 2.0f;
     client->halfHeight = client->height / 2.0f;
 
-    SetConfigFlags(FLAG_MSAA_4X_HINT);
     SetWindowSize(client->width, client->height);
 
     SetTargetFPS(FRAME_RATE);
@@ -184,7 +184,7 @@ Color getDroneColor(const int droneIdx) {
     }
 }
 
-void renderDroneGuides(const env *e, const droneEntity *drone, const int droneIdx) {
+void renderDroneGuides(const env *e, droneEntity *drone, const int droneIdx) {
     b2Vec2 pos = b2Body_GetPosition(drone->bodyID);
     const float rayX = b2XToRayX(e->client, pos.x);
     const float rayY = b2YToRayY(e->client, pos.y);
@@ -204,10 +204,8 @@ void renderDroneGuides(const env *e, const droneEntity *drone, const int droneId
     }
 
     // find length of laser aiming guide by where it touches the nearest shape
-    const b2Vec2 rayEnd = b2MulAdd(pos, 150000.0f, drone->lastAim);
-    const b2Vec2 translation = b2Sub(rayEnd, pos);
-    const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | DRONE_SHAPE};
-    const b2RayResult rayRes = b2World_CastRayClosest(e->worldID, pos, translation, filter);
+    const b2RayResult rayRes = droneAimingAt(e, drone);
+    ASSERT(b2Shape_IsValid(rayRes.shapeId));
     const entity *ent = (entity *)b2Shape_GetUserData(rayRes.shapeId);
 
     b2SimplexCache cache = {0};
@@ -331,7 +329,7 @@ void renderEnv(env *e) {
     renderUI(e);
 
     for (uint8_t i = 0; i < e->numDrones; i++) {
-        const droneEntity *drone = safe_array_get_at(e->drones, i);
+        droneEntity *drone = safe_array_get_at(e->drones, i);
         if (drone->dead) {
             continue;
         }
