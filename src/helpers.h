@@ -67,7 +67,7 @@
 #define MAYBE_UNUSED(x) (void)x
 
 #ifndef PI
-#define PI 3.14159265358979323846
+#define PI 3.14159265358979323846f
 #endif
 
 #ifndef RAD2DEG

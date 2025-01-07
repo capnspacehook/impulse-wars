@@ -71,23 +71,23 @@ class Policy(nn.Module):
                     stride=2,
                 )
             ),
-            nn.LeakyReLU(),
+            nn.Tanh(),
             layer_init(nn.Conv2d(cnnChannels, cnnChannels, kernel_size=3, stride=2)),
-            nn.LeakyReLU(),
+            nn.Tanh(),
             nn.Flatten(),
         )
         cnnOutputSize = self._computeCNNShape()
 
         self.enemyDroneEncoder = nn.Sequential(
             layer_init(nn.Linear(self.obsInfo.enemyDroneObsSize, enemyDroneEncOutputSize)),
-            nn.LeakyReLU(),
+            nn.Tanh(),
         )
 
         self.droneEncoder = nn.Sequential(
             layer_init(
                 nn.Linear(self.obsInfo.droneObsSize - 1 + weaponTypeEmbeddingDims, droneEncOutputSize)
             ),
-            nn.LeakyReLU(),
+            nn.Tanh(),
         )
 
         featuresSize = (
@@ -108,13 +108,13 @@ class Policy(nn.Module):
 
         self.encoder = nn.Sequential(
             layer_init(nn.Linear(featuresSize, encoderOutputSize)),
-            nn.LeakyReLU(),
+            nn.Tanh(),
         )
 
         if self.is_continuous:
             self.actorMean = nn.Sequential(
                 layer_init(nn.Linear(lstmOutputSize, actorSize)),
-                nn.LeakyReLU(),
+                nn.Tanh(),
                 layer_init(nn.Linear(actorSize, env.single_action_space.shape[0]), std=0.01),
             )
             self.actorLogStd = nn.Parameter(th.zeros(1, env.single_action_space.shape[0]))
@@ -122,13 +122,13 @@ class Policy(nn.Module):
             self.actionDim = env.single_action_space.nvec.tolist()
             self.actor = nn.Sequential(
                 layer_init(nn.Linear(lstmOutputSize, actorSize)),
-                nn.LeakyReLU(),
+                nn.Tanh(),
                 layer_init(nn.Linear(actorSize, sum(self.actionDim)), std=0.01),
             )
 
         self.critic = nn.Sequential(
             layer_init(nn.Linear(lstmOutputSize, criticSize)),
-            nn.LeakyReLU(),
+            nn.Tanh(),
             layer_init(nn.Linear(criticSize, 1), std=1.0),
         )
 
