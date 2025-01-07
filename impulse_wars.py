@@ -43,6 +43,7 @@ class ImpulseWars(pufferlib.PufferEnv):
         num_drones: int = 2,
         num_agents: int = 2,
         discretize_actions: bool = False,
+        is_training: bool = True,
         seed: int = 0,
         render: bool = False,
         report_interval: int = 16,
@@ -106,8 +107,10 @@ class ImpulseWars(pufferlib.PufferEnv):
             discreteActions,
             self.rewards,
             self.terminals,
+            self.truncations,
             seed,
             render,
+            is_training,
         )
 
     def reset(self, seed=None):

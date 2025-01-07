@@ -113,7 +113,7 @@ cdef class CyImpulseWars:
         logBuffer *logs
         rayClient* rayClient
 
-    def __init__(self, uint16_t numEnvs, uint8_t numDrones, uint8_t numAgents, uint8_t[:, :] observations, bint discretizeActions, float[:, :] contActions, int32_t[:, :] discActions, float[:] rewards, uint8_t[:] terminals, uint64_t seed, bint render):
+    def __init__(self, uint16_t numEnvs, uint8_t numDrones, uint8_t numAgents, uint8_t[:, :] observations, bint discretizeActions, float[:, :] contActions, int32_t[:, :] discActions, float[:] rewards, uint8_t[:] terminals, uint8_t[:] truncations, uint64_t seed, bint render, bint isTraining):
         self.numEnvs = numEnvs
         self.numDrones = numDrones
         self.render = render
@@ -133,8 +133,10 @@ cdef class CyImpulseWars:
                 &discActions[i * inc, 0],
                 &rewards[i * inc],
                 &terminals[i * inc],
+                &truncations[i * inc],
                 self.logs,
                 seed + i,
+                isTraining,
             )
 
     cdef _initRaylib(self):

@@ -183,9 +183,16 @@ typedef struct rayClient {
     uint16_t halfHeight;
 } rayClient;
 
+typedef struct agentActions {
+    b2Vec2 move;
+    b2Vec2 aim;
+    bool shoot;
+} agentActions;
+
 typedef struct env {
     uint8_t numDrones;
     uint8_t numAgents;
+    bool isTraining;
 
     uint16_t obsBytes;
     uint16_t mapObsBytes;
@@ -197,6 +204,7 @@ typedef struct env {
     float *contActions;
     int32_t *discActions;
     uint8_t *terminals;
+    uint8_t *truncations;
 
     uint64_t randState;
     bool needsReset;
@@ -227,6 +235,8 @@ typedef struct env {
     uint8_t suddenDeathWallCounter;
 
     rayClient *client;
+    bool humanInput;
+    uint8_t humanDroneInput;
 
     // used for rendering explosions
     // TODO: use hitInfo

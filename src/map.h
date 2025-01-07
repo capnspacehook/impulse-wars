@@ -204,7 +204,7 @@ void createMap(env *e, const int mapIdx) {
     e->columns = columns;
     e->rows = rows;
     e->defaultWeapon = weaponInfos[maps[mapIdx]->defaultWeapon];
-    if (randFloat(&e->randState, 0.0f, 1.0f) < 0.25f) {
+    if (e->isTraining && randFloat(&e->randState, 0.0f, 1.0f) < 0.25f) {
         e->defaultWeapon = weaponInfos[randInt(&e->randState, 0, NUM_WEAPONS - 1)];
     }
 

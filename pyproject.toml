@@ -15,3 +15,10 @@ logging.level = "INFO"
 
 [tool.scikit-build.cmake.define]
 BUILD_PYTHON_MODULE = true
+
+[tool.ruff]
+line-length = 110
+
+[tool.ruff.lint]
+# skip "Module level import not at top of file"
+ignore = ["E402"]

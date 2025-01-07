@@ -7,7 +7,7 @@
 #include "helpers.h"
 
 const float DEFAULT_SCALE = 11.0f;
-const int DEFAULT_WIDTH = 1500;
+const int DEFAULT_WIDTH = 1250;
 const int DEFAULT_HEIGHT = 1000;
 const int HEIGHT_LEEWAY = 100;
 
@@ -43,7 +43,7 @@ rayClient *createRayClient() {
         client->height = GetMonitorHeight(monitor) - HEIGHT_LEEWAY;
     }
     if (client->width == 0) {
-        client->width = (uint16_t)((float)GetMonitorWidth(monitor) * ((float)DEFAULT_HEIGHT / (float)DEFAULT_WIDTH));
+        client->width = ((float)client->height * ((float)DEFAULT_WIDTH / (float)DEFAULT_HEIGHT));
     }
     client->scale = (float)client->height * (float)(DEFAULT_SCALE / DEFAULT_HEIGHT);
 

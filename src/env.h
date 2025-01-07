@@ -3,6 +3,7 @@
 
 #include "game.h"
 #include "map.h"
+#include "scripted_bot.h"
 #include "settings.h"
 #include "types.h"
 
@@ -146,6 +147,15 @@ static inline uint16_t mapObsCellIdxOffset(const env *e, const uint16_t cellIdx)
 
     const uint8_t cellRow = cellIdx / e->rows;
     return cellIdx + (cellRow * (MAX_MAP_ROWS - e->rows));
+}
+
+static inline float scaleAmmo(const env *e, const droneEntity *drone) {
+    int8_t maxAmmo = weaponAmmo(e->defaultWeapon->type, drone->weaponInfo->type);
+    float scaledAmmo = 0;
+    if (drone->ammo != INFINITE) {
+        scaledAmmo = scaleValue(drone->ammo, maxAmmo, true);
+    }
+    return scaledAmmo;
 }
 
 void computeObs(env *e) {
@@ -312,7 +322,9 @@ void computeObs(env *e) {
         const b2Vec2 enemyDroneVel = b2Body_GetLinearVelocity(enemyDrone->bodyID);
         const b2Vec2 enemyDroneRelNormPos = b2Normalize(b2Sub(enemyDrone->pos.pos, agentDronePos));
         const float enemyDroneAngle = atan2f(enemyDroneRelNormPos.y, enemyDroneRelNormPos.x);
+        const float enemyDroneAimAngle = atan2f(enemyDrone->lastAim.y, enemyDrone->lastAim.x);
         scalarObsOffset = ENEMY_DRONE_OBS_OFFSET;
+
         scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.x, MAX_X_POS, false);
         scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.y, MAX_Y_POS, false);
         scalarObs[scalarObsOffset++] = scaleValue(enemyDroneVel.x, MAX_SPEED, false);
@@ -320,16 +332,18 @@ void computeObs(env *e) {
         scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelNormPos.x, 1.0f, false);
         scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelNormPos.y, 1.0f, false);
         scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAngle, PI, false);
+        scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->lastAim.x, 1.0f, false);
+        scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->lastAim.y, 1.0f, false);
+        scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAimAngle, PI, false);
+        scalarObs[scalarObsOffset++] = scaleAmmo(e, enemyDrone);
+        scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->weaponCooldown, enemyDrone->weaponInfo->coolDown, true);
+        scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->charge, weaponCharge(enemyDrone->weaponInfo->type), true);
+        scalarObs[scalarObsOffset++] = enemyDrone->weaponInfo->type + 1;
 
         // compute active drone observations
         ASSERTF(scalarObsOffset == DRONE_OBS_OFFSET, "offset: %d", scalarObsOffset);
         const b2Vec2 agentDroneVel = b2Body_GetLinearVelocity(agentDrone->bodyID);
-        const float aimAngle = atan2f(agentDrone->lastAim.y, agentDrone->lastAim.x);
-        int8_t maxAmmo = weaponAmmo(e->defaultWeapon->type, agentDrone->weaponInfo->type);
-        uint8_t scaledAmmo = 0;
-        if (agentDrone->ammo != INFINITE) {
-            scaledAmmo = scaleValue(agentDrone->ammo, maxAmmo, true);
-        }
+        const float agentDroneAimAngle = atan2f(agentDrone->lastAim.y, agentDrone->lastAim.x);
 
         scalarObs[scalarObsOffset++] = scaleValue(e->stepsLeft, ROUND_STEPS, true);
         scalarObs[scalarObsOffset++] = scaleValue(agentDronePos.x, MAX_X_POS, false);
@@ -338,8 +352,8 @@ void computeObs(env *e) {
         scalarObs[scalarObsOffset++] = scaleValue(agentDroneVel.y, MAX_SPEED, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->lastAim.x, 1.0f, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->lastAim.y, 1.0f, false);
-        scalarObs[scalarObsOffset++] = scaleValue(aimAngle, PI, false);
-        scalarObs[scalarObsOffset++] = scaledAmmo;
+        scalarObs[scalarObsOffset++] = scaleValue(agentDroneAimAngle, PI, false);
+        scalarObs[scalarObsOffset++] = scaleAmmo(e, agentDrone);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->weaponCooldown, agentDrone->weaponInfo->coolDown, true);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->charge, weaponCharge(agentDrone->weaponInfo->type), true);
         scalarObs[scalarObsOffset] = agentDrone->weaponInfo->type + 1;
@@ -388,9 +402,10 @@ void setupEnv(env *e) {
     computeObs(e);
 }
 
-env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool discretizeActions, float *contActions, int32_t *discActions, float *rewards, uint8_t *terminals, logBuffer *logs, uint64_t seed) {
+env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool discretizeActions, float *contActions, int32_t *discActions, float *rewards, uint8_t *terminals, uint8_t *truncations, logBuffer *logs, uint64_t seed, bool isTraining) {
     e->numDrones = numDrones;
     e->numAgents = numAgents;
+    e->isTraining = isTraining;
 
     e->obsBytes = obsBytes();
     e->mapObsBytes = alignedSize(MAP_OBS_SIZE * sizeof(uint8_t), sizeof(float));
@@ -401,6 +416,7 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
     e->discActions = discActions;
     e->rewards = rewards;
     e->terminals = terminals;
+    e->truncations = truncations;
 
     e->randState = seed;
     e->needsReset = false;
@@ -417,6 +433,12 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
     // e->pickupTree = kd_create(2);
     cc_slist_new(&e->projectiles);
 
+    e->humanInput = false;
+    e->humanDroneInput = 0;
+    if (e->numAgents != e->numDrones) {
+        e->humanDroneInput = e->numAgents;
+    }
+
     setupEnv(e);
 
     return e;
@@ -427,6 +449,7 @@ void clearEnv(env *e) {
 
     // rewards get cleared in stepEnv every step
     memset(e->terminals, 0x0, e->numAgents * sizeof(uint8_t));
+    memset(e->truncations, 0x0, e->numAgents * sizeof(uint8_t));
 
     e->episodeLength = 0;
     memset(e->stats, 0x0, sizeof(e->stats));
@@ -570,20 +593,14 @@ void computeRewards(env *e, const bool roundOver, const uint8_t winner) {
     }
 }
 
-typedef struct agentActions {
-    b2Vec2 move;
-    b2Vec2 aim;
-    bool shoot;
-} agentActions;
-
 static inline bool isActionNoop(const b2Vec2 action) {
     return b2Length(action) < ACTION_NOOP_MAGNITUDE;
 }
 
-agentActions _computeActions(env *e, droneEntity *drone, const agentActions *humanActions) {
+agentActions _computeActions(env *e, droneEntity *drone, const agentActions *manualActions) {
     agentActions actions = {0};
 
-    if (e->discretizeActions && humanActions == NULL) {
+    if (e->discretizeActions && manualActions == NULL) {
         const uint8_t offset = drone->idx * DISCRETE_ACTION_SIZE;
         const uint8_t move = e->discActions[offset + 0];
         // 8 is no-op for both move and aim
@@ -605,14 +622,14 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *hum
     }
 
     const uint8_t offset = drone->idx * CONTINUOUS_ACTION_SIZE;
-    if (humanActions == NULL) {
+    if (manualActions == NULL) {
         actions.move = (b2Vec2){.x = tanhf(e->contActions[offset + 0]), .y = tanhf(e->contActions[offset + 1])};
         actions.aim = (b2Vec2){.x = tanhf(e->contActions[offset + 2]), .y = tanhf(e->contActions[offset + 3])};
         actions.shoot = (bool)e->contActions[offset + 4];
     } else {
-        actions.move = humanActions->move;
-        actions.aim = humanActions->aim;
-        actions.shoot = humanActions->shoot;
+        actions.move = manualActions->move;
+        actions.aim = manualActions->aim;
+        actions.shoot = manualActions->shoot;
     }
 
     ASSERT_VEC_BOUNDED(actions.move);
@@ -633,13 +650,25 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *hum
     return actions;
 }
 
-agentActions computeActions(env *e, droneEntity *drone, const agentActions *humanActions) {
-    const agentActions actions = _computeActions(e, drone, humanActions);
+agentActions computeActions(env *e, droneEntity *drone, const agentActions *manualActions) {
+    const agentActions actions = _computeActions(e, drone, manualActions);
     drone->lastMove = actions.move;
     if (!b2VecEqual(actions.aim, b2Vec2_zero)) {
         drone->lastAim = actions.aim;
     }
     return actions;
+}
+
+void updateHumanInputToggle(env *e) {
+    if (IsKeyPressed(KEY_LEFT_CONTROL)) {
+        e->humanInput = !e->humanInput;
+    }
+    if (IsKeyPressed(KEY_ONE) || IsKeyPressed(KEY_KP_1)) {
+        e->humanDroneInput = 0;
+    }
+    if (IsKeyPressed(KEY_TWO) || IsKeyPressed(KEY_KP_2)) {
+        e->humanDroneInput = 1;
+    }
 }
 
 agentActions getPlayerInputs(env *e, droneEntity *drone, const uint8_t gamepadIdx) {
@@ -660,10 +689,6 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, const uint8_t gamepadId
         actions.aim = (b2Vec2){.x = rStickX, .y = rStickY};
         actions.shoot = shoot;
         return computeActions(e, drone, &actions);
-    }
-    // keyboard and mouse controls one drone only
-    if (gamepadIdx != 0) {
-        return computeActions(e, drone, false);
     }
 
     b2Vec2 move = b2Vec2_zero;
@@ -698,13 +723,18 @@ void stepEnv(env *e) {
         resetEnv(e);
     }
 
-    agentActions stepActions[e->numAgents];
-    memset(stepActions, 0x0, e->numAgents * sizeof(agentActions));
+    agentActions stepActions[e->numDrones];
+    memset(stepActions, 0x0, e->numDrones * sizeof(agentActions));
 
     // preprocess actions for the next N steps
-    for (uint8_t i = 0; i < e->numAgents; i++) {
+    for (uint8_t i = 0; i < e->numDrones; i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
-        stepActions[i] = computeActions(e, drone, NULL);
+        if (i < e->numAgents) {
+            stepActions[i] = computeActions(e, drone, NULL);
+        } else {
+            const agentActions botActions = scriptedBotActions(e, drone);
+            stepActions[i] = computeActions(e, drone, &botActions);
+        }
     }
 
     // reset reward buffer
@@ -714,20 +744,19 @@ void stepEnv(env *e) {
         e->episodeLength++;
 
         // handle actions
+        if (e->client != NULL) {
+            updateHumanInputToggle(e);
+        }
+
         for (uint8_t i = 0; i < e->numDrones; i++) {
             droneEntity *drone = safe_array_get_at(e->drones, i);
             drone->lastVelocity = b2Body_GetLinearVelocity(drone->bodyID);
             memset(&drone->stepInfo, 0x0, sizeof(droneStepInfo));
-            if (i >= e->numAgents && e->client == NULL) {
-                break;
-            }
 
             agentActions actions;
             // take inputs from humans every frame
-            // TODO: allow first drone to be controllable by humans once
-            // a scripted bot is implemented
-            if (i != 0 && e->client != NULL) {
-                actions = getPlayerInputs(e, drone, i - 1);
+            if (e->humanInput && e->humanDroneInput == i) {
+                actions = getPlayerInputs(e, drone, i);
             } else {
                 actions = stepActions[i];
             }
@@ -796,7 +825,11 @@ void stepEnv(env *e) {
         }
 
         if (roundOver) {
-            memset(e->terminals, 1, e->numAgents * sizeof(uint8_t));
+            if (e->stepsLeft == 0) {
+                memset(e->truncations, 1, e->numAgents * sizeof(uint8_t));
+            } else {
+                memset(e->terminals, 1, e->numAgents * sizeof(uint8_t));
+            }
 
             e->stats[lastAlive].wins = 1.0f;
 

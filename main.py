@@ -22,9 +22,9 @@ from policy import Policy, Recurrent
 from impulse_wars import ImpulseWars
 
 
-def make_policy(env, config):
+def make_policy(env, config, isTraining: bool):
     """Make the policy for the environment"""
-    policy = Policy(env, config.num_drones, config.discretize_actions)
+    policy = Policy(env, config.num_drones, config.discretize_actions, isTraining)
     policy = Recurrent(env, policy)
     return pufferlib.cleanrl.RecurrentPolicy(policy)
 
@@ -47,9 +47,10 @@ def train(args) -> Deque[Dict[str, Any]] | None:
         num_envs=args.vec.num_envs,
         env_args=(args.train.num_internal_envs,),
         env_kwargs=dict(
-            discretize_actions=args.train.discretize_actions,
-            num_drones=args.train.num_drones,
-            num_agents=args.train.num_agents,
+            discretize_actions=args.env.discretize_actions,
+            num_drones=args.env.num_drones,
+            num_agents=args.env.num_agents,
+            is_training=True,
             seed=args.seed,
             render=args.render,
         ),
@@ -61,7 +62,7 @@ def train(args) -> Deque[Dict[str, Any]] | None:
     if args.render:
         vecenv.reset()
 
-    policy = make_policy(vecenv.driver_env, args.train).to(args.train.device)
+    policy = make_policy(vecenv.driver_env, args.env, True).to(args.train.device)
 
     data = clean_pufferl.create(args.train, vecenv, policy, wandb=args.wandb)
 
@@ -93,6 +94,7 @@ def init_wandb(args, name, id=None, resume=True):
         entity=args.wandb_entity,
         group=args.wandb_group,
         config={
+            "env": dict(args.env),
             "train": dict(args.train),
             "vec": dict(args.vec),
         },
@@ -113,9 +115,9 @@ def eval_policy(env: pufferlib.PufferEnv, policy, device, data=None, bestEval: f
         with th.no_grad():
             ob = th.as_tensor(ob).to(device)
             if hasattr(policy, "lstm"):
-                actions, _, _, _, state = policy(ob, state)
+                actions, _, state = policy.policy(ob, state)
             else:
-                actions, _, _, _ = policy(ob)
+                actions, _ = policy(ob)
 
             action = actions.cpu().numpy().reshape(env.action_space.shape)
 
@@ -185,10 +187,10 @@ if __name__ == "__main__":
     parser.add_argument("--train.vf-coef", type=float, default=0.5)
     parser.add_argument("--train.target-kl", type=float, default=0.2)
 
-    parser.add_argument("--train.discretize-actions", action="store_true")
-    parser.add_argument("--train.num-drones", type=int, default=2, help="Number of drones in the environment")
+    parser.add_argument("--env.discretize-actions", action="store_true")
+    parser.add_argument("--env.num-drones", type=int, default=2, help="Number of drones in the environment")
     parser.add_argument(
-        "--train.num-agents",
+        "--env.num-agents",
         type=int,
         default=1,
         help="Number of agents controlling drones, if this is less than --train.num-drones the other drones will do nothing",
@@ -213,6 +215,7 @@ if __name__ == "__main__":
             args[k] = v
 
     args["train"] = pufferlib.namespace(**args["train"])
+    args["env"] = pufferlib.namespace(**args["env"])
     args["vec"] = pufferlib.namespace(**args["vec"])
     args = pufferlib.namespace(**args)
 
@@ -240,9 +243,10 @@ if __name__ == "__main__":
             num_envs=1,
             env_args=(1,),
             env_kwargs=dict(
-                discretize_actions=args.train.discretize_actions,
-                num_drones=args.train.num_drones,
-                num_agents=args.train.num_agents,
+                discretize_actions=args.env.discretize_actions,
+                num_drones=args.env.num_drones,
+                num_agents=args.env.num_agents,
+                is_training=False,
                 render=True,
                 seed=args.seed,
             ),
@@ -252,9 +256,10 @@ if __name__ == "__main__":
         )
 
         if args.eval_model_path is None:
-            policy = make_policy(vecenv, args.train).to(args.train.device)
+            policy = make_policy(vecenv, args.env, True).to(args.train.device)
         else:
             policy = th.load(args.eval_model_path, map_location=args.train.device)
+            policy.policy.policy.isTraining = False
 
         for _ in range(5):
             eval_policy(vecenv, policy, args.train.device)

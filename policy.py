@@ -16,7 +16,7 @@ from cy_impulse_wars import obsConstants
 
 cnnChannels = 32
 weaponTypeEmbeddingDims = 3
-enemyDroneEncOutputSize = 32
+enemyDroneEncOutputSize = 64
 droneEncOutputSize = 64
 encoderOutputSize = 128
 lstmOutputSize = 128
@@ -30,12 +30,19 @@ class Recurrent(LSTMWrapper):
 
 
 class Policy(nn.Module):
-    def __init__(self, env: pufferlib.PufferEnv, numDrones: int, discretizeActions: bool = False):
+    def __init__(
+        self,
+        env: pufferlib.PufferEnv,
+        numDrones: int,
+        discretizeActions: bool = False,
+        isTraining: bool = True,
+    ):
         super().__init__()
 
         self.is_continuous = not discretizeActions
 
         self.numDrones = numDrones
+        self.isTraining = isTraining
         self.obsInfo = obsConstants(numDrones)
 
         # most of the observation is a 2D array of bytes, but the end
@@ -79,7 +86,11 @@ class Policy(nn.Module):
         cnnOutputSize = self._computeCNNShape()
 
         self.enemyDroneEncoder = nn.Sequential(
-            layer_init(nn.Linear(self.obsInfo.enemyDroneObsSize, enemyDroneEncOutputSize)),
+            layer_init(
+                nn.Linear(
+                    self.obsInfo.enemyDroneObsSize - 1 + weaponTypeEmbeddingDims, enemyDroneEncOutputSize
+                )
+            ),
             nn.Tanh(),
         )
 
@@ -232,18 +243,22 @@ class Policy(nn.Module):
         projectiles = th.flatten(projectiles, start_dim=1, end_dim=-1)
 
         # process enemy drone observations
-        enemyDroneObs = scalarObs[
+        enemyDroneInfoObs = scalarObs[
             :,
-            self.obsInfo.enemyDroneObsOffset : self.obsInfo.enemyDroneObsOffset
-            + self.obsInfo.enemyDroneObsSize,
+            self.obsInfo.enemyDroneObsOffset : self.obsInfo.droneObsOffset - 1,
         ]
+        enemyDroneWeaponObs = scalarObs[
+            :, self.obsInfo.droneObsOffset - 1 : self.obsInfo.droneObsOffset
+        ].int()
+        enemyDroneWeapon = self.weaponTypeEmbedding(enemyDroneWeaponObs).squeeze(1).float()
+        enemyDroneObs = th.cat((enemyDroneInfoObs, enemyDroneWeapon), dim=-1)
         enemyDrone = self.enemyDroneEncoder(enemyDroneObs)
 
         # process agent drone observations
-        droneObs = scalarObs[:, self.obsInfo.droneObsOffset : -1]
-        droneWeapon = scalarObs[:, -1].int()
-        droneWeapon = self.weaponTypeEmbedding(droneWeapon).float()
-        droneObs = th.cat((droneObs, droneWeapon), dim=-1)
+        droneInfoObs = scalarObs[:, self.obsInfo.droneObsOffset : -1]
+        droneWeaponObs = scalarObs[:, -1].int()
+        droneWeapon = self.weaponTypeEmbedding(droneWeaponObs).float()
+        droneObs = th.cat((droneInfoObs, droneWeapon), dim=-1)
         drone = self.droneEncoder(droneObs)
 
         # combine all observations and feed through final linear encoder
@@ -256,9 +271,12 @@ class Policy(nn.Module):
     def decode_actions(self, hidden: th.Tensor, lookup=None):
         if self.is_continuous:
             actionMean = self.actorMean(hidden)
-            actionLogStd = self.actorLogStd.expand_as(actionMean)
-            actionStd = th.exp(actionLogStd)
-            action = Normal(actionMean, actionStd)
+            if self.isTraining:
+                actionLogStd = self.actorLogStd.expand_as(actionMean)
+                actionStd = th.exp(actionLogStd)
+                action = Normal(actionMean, actionStd)
+            else:
+                action = actionMean
         else:
             action = self.actor(hidden)
             action = th.split(action, self.actionDim, dim=1)
