@@ -33,8 +33,8 @@ const uint16_t LOG_BUFFER_SIZE = 1024;
 #define WIN_REWARD 1.0f
 #define KILL_REWARD 0.5f
 #define DEATH_PUNISHMENT -1.0f
-#define AIM_REWARD 0.05f
-#define AIMED_SHOT_REWARD 0.15f
+#define AIM_REWARD 0.01f
+#define AIMED_SHOT_REWARD 0.1f
 #define WEAPON_PICKUP_REWARD 0.25f
 #define SHOT_HIT_REWARD_COEF 5.0f
 

@@ -7,7 +7,15 @@ import time
 
 from rich.console import Console
 
-from carbs import CARBS, CARBSParams, LinearSpace, LogitSpace, LogSpace, Param, WandbLoggingParams
+from carbs import (
+    CARBS,
+    CARBSParams,
+    LinearSpace,
+    LogitSpace,
+    LogSpace,
+    Param,
+    WandbLoggingParams,
+)
 import numpy as np
 import wandb
 from wandb_carbs import WandbCarbs, create_sweep
@@ -39,13 +47,25 @@ def sweep(args, train):
     params = [
         Param(
             name="total_timesteps",
-            space=LinearSpace(min=50_000_000, scale=150_000_000, rounding_factor=10_000_000, is_integer=True),
+            space=LinearSpace(
+                min=50_000_000,
+                scale=250_000_000,
+                rounding_factor=10_000_000,
+                is_integer=True,
+            ),
             search_center=100_000_000,
         ),
-        Param(name="ent_coef", space=LogSpace(scale=1.0), search_center=0.0005),
+        Param(
+            name="bptt_horizon",
+            space=LinearSpace(min=4, max=8, scale=3, is_integer=True),
+            search_center=5,
+        ),
+        Param(name="ent_coef", space=LogSpace(scale=1.0), search_center=0.0015),
         Param(name="gae_lambda", space=LogitSpace(min=0.0, max=1.0), search_center=0.95),
         Param(name="gamma", space=LogitSpace(min=0.0, max=1.0), search_center=0.99),
-        Param(name="learning_rate", space=LogSpace(scale=1.0), search_center=0.001),
+        Param(name="max_grad_norm", space=LinearSpace(scale=2.0), search_center=1.0),
+        Param(name="vf_coef", space=LogitSpace(min=0.0, max=1.0), search_center=0.5),
+        Param(name="learning_rate", space=LogSpace(scale=1.0), search_center=0.00125),
     ]
 
     sweepID = args.wandb_sweep
@@ -65,7 +85,13 @@ def sweep(args, train):
         os._exit(0)
 
     def launchTrainingProcess():
-        childArgs = ["python", "main.py", "--mode=sweep", "--sweep-child", f"--wandb-sweep={sweepID}"]
+        childArgs = [
+            "python",
+            "main.py",
+            "--mode=sweep",
+            "--sweep-child",
+            f"--wandb-sweep={sweepID}",
+        ]
         if args.train.compile:
             childArgs.append("--train.compile")
         print(f"running child training process with args: {childArgs}")
@@ -73,7 +99,10 @@ def sweep(args, train):
         ret.check_returncode()
 
     wandb.agent(
-        sweep_id=sweepID, entity=args.wandb_entity, project=args.wandb_project, function=launchTrainingProcess
+        sweep_id=sweepID,
+        entity=args.wandb_entity,
+        project=args.wandb_project,
+        function=launchTrainingProcess,
     )
 
 
@@ -84,14 +113,14 @@ def trainWithSuggestion(args, params, train):
         config = CARBSParams(
             seed=int(time.time()),
             better_direction_sign=1,
-            max_suggestion_cost=1800,  # 30m
+            max_suggestion_cost=3600,  # 1hr
             num_random_samples=2 * len(params),
             initial_search_radius=0.5,
             wandb_params=WandbLoggingParams(root_dir="wandb"),
         )
         carbs = CARBS(config=config, params=params)
 
-        wandbCarbs = WandbCarbs(carbs=carbs)
+        wandbCarbs = CustomWandbCarbs(carbs=carbs)
         resampling = not carbs._is_random_sampling() and len(carbs.success_observations) > (
             (carbs.resample_count + 1) * carbs.config.resample_frequency
         )

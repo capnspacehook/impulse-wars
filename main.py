@@ -36,6 +36,12 @@ def train(args) -> Deque[Dict[str, Any]] | None:
     elif not args.track and args.train.exp_id is None:
         args.train.exp_id = wandb.util.generate_id()
 
+    backend = None
+    if args.vec.backend == "multiprocessing":
+        backend = pufferlib.vector.Multiprocessing
+    elif args.vec.backend == "native":
+        backend = pufferlib.vector.PufferEnv
+
     vecenv = pufferlib.vector.make(
         ImpulseWars,
         num_envs=args.vec.num_envs,
@@ -50,7 +56,7 @@ def train(args) -> Deque[Dict[str, Any]] | None:
         num_workers=args.vec.num_workers,
         batch_size=args.vec.env_batch_size,
         zero_copy=args.vec.zero_copy,
-        backend=pufferlib.vector.Multiprocessing,
+        backend=backend,
     )
     if args.render:
         vecenv.reset()
@@ -115,12 +121,14 @@ def eval_policy(env: pufferlib.PufferEnv, policy, device, data=None, bestEval: f
 
         ob, reward, done, trunc, info = env.step(action)
         totalReward += reward
+        if reward != 0:
+            print(f"Reward: {reward}")
         steps += 1
 
         if done.any() or trunc.any():
             break
 
-    print(f"Steps: {steps}, Reward: {totalReward}")
+    print(f"Totals: Steps: {steps}, Reward: {totalReward}")
 
 
 if __name__ == "__main__":
@@ -153,7 +161,7 @@ if __name__ == "__main__":
     parser.add_argument("--train.torch-deterministic", action="store_true")
     parser.add_argument("--train.cpu-offload", action="store_true")
     parser.add_argument("--train.device", type=str, default="cuda" if th.cuda.is_available() else "cpu")
-    parser.add_argument("--train.total-timesteps", type=int, default=150_000_000)
+    parser.add_argument("--train.total-timesteps", type=int, default=250_000_000)
     parser.add_argument("--train.checkpoint-interval", type=int, default=25)
     parser.add_argument("--train.eval-interval", type=int, default=1_000_000)
     parser.add_argument("--train.compile", action="store_true")
@@ -161,7 +169,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--train.num-internal-envs", type=int, default=256)
     parser.add_argument("--train.batch-size", type=int, default=262_144)
-    parser.add_argument("--train.bptt-horizon", type=int, default=32)
+    parser.add_argument("--train.bptt-horizon", type=int, default=64)
     parser.add_argument("--train.clip-coef", type=float, default=0.2)
     parser.add_argument("--train.clip-vloss", action="store_false")
     parser.add_argument("--train.ent-coef", type=float, default=0.0015)
@@ -177,7 +185,7 @@ if __name__ == "__main__":
     parser.add_argument("--train.vf-coef", type=float, default=0.5)
     parser.add_argument("--train.target-kl", type=float, default=0.2)
 
-    parser.add_argument("--train.discretize_actions", action="store_true")
+    parser.add_argument("--train.discretize-actions", action="store_true")
     parser.add_argument("--train.num-drones", type=int, default=2, help="Number of drones in the environment")
     parser.add_argument(
         "--train.num-agents",
@@ -186,6 +194,7 @@ if __name__ == "__main__":
         help="Number of agents controlling drones, if this is less than --train.num-drones the other drones will do nothing",
     )
 
+    parser.add_argument("--vec.backend", type=str, default="multiprocessing")
     parser.add_argument("--vec.num-envs", type=int, default=8)
     parser.add_argument("--vec.num-workers", type=int, default=8)
     parser.add_argument("--vec.env-batch-size", type=int, default=4)
@@ -247,7 +256,8 @@ if __name__ == "__main__":
         else:
             policy = th.load(args.eval_model_path, map_location=args.train.device)
 
-        eval_policy(vecenv, policy, args.train.device)
+        for _ in range(5):
+            eval_policy(vecenv, policy, args.train.device)
     elif args.mode == "sweep":
         from sweep import sweep
 
