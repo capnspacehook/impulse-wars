@@ -51,16 +51,17 @@ class Policy(nn.Module):
 
         # each byte in the map observation contains 3 values:
         # - 2 bits for wall type
-        # - 1 bit for weapon pickup
+        # - 1 bit for is floating wall
+        # - 1 bit for is weapon pickup
         # - 3 bits for drone index
         self.register_buffer(
             "unpackMask",
-            th.tensor([0x30, 0x08, 0x07], dtype=th.uint8),
+            th.tensor([0x60, 0x10, 0x08, 0x07], dtype=th.uint8),
             persistent=False,
         )
-        self.register_buffer("unpackShift", th.tensor([4, 3, 0], dtype=th.uint8), persistent=False)
+        self.register_buffer("unpackShift", th.tensor([5, 4, 3, 0], dtype=th.uint8), persistent=False)
 
-        self.mapObsInputChannels = self.obsInfo.wallTypes + 2 + numDrones + 1
+        self.mapObsInputChannels = (self.obsInfo.wallTypes + 1) + 1 + 1 + (numDrones + 1)
         self.mapCNN = nn.Sequential(
             layer_init(
                 nn.Conv2d(
@@ -91,9 +92,10 @@ class Policy(nn.Module):
 
         featuresSize = (
             cnnOutputSize
+            + (self.obsInfo.numNearWallObs * (self.obsInfo.wallTypes + self.obsInfo.nearWallPosObsSize))
             + (
                 self.obsInfo.numFloatingWallObs
-                * (self.obsInfo.wallTypes + self.obsInfo.floatingWallInfoObsSize)
+                * (self.obsInfo.wallTypes + 1 + self.obsInfo.floatingWallInfoObsSize)
             )
             + (
                 self.obsInfo.numWeaponPickupObs
@@ -143,7 +145,7 @@ class Policy(nn.Module):
         mapObs = (mapObs & self.unpackMask) >> self.unpackShift
         # reshape to 3D map
         return mapObs.permute(0, 2, 1).reshape(
-            (batchSize, 3, self.obsInfo.maxMapColumns, self.obsInfo.maxMapRows)
+            (batchSize, 4, self.obsInfo.maxMapColumns, self.obsInfo.maxMapRows)
         )
 
     def encode_observations(self, obs: th.Tensor) -> th.Tensor:
@@ -153,35 +155,52 @@ class Policy(nn.Module):
 
         # one hot encode wall types
         wallTypeObs = mapObs[:, 0, :, :].long()
-        wallTypes = one_hot(wallTypeObs, self.obsInfo.wallTypes).permute(0, 3, 1, 2).float()
+        wallTypes = one_hot(wallTypeObs, self.obsInfo.wallTypes + 1).permute(0, 3, 1, 2).float()
 
-        # one hot weapon pickups
-        mapPickupObs = mapObs[:, 1, :, :].long()
-        mapPickups = one_hot(mapPickupObs, 2).permute(0, 3, 1, 2).float()
+        # unsqueeze floating wall booleans (is wall a floating wall)
+        floatingWallObs = mapObs[:, 1, :, :].unsqueeze(1)
+
+        # unsqueeze map pickup booleans (does map tile contain a weapon pickup)
+        mapPickupObs = mapObs[:, 2, :, :].unsqueeze(1)
 
         # one hot drone indexes
-        droneIndexObs = mapObs[:, 2, :, :].long()
+        droneIndexObs = mapObs[:, 3, :, :].long()
         droneIndexes = one_hot(droneIndexObs, self.numDrones + 1).permute(0, 3, 1, 2).float()
 
         # combine all map observations and feed through CNN
-        mapObs = th.cat((wallTypes, mapPickups, droneIndexes), dim=1)
+        mapObs = th.cat((wallTypes, floatingWallObs, mapPickupObs, droneIndexes), dim=1)
         map = self.mapCNN(mapObs)
 
         # process scalar observations
         scalarObs = nativize_tensor(obs[:, self.obsInfo.scalarObsOffset :], self.dtype)
 
-        nearFloatingWallTypeObs = scalarObs[
+        # process N nearest wall types and positions
+        nearWallTypeObs = scalarObs[
+            :, self.obsInfo.nearWallTypesObsOffset : self.obsInfo.nearWallPosObsOffset
+        ].long()
+        nearWallTypes = one_hot(nearWallTypeObs, self.obsInfo.wallTypes).float()
+        nearWallPosObs = scalarObs[
+            :, self.obsInfo.nearWallPosObsOffset : self.obsInfo.floatingWallTypesObsOffset
+        ]
+        nearWallPosObs = nearWallPosObs.view(
+            batchSize, self.obsInfo.numNearWallObs, self.obsInfo.nearWallPosObsSize
+        )
+        nearWalls = th.cat((nearWallTypes, nearWallPosObs), dim=-1)
+        nearWalls = th.flatten(nearWalls, start_dim=1, end_dim=-1)
+
+        # process floating wall types and positions
+        floatingWallTypeObs = scalarObs[
             :, self.obsInfo.floatingWallTypesObsOffset : self.obsInfo.floatingWallInfoObsOffset
         ].long()
-        nearFloatingWallTypes = one_hot(nearFloatingWallTypeObs, self.obsInfo.wallTypes).float()
-        nearFloatingWallInfoObs = scalarObs[
+        floatingWallTypes = one_hot(floatingWallTypeObs, self.obsInfo.wallTypes + 1).float()
+        floatingWallInfoObs = scalarObs[
             :, self.obsInfo.floatingWallInfoObsOffset : self.obsInfo.weaponPickupTypesObsOffset
         ]
-        nearFloatingWallInfoObs = nearFloatingWallInfoObs.view(
+        floatingWallInfoObs = floatingWallInfoObs.view(
             batchSize, self.obsInfo.numFloatingWallObs, self.obsInfo.floatingWallInfoObsSize
         )
-        nearFloatingWalls = th.cat((nearFloatingWallTypes, nearFloatingWallInfoObs), dim=-1)
-        nearFloatingWalls = th.flatten(nearFloatingWalls, start_dim=1, end_dim=-1)
+        floatingWalls = th.cat((floatingWallTypes, floatingWallInfoObs), dim=-1)
+        floatingWalls = th.flatten(floatingWalls, start_dim=1, end_dim=-1)
 
         # process weapon pickup types and positions
         nearPickupTypeObs = scalarObs[
@@ -227,10 +246,10 @@ class Policy(nn.Module):
         droneObs = th.cat((droneObs, droneWeapon), dim=-1)
         drone = self.droneEncoder(droneObs)
 
-        breakpoint()
-
         # combine all observations and feed through final linear encoder
-        features = th.cat((map, nearFloatingWalls, nearPickups, projectiles, enemyDrone, drone), dim=-1)
+        features = th.cat(
+            (map, nearWalls, floatingWalls, nearPickups, projectiles, enemyDrone, drone), dim=-1
+        )
 
         return self.encoder(features), None
 

@@ -105,7 +105,7 @@ void computeWallGridObs(env *e) {
         if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
             wallType = cell->ent->type + 1;
         }
-        e->wallObs[offset++] = (wallType & TWO_BIT_MASK) << 4;
+        e->wallObs[offset++] = (wallType & TWO_BIT_MASK) << 5;
 
         ASSERT(cellIdx <= e->columns * e->rows);
         ASSERT(offset <= MAP_OBS_SIZE);
@@ -157,6 +157,20 @@ void computeObs(env *e) {
         const uint16_t mapObsStart = mapObsOffset;
 
         memcpy(e->obs + mapObsOffset, e->wallObs, MAP_OBS_SIZE * sizeof(uint8_t));
+
+        // compute discretized location of floating walls on grid
+        for (size_t i = 0; i < cc_array_size(e->floatingWalls); i++) {
+            const wallEntity *wall = safe_array_get_at(e->floatingWalls, i);
+            const b2Vec2 pos = b2Body_GetPosition(wall->bodyID);
+            int16_t cellIdx = entityPosToCellIdx(e, pos);
+            if (cellIdx == -1) {
+                ERRORF("floating wall %zu out of bounds at position %f %f", i, pos.x, pos.y);
+            }
+            mapObsOffset = mapObsStart + mapObsCellIdxOffset(e, cellIdx);
+            ASSERTF(mapObsOffset <= mapObsStart + MAP_OBS_SIZE, "cellIdx: %d", cellIdx);
+            e->obs[mapObsOffset] = (wall->type + 1 & TWO_BIT_MASK) << 5;
+            e->obs[mapObsOffset] |= 1 << 4;
+        }
 
         // compute discretized location and type of weapon pickups on grid
         for (size_t i = 0; i < cc_array_size(e->pickups); i++) {
@@ -212,6 +226,25 @@ void computeObs(env *e) {
 
         const droneEntity *agentDrone = safe_array_get_at(e->drones, agent);
         const b2Vec2 agentDronePos = agentDrone->pos.pos;
+
+        // compute type and position of N nearest walls
+        kdres *nearWalls = kd_nearest_n(e->wallTree, agentDronePos.x, agentDronePos.y, NUM_NEAR_WALL_OBS);
+        for (uint8_t i = 0; i < NUM_NEAR_WALL_OBS; i++) {
+            const wallEntity *wall = kd_res_item_data(nearWalls);
+            kd_res_next(nearWalls);
+
+            scalarObsOffset = NEAR_WALL_TYPES_OBS_OFFSET + i;
+            ASSERTF(scalarObsOffset <= NEAR_WALL_POS_OBS_OFFSET, "offset: %d", scalarObsOffset);
+            scalarObs[scalarObsOffset] = wall->type;
+
+            scalarObsOffset = NEAR_WALL_POS_OBS_OFFSET + (i * NEAR_WALL_POS_OBS_SIZE);
+            ASSERTF(scalarObsOffset <= FLOATING_WALL_INFO_OBS_OFFSET, "offset: %d", scalarObsOffset);
+            ASSERT(wall->pos.valid);
+            const b2Vec2 wallPos = b2Sub(wall->pos.pos, agentDronePos);
+            scalarObs[scalarObsOffset++] = scaleValue(wallPos.x, MAX_X_POS, false);
+            scalarObs[scalarObsOffset] = scaleValue(wallPos.y, MAX_Y_POS, false);
+        }
+        kd_res_free(nearWalls);
 
         // compute type, position, angle and velocity of floating walls
         for (size_t i = 0; i < cc_array_size(e->floatingWalls); i++) {
@@ -318,7 +351,7 @@ void setupEnv(env *e) {
     e->suddenDeathWallCounter = 0;
 
     DEBUG_LOG("creating map");
-    const int mapIdx = 1; // randInt(&e->randState, 0, NUM_MAPS - 1);
+    const int mapIdx = randInt(&e->randState, 0, NUM_MAPS - 1);
     createMap(e, mapIdx);
 
     mapBounds bounds = {.min = {.x = FLT_MAX, .y = FLT_MAX}, .max = {.x = FLT_MIN, .y = FLT_MIN}};
@@ -463,7 +496,9 @@ float computeReward(env *e, droneEntity *drone) {
     if (drone->dead) {
         reward += DEATH_PUNISHMENT;
     }
+
     // TODO: compute kill reward
+    bool aimingAtEnemy = false;
     for (uint8_t i = 0; i < e->numDrones; i++) {
         if (i == drone->idx) {
             continue;
@@ -475,13 +510,30 @@ float computeReward(env *e, droneEntity *drone) {
             reward += computeShotHitReward(e, i);
         }
 
-        const b2RayResult rayRes = droneAimingAt(e, drone);
-        ASSERT(b2Shape_IsValid(rayRes.shapeId));
-        const entity *ent = (entity *)b2Shape_GetUserData(rayRes.shapeId);
-        if (ent->type == DRONE_ENTITY) {
-            reward += AIM_REWARD;
-            if (drone->stepInfo.firedShot) {
-                reward += AIMED_SHOT_REWARD;
+        // if we know this drone is aiming at another drone, then we
+        // don't need to check if it's aiming at any more drones
+        if (aimingAtEnemy) {
+            continue;
+        }
+
+        // only check if this drone has a clear line of sight to the
+        // other drone if it's aiming in the other drone's direction,
+        // raycasts are expensive
+        const droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
+        const b2Vec2 directionVec = b2Normalize(b2Sub(enemyDrone->pos.pos, drone->pos.pos));
+        const float aimDot = b2Dot(drone->lastAim, directionVec);
+        const float distance = b2Distance(drone->pos.pos, enemyDrone->pos.pos);
+        const float aimThreshold = cosf(atanf(AIM_TOLERANCE / distance));
+        if (aimDot >= aimThreshold) {
+            const b2RayResult rayRes = droneAimingAt(e, drone);
+            ASSERT(b2Shape_IsValid(rayRes.shapeId));
+            const entity *ent = (entity *)b2Shape_GetUserData(rayRes.shapeId);
+            if (ent->type == DRONE_ENTITY) {
+                reward += AIM_REWARD;
+                if (drone->stepInfo.firedShot) {
+                    reward += AIMED_SHOT_REWARD;
+                }
+                aimingAtEnemy = true;
             }
         }
     }
