@@ -208,6 +208,7 @@ void createMap(env *e, const int mapIdx) {
         e->defaultWeapon = weaponInfos[randInt(&e->randState, 0, NUM_WEAPONS - 1)];
     }
 
+    uint16_t cellIdx = 0;
     for (int row = 0; row < rows; row++) {
         for (int col = 0; col < columns; col++) {
             char cellType = layout[col + (row * columns)];
@@ -248,10 +249,11 @@ void createMap(env *e, const int mapIdx) {
                 ERRORF("unknown map layout cell %c", cellType);
             }
 
-            entity *ent = createWall(e, x, y, thickness, thickness, wallType, floating);
+            entity *ent = createWall(e, x, y, thickness, thickness, cellIdx, wallType, floating);
             if (!floating) {
                 cell->ent = ent;
             }
+            cellIdx++;
         }
     }
 }
@@ -261,7 +263,7 @@ void placeRandFloatingWall(env *e, const enum entityType wallType) {
     if (!findOpenPos(e, FLOATING_WALL_SHAPE, &pos)) {
         ERROR("failed to find open position for floating wall");
     }
-    createWall(e, pos.x, pos.y, FLOATING_WALL_THICKNESS, FLOATING_WALL_THICKNESS, wallType, true);
+    createWall(e, pos.x, pos.y, FLOATING_WALL_THICKNESS, FLOATING_WALL_THICKNESS, -1, wallType, true);
 }
 
 void placeRandFloatingWalls(env *e, const int mapIdx) {

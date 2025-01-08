@@ -81,8 +81,10 @@ typedef struct wallEntity {
     b2ShapeId shapeID;
     cachedPos pos;
     b2Vec2 extent;
+    int16_t mapCellIdx;
     bool isFloating;
     enum entityType type;
+    bool isSuddenDeath;
 } wallEntity;
 
 typedef struct weaponInformation {

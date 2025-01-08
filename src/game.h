@@ -99,9 +99,12 @@ bool findOpenPos(env *e, const enum shapeCategory type, b2Vec2 *emptyPos) {
     }
 }
 
-entity *createWall(env *e, const float posX, const float posY, const float width, const float height, const enum entityType type, bool floating) {
+entity *createWall(env *e, const float posX, const float posY, const float width, const float height, uint16_t cellIdx, const enum entityType type, const bool floating) {
     ASSERT(entityTypeIsWall(type));
 
+    if (floating) {
+        cellIdx = -1;
+    }
     const b2Vec2 pos = (b2Vec2){.x = posX, .y = posY};
 
     b2BodyDef wallBodyDef = b2DefaultBodyDef();
@@ -136,8 +139,10 @@ entity *createWall(env *e, const float posX, const float posY, const float width
     wall->bodyID = wallBodyID;
     wall->pos = (cachedPos){.pos = pos, .valid = true};
     wall->extent = extent;
+    wall->mapCellIdx = cellIdx;
     wall->isFloating = floating;
     wall->type = type;
+    wall->isSuddenDeath = e->suddenDeathSteps == 0;
 
     entity *ent = (entity *)fastMalloc(sizeof(entity));
     ent->type = type;
@@ -173,25 +178,28 @@ void createSuddenDeathWalls(env *e, const b2Vec2 startPos, const b2Vec2 size) {
         const b2Vec2 endPos = (b2Vec2){.x = startPos.x + size.x, .y = startPos.y};
         endIdx = entityPosToCellIdx(e, endPos);
         if (endIdx == -1) {
-            ERRORF("invalid position for weapon pickup spawn: (%f, %f)", endPos.x, endPos.y);
+            ERRORF("invalid position for sudden death wall: (%f, %f)", endPos.x, endPos.y);
         }
         indexIncrement = 1;
     } else {
         const b2Vec2 endPos = (b2Vec2){.x = startPos.x, .y = startPos.y + size.y};
         endIdx = entityPosToCellIdx(e, endPos);
         if (endIdx == -1) {
-            ERRORF("invalid position for weapon pickup spawn: (%f, %f)", endPos.x, endPos.y);
+            ERRORF("invalid position for sudden death wall: (%f, %f)", endPos.x, endPos.y);
         }
         indexIncrement = e->rows;
     }
-    const uint16_t startIdx = entityPosToCellIdx(e, startPos);
+    const int16_t startIdx = entityPosToCellIdx(e, startPos);
+    if (startIdx == -1) {
+        ERRORF("invalid position for sudden death wall: (%f, %f)", startPos.x, startPos.y);
+    }
     for (uint16_t i = startIdx; i <= endIdx; i += indexIncrement) {
         mapCell *cell = safe_array_get_at(e->cells, i);
         if (cell->ent != NULL && cell->ent->type == WEAPON_PICKUP_ENTITY) {
             weaponPickupEntity *pickup = (weaponPickupEntity *)cell->ent->entity;
             pickup->respawnWait = PICKUP_RESPAWN_WAIT;
         }
-        entity *ent = createWall(e, cell->pos.x, cell->pos.y, WALL_THICKNESS, WALL_THICKNESS, DEATH_WALL_ENTITY, false);
+        entity *ent = createWall(e, cell->pos.x, cell->pos.y, WALL_THICKNESS, WALL_THICKNESS, i, DEATH_WALL_ENTITY, false);
         cell->ent = ent;
     }
 }
@@ -486,45 +494,46 @@ void handleSuddenDeath(env *e) {
     // create new walls that will close in on the arena
     e->suddenDeathWallCounter++;
 
+    // TODO: these magic numbers can probably be simplified somehow
     createSuddenDeathWalls(
         e,
         (b2Vec2){
-            .x = e->bounds.min.x + ((e->suddenDeathWallCounter + 1) * WALL_THICKNESS),
+            .x = e->bounds.min.x + ((e->suddenDeathWallCounter - 1) * WALL_THICKNESS),
             .y = e->bounds.min.y + ((WALL_THICKNESS * (e->suddenDeathWallCounter - 1)) + (WALL_THICKNESS / 2)),
         },
         (b2Vec2){
-            .x = WALL_THICKNESS * (e->columns - (e->suddenDeathWallCounter * 2) - 3),
+            .x = WALL_THICKNESS * (e->columns - (e->suddenDeathWallCounter * 2) - 1),
             .y = WALL_THICKNESS,
         });
     createSuddenDeathWalls(
         e,
         (b2Vec2){
-            .x = e->bounds.min.x + ((e->suddenDeathWallCounter + 1) * WALL_THICKNESS),
+            .x = e->bounds.min.x + ((e->suddenDeathWallCounter - 1) * WALL_THICKNESS),
             .y = e->bounds.max.y - ((WALL_THICKNESS * (e->suddenDeathWallCounter - 1)) + (WALL_THICKNESS / 2)),
         },
         (b2Vec2){
-            .x = WALL_THICKNESS * (e->columns - (e->suddenDeathWallCounter * 2) - 3),
+            .x = WALL_THICKNESS * (e->columns - (e->suddenDeathWallCounter * 2) - 1),
             .y = WALL_THICKNESS,
         });
     createSuddenDeathWalls(
         e,
         (b2Vec2){
-            .x = e->bounds.min.x + (e->suddenDeathWallCounter * WALL_THICKNESS),
+            .x = e->bounds.min.x + ((e->suddenDeathWallCounter - 1) * WALL_THICKNESS),
             .y = e->bounds.min.y + (e->suddenDeathWallCounter * WALL_THICKNESS),
         },
         (b2Vec2){
             .x = WALL_THICKNESS,
-            .y = WALL_THICKNESS * (e->rows - (e->suddenDeathWallCounter * 2) - 1),
+            .y = WALL_THICKNESS * (e->rows - (e->suddenDeathWallCounter * 2) - 2),
         });
     createSuddenDeathWalls(
         e,
         (b2Vec2){
-            .x = e->bounds.min.x + ((e->columns - e->suddenDeathWallCounter - 1) * WALL_THICKNESS),
+            .x = e->bounds.min.x + ((e->columns - e->suddenDeathWallCounter - 2) * WALL_THICKNESS),
             .y = e->bounds.min.y + (e->suddenDeathWallCounter * WALL_THICKNESS),
         },
         (b2Vec2){
             .x = WALL_THICKNESS,
-            .y = WALL_THICKNESS * (e->rows - (e->suddenDeathWallCounter * 2) - 1),
+            .y = WALL_THICKNESS * (e->rows - (e->suddenDeathWallCounter * 2) - 2),
         });
 
     // mark drones as dead if they touch a newly placed wall
@@ -544,16 +553,20 @@ void handleSuddenDeath(env *e) {
     // TODO: not all floating walls are destroyed correctly
     // make floating walls static bodies if they are now overlapping with
     // a newly placed wall, but destroy them if they are fully inside a wall
-    CC_ArrayIter iter;
-    cc_array_iter_init(&iter, e->floatingWalls);
+    CC_ArrayIter floatingWallIter;
+    cc_array_iter_init(&floatingWallIter, e->floatingWalls);
     wallEntity *wall;
-    while (cc_array_iter_next(&iter, (void **)&wall) != CC_ITER_END) {
+    while (cc_array_iter_next(&floatingWallIter, (void **)&wall) != CC_ITER_END) {
         const b2Vec2 pos = getCachedPos(wall->bodyID, &wall->pos);
-        const b2BodyType type = b2Body_GetType(wall->bodyID);
-        if (type == b2_staticBody) {
-            // floating wall was previously partially overlapping with a wall,
-            // now it is fully inside a wall, destroy it
-            const enum cc_stat res = cc_array_iter_remove(&iter, NULL);
+        int16_t cellIdx = entityPosToCellIdx(e, pos);
+        if (cellIdx == -1) {
+            ERRORF("floating wall is out of bounds at %f, %f", pos.x, pos.y);
+        }
+
+        const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
+        if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
+            // floating wall is overlapping with a wall, destroy it
+            const enum cc_stat res = cc_array_iter_remove(&floatingWallIter, NULL);
             MAYBE_UNUSED(res);
             ASSERT(res == CC_OK);
             destroyWall(wall);
@@ -561,11 +574,27 @@ void handleSuddenDeath(env *e) {
             DEBUG_LOGF("destroyed floating wall at %f, %f", pos.x, pos.y);
             continue;
         }
+    }
 
-        if (isOverlapping(e, pos, FLOATING_WALL_THICKNESS / 2.0f, FLOATING_WALL_SHAPE, WALL_SHAPE)) {
-            // floating wall is partially overlapping with a wall, make it a static body
-            b2Body_SetType(wall->bodyID, b2_staticBody);
-            DEBUG_LOGF("made floating wall at %f, %f static", pos.x, pos.y);
+    // detroy all projectiles that are now overlapping with a newly placed wall
+    CC_SListIter projectileIter;
+    cc_slist_iter_init(&projectileIter, e->projectiles);
+    projectileEntity *projectile;
+    while (cc_slist_iter_next(&projectileIter, (void **)&projectile) != CC_ITER_END) {
+        const b2Vec2 pos = getCachedPos(projectile->bodyID, &projectile->pos);
+        const int16_t cellIdx = entityPosToCellIdx(e, pos);
+        if (cellIdx == -1) {
+            continue;
+        }
+        const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
+        if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
+            // we have to destroy the projectile using the iterator so
+            // we can continue to iterate correctly, copy the body ID
+            // so we can destroy it after the projectile has been freed
+            cc_slist_iter_remove(&projectileIter, NULL);
+            const b2BodyId bodyID = projectile->bodyID;
+            destroyProjectile(e, projectile, false);
+            b2DestroyBody(bodyID);
         }
     }
 }

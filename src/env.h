@@ -80,35 +80,30 @@ logEntry aggregateAndClearLogBuffer(uint8_t numDrones, logBuffer *logs) {
     return log;
 }
 
+static inline uint16_t mapObsCellIdxOffset(const env *e, const uint16_t cellIdx) {
+    if (e->columns == MAX_MAP_COLUMNS && e->rows == MAX_MAP_ROWS) {
+        return cellIdx;
+    }
+
+    const uint8_t cellRow = cellIdx / e->rows;
+    return cellIdx + (cellRow * (MAX_MAP_ROWS - e->rows));
+}
+
 // computes a grid of the types and locations of static walls in the map;
 // since walls never move, this only needs to be computed once per episode
 void computeWallGridObs(env *e) {
     memset(e->wallObs, 0x0, MAP_OBS_SIZE * sizeof(uint8_t));
 
-    uint8_t skippedCells = 0;
-    uint16_t offset = 0;
-    for (size_t i = 0; i < MAX_MAP_COLUMNS * MAX_MAP_ROWS; i++) {
-        if (e->columns != MAX_MAP_COLUMNS) {
-            const uint8_t cellCol = i % MAX_MAP_COLUMNS;
-            if (cellCol >= e->columns) {
-                skippedCells++;
-                offset++;
-                continue;
-            }
-        }
-
-        const uint16_t cellIdx = i - skippedCells;
-        if (cellIdx >= e->columns * e->rows) {
-            break;
-        }
-        const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
+    for (size_t i = 0; i < cc_array_size(e->cells); i++) {
+        const mapCell *cell = safe_array_get_at(e->cells, i);
         uint8_t wallType = 0;
         if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
             wallType = cell->ent->type + 1;
         }
-        e->wallObs[offset++] = (wallType & TWO_BIT_MASK) << 5;
+        const uint16_t offset = mapObsCellIdxOffset(e, i);
+        e->wallObs[offset] = (wallType & TWO_BIT_MASK) << 5;
 
-        ASSERT(cellIdx <= e->columns * e->rows);
+        ASSERT(i <= e->columns * e->rows);
         ASSERT(offset <= MAP_OBS_SIZE);
     }
 }
@@ -140,15 +135,6 @@ uint16_t findNearestCell(const env *e, const b2Vec2 pos, const uint16_t cellIdx)
     return closestCell;
 }
 
-static inline uint16_t mapObsCellIdxOffset(const env *e, const uint16_t cellIdx) {
-    if (e->columns == MAX_MAP_COLUMNS && e->rows == MAX_MAP_ROWS) {
-        return cellIdx;
-    }
-
-    const uint8_t cellRow = cellIdx / e->rows;
-    return cellIdx + (cellRow * (MAX_MAP_ROWS - e->rows));
-}
-
 static inline float scaleAmmo(const env *e, const droneEntity *drone) {
     int8_t maxAmmo = weaponAmmo(e->defaultWeapon->type, drone->weaponInfo->type);
     float scaledAmmo = 0;
@@ -176,6 +162,7 @@ void computeObs(env *e) {
             if (cellIdx == -1) {
                 ERRORF("floating wall %zu out of bounds at position %f %f", i, pos.x, pos.y);
             }
+
             mapObsOffset = mapObsStart + mapObsCellIdxOffset(e, cellIdx);
             ASSERTF(mapObsOffset <= mapObsStart + MAP_OBS_SIZE, "cellIdx: %d", cellIdx);
             e->obs[mapObsOffset] = (wall->type + 1 & TWO_BIT_MASK) << 5;
@@ -381,6 +368,20 @@ void computeObs(env *e) {
     }
 }
 
+void addSuddenDeathWallsToWallObs(env *e) {
+    for (size_t i = 0; i < cc_array_size(e->walls); i++) {
+        const wallEntity *wall = safe_array_get_at(e->walls, i);
+        if (!wall->isSuddenDeath) {
+            continue;
+        }
+        const uint16_t offset = mapObsCellIdxOffset(e, wall->mapCellIdx);
+        e->wallObs[offset] = ((wall->type + 1) & TWO_BIT_MASK) << 5;
+
+        ASSERT(i <= e->columns * e->rows);
+        ASSERT(offset <= MAP_OBS_SIZE);
+    }
+}
+
 void setupEnv(env *e) {
     e->needsReset = false;
 
@@ -421,6 +422,10 @@ void setupEnv(env *e) {
 
     computeWallGridObs(e);
     computeObs(e);
+
+    if (e->client != NULL) {
+        renderEnv(e);
+    }
 }
 
 env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool discretizeActions, float *contActions, int32_t *discActions, float *rewards, uint8_t *terminals, uint8_t *truncations, logBuffer *logs, uint64_t seed, bool isTraining) {
@@ -593,11 +598,11 @@ float computeReward(env *e, droneEntity *drone) {
 
 const float REWARD_EPS = 0.000001f;
 
-void computeRewards(env *e, const bool roundOver, const uint8_t winner) {
+void computeRewards(env *e, const bool roundOver, const int8_t winner) {
     float rewards[e->numDrones];
     memset(rewards, 0.0f, e->numDrones * sizeof(float));
 
-    if (roundOver) {
+    if (roundOver && winner != -1) {
         rewards[winner] += WIN_REWARD;
     }
 
@@ -807,24 +812,24 @@ void stepEnv(env *e) {
             wall->pos.valid = false;
         }
 
-        // TODO: fix
         // handle sudden death
         e->stepsLeft = fmaxf(e->stepsLeft - 1, 0.0f);
-        // if (e->stepsLeft == 0) {
-        //     e->suddenDeathSteps = fmaxf(e->suddenDeathSteps - 1, 0.0f);
-        //     if (e->suddenDeathSteps == 0) {
-        //         DEBUG_LOG("placing sudden death walls");
-        //         handleSuddenDeath(e);
-        //         e->suddenDeathSteps = SUDDEN_DEATH_STEPS;
-        //     }
-        // }
+        if (e->stepsLeft == 0) {
+            e->suddenDeathSteps = fmaxf(e->suddenDeathSteps - 1, 0.0f);
+            if (e->suddenDeathSteps == 0) {
+                DEBUG_LOG("placing sudden death walls");
+                handleSuddenDeath(e);
+                addSuddenDeathWallsToWallObs(e);
+                e->suddenDeathSteps = SUDDEN_DEATH_STEPS;
+            }
+        }
 
         projectilesStep(e);
 
         handleContactEvents(e);
         handleSensorEvents(e);
 
-        uint8_t lastAlive = 0;
+        int8_t lastAlive = -1;
         uint8_t deadDrones = 0;
         for (uint8_t i = 0; i < e->numDrones; i++) {
             droneEntity *drone = safe_array_get_at(e->drones, i);
@@ -841,7 +846,7 @@ void stepEnv(env *e) {
 
         weaponPickupsStep(e, DELTA_TIME);
 
-        const bool roundOver = deadDrones >= e->numDrones - 1 || e->stepsLeft == 0;
+        const bool roundOver = deadDrones >= e->numDrones - 1;
         computeRewards(e, roundOver, lastAlive);
 
         if (e->client != NULL) {
@@ -849,13 +854,11 @@ void stepEnv(env *e) {
         }
 
         if (roundOver) {
-            if (e->stepsLeft == 0) {
-                memset(e->truncations, 1, e->numAgents * sizeof(uint8_t));
-            } else {
-                memset(e->terminals, 1, e->numAgents * sizeof(uint8_t));
-            }
+            memset(e->terminals, 1, e->numAgents * sizeof(uint8_t));
 
-            e->stats[lastAlive].wins = 1.0f;
+            if (lastAlive != -1) {
+                e->stats[lastAlive].wins = 1.0f;
+            }
 
             // set absolute distance traveled of agent drones
             for (uint8_t i = 0; i < e->numDrones; i++) {
