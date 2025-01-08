@@ -321,7 +321,7 @@ void computeObs(env *e) {
 
             const droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
             const b2Vec2 enemyDroneRelPos = b2Sub(enemyDrone->pos.pos, agentDronePos);
-            const b2Vec2 enemyDroneVel = b2Body_GetLinearVelocity(enemyDrone->bodyID);
+            const float enemyDroneDistance = b2Distance(enemyDrone->pos.pos, agentDronePos);
             const b2Vec2 enemyDroneRelNormPos = b2Normalize(b2Sub(enemyDrone->pos.pos, agentDronePos));
             const float enemyDroneAngle = atan2f(enemyDroneRelNormPos.y, enemyDroneRelNormPos.x);
             const float enemyDroneAimAngle = atan2f(enemyDrone->lastAim.y, enemyDrone->lastAim.x);
@@ -329,11 +329,12 @@ void computeObs(env *e) {
 
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.x, MAX_X_POS, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.y, MAX_Y_POS, false);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneVel.x, MAX_SPEED, false);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneVel.y, MAX_SPEED, false);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneDistance, MAX_DISTANCE, true); // TODO: ablate this
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->lastVelocity.x, MAX_SPEED, false);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->lastVelocity.y, MAX_SPEED, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelNormPos.x, 1.0f, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelNormPos.y, 1.0f, false);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAngle, PI, false);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAngle, PI, false); // TODO: ablate this
             scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->lastAim.x, 1.0f, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->lastAim.y, 1.0f, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAimAngle, PI, false);
@@ -345,16 +346,15 @@ void computeObs(env *e) {
 
         // compute active drone observations
         ASSERTF(scalarObsOffset == DRONE_OBS_OFFSET, "offset: %d", scalarObsOffset);
-        const b2Vec2 agentDroneVel = b2Body_GetLinearVelocity(agentDrone->bodyID);
         const float agentDroneAimAngle = atan2f(agentDrone->lastAim.y, agentDrone->lastAim.x);
 
         scalarObs[scalarObsOffset++] = scaleValue(agentDronePos.x, MAX_X_POS, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDronePos.y, MAX_Y_POS, false);
-        scalarObs[scalarObsOffset++] = scaleValue(agentDroneVel.x, MAX_SPEED, false);
-        scalarObs[scalarObsOffset++] = scaleValue(agentDroneVel.y, MAX_SPEED, false);
+        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->lastVelocity.x, MAX_SPEED, false);
+        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->lastVelocity.y, MAX_SPEED, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->lastAim.x, 1.0f, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->lastAim.y, 1.0f, false);
-        scalarObs[scalarObsOffset++] = scaleValue(agentDroneAimAngle, PI, false);
+        scalarObs[scalarObsOffset++] = scaleValue(agentDroneAimAngle, PI, false); // TODO: ablate this
         scalarObs[scalarObsOffset++] = scaleAmmo(e, agentDrone);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->weaponCooldown, agentDrone->weaponInfo->coolDown, true);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->charge, weaponCharge(agentDrone->weaponInfo->type), true);
@@ -394,7 +394,12 @@ void setupEnv(env *e) {
     e->suddenDeathWallCounter = 0;
 
     DEBUG_LOG("creating map");
-    const int mapIdx = randInt(&e->randState, 0, NUM_MAPS - 1);
+    uint8_t firstMap = 0;
+    // don't evaluate on the boring empty map
+    if (!e->isTraining) {
+        firstMap = 1;
+    }
+    const int mapIdx = randInt(&e->randState, firstMap, NUM_MAPS - 1);
     createMap(e, mapIdx);
 
     mapBounds bounds = {.min = {.x = FLT_MAX, .y = FLT_MAX}, .max = {.x = FLT_MIN, .y = FLT_MIN}};
@@ -563,6 +568,18 @@ float computeReward(env *e, droneEntity *drone) {
             reward += computeShotHitReward(e, i);
         }
 
+        const droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
+        const b2Vec2 enemyDirection = b2Normalize(b2Sub(enemyDrone->pos.pos, drone->pos.pos));
+        const float relVelocity = b2Dot(drone->lastVelocity, enemyDirection);
+        const float enemyDistance = b2Distance(enemyDrone->pos.pos, drone->pos.pos);
+        // stop rewarding approaching an enemy if they're very close
+        // to avoid constant clashing; always reward approaching when
+        // the current weapon is the shotgun, it greatly benefits from
+        // being close to enemies
+        if (relVelocity > 1e-6f && (drone->weaponInfo->type == SHOTGUN_WEAPON || enemyDistance > DISTANCE_CUTOFF)) {
+            reward += APPROACH_REWARD_COEF * relVelocity;
+        }
+
         // if we know this drone is aiming at another drone, then we
         // don't need to check if it's aiming at any more drones
         if (aimingAtEnemy) {
@@ -574,9 +591,7 @@ float computeReward(env *e, droneEntity *drone) {
         // raycasts are expensive
         // TODO: test for overlap with angled rectangle instead, allow for greater
         // aim tolerance
-        const droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
-        const b2Vec2 directionVec = b2Normalize(b2Sub(enemyDrone->pos.pos, drone->pos.pos));
-        const float aimDot = b2Dot(drone->lastAim, directionVec);
+        const float aimDot = b2Dot(drone->lastAim, enemyDirection);
         const float distance = b2Distance(drone->pos.pos, enemyDrone->pos.pos);
         const float aimThreshold = cosf(atanf(AIM_TOLERANCE / distance));
         if (aimDot >= aimThreshold) {
