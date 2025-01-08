@@ -184,7 +184,7 @@ const mapEntry clownHouseMap = {
 
 // clang-format on
 
-#define NUM_MAPS 5
+#define NUM_MAPS 4
 
 #ifndef AUTOPXD
 const mapEntry *maps[] = {
@@ -192,7 +192,7 @@ const mapEntry *maps[] = {
     (mapEntry *)&prototypeArenaMap,
     (mapEntry *)&snipersMap,
     (mapEntry *)&roomsMap,
-    (mapEntry *)&clownHouseMap,
+    //(mapEntry *)&clownHouseMap,
 };
 #endif
 

@@ -123,7 +123,7 @@ def eval_policy(env: pufferlib.PufferEnv, policy, device, data=None, bestEval: f
 
         ob, reward, done, trunc, info = env.step(action)
         totalReward += reward
-        if reward != 0:
+        if reward.any() != 0:
             print(f"Reward: {reward}")
         steps += 1
 
@@ -256,7 +256,7 @@ if __name__ == "__main__":
         )
 
         if args.eval_model_path is None:
-            policy = make_policy(vecenv, args.env, True).to(args.train.device)
+            policy = make_policy(vecenv, args.env, False).to(args.train.device)
         else:
             policy = th.load(args.eval_model_path, map_location=args.train.device)
             policy.policy.policy.isTraining = False

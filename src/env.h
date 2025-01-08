@@ -306,9 +306,10 @@ void computeObs(env *e) {
             ASSERTF(scalarObsOffset <= PROJECTILE_POS_OBS_OFFSET, "offset: %d", scalarObsOffset);
             scalarObs[scalarObsOffset] = projectile->weaponInfo->type + 1;
 
-            scalarObsOffset = PROJECTILE_POS_OBS_OFFSET + (projIdx * PROJECTILE_POS_OBS_SIZE);
+            scalarObsOffset = PROJECTILE_POS_OBS_OFFSET + (projIdx * PROJECTILE_INFO_OBS_SIZE);
             ASSERTF(scalarObsOffset <= ENEMY_DRONE_OBS_OFFSET, "offset: %d", scalarObsOffset);
             const b2Vec2 projectileRelPos = b2Sub(projectile->lastPos, agentDronePos);
+            scalarObs[scalarObsOffset++] = projectile->droneIdx + 1;
             scalarObs[scalarObsOffset++] = scaleValue(projectileRelPos.x, MAX_X_POS, false);
             scalarObs[scalarObsOffset] = scaleValue(projectileRelPos.y, MAX_Y_POS, false);
 
@@ -316,36 +317,50 @@ void computeObs(env *e) {
         }
 
         // compute enemy drone observations
-        // TODO: handle multiple enemy drones
-        const droneEntity *enemyDrone = safe_array_get_at(e->drones, 1);
-        const b2Vec2 enemyDroneRelPos = b2Sub(enemyDrone->pos.pos, agentDronePos);
-        const b2Vec2 enemyDroneVel = b2Body_GetLinearVelocity(enemyDrone->bodyID);
-        const b2Vec2 enemyDroneRelNormPos = b2Normalize(b2Sub(enemyDrone->pos.pos, agentDronePos));
-        const float enemyDroneAngle = atan2f(enemyDroneRelNormPos.y, enemyDroneRelNormPos.x);
-        const float enemyDroneAimAngle = atan2f(enemyDrone->lastAim.y, enemyDrone->lastAim.x);
-        scalarObsOffset = ENEMY_DRONE_OBS_OFFSET;
+        // TODO: handle multiple enemy drones correctly
+        bool hitShot = false;
+        bool tookShot = false;
+        for (uint8_t i = 0; i < e->numDrones; i++) {
+            if (i == agent) {
+                continue;
+            }
 
-        scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.x, MAX_X_POS, false);
-        scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.y, MAX_Y_POS, false);
-        scalarObs[scalarObsOffset++] = scaleValue(enemyDroneVel.x, MAX_SPEED, false);
-        scalarObs[scalarObsOffset++] = scaleValue(enemyDroneVel.y, MAX_SPEED, false);
-        scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelNormPos.x, 1.0f, false);
-        scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelNormPos.y, 1.0f, false);
-        scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAngle, PI, false);
-        scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->lastAim.x, 1.0f, false);
-        scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->lastAim.y, 1.0f, false);
-        scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAimAngle, PI, false);
-        scalarObs[scalarObsOffset++] = scaleAmmo(e, enemyDrone);
-        scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->weaponCooldown, enemyDrone->weaponInfo->coolDown, true);
-        scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->charge, weaponCharge(enemyDrone->weaponInfo->type), true);
-        scalarObs[scalarObsOffset++] = enemyDrone->weaponInfo->type + 1;
+            if (agentDrone->stepInfo.shotHit[i]) {
+                hitShot = true;
+            }
+            if (agentDrone->stepInfo.shotTaken[i]) {
+                tookShot = true;
+            }
+
+            const droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
+            const b2Vec2 enemyDroneRelPos = b2Sub(enemyDrone->pos.pos, agentDronePos);
+            const b2Vec2 enemyDroneVel = b2Body_GetLinearVelocity(enemyDrone->bodyID);
+            const b2Vec2 enemyDroneRelNormPos = b2Normalize(b2Sub(enemyDrone->pos.pos, agentDronePos));
+            const float enemyDroneAngle = atan2f(enemyDroneRelNormPos.y, enemyDroneRelNormPos.x);
+            const float enemyDroneAimAngle = atan2f(enemyDrone->lastAim.y, enemyDrone->lastAim.x);
+            scalarObsOffset = ENEMY_DRONE_OBS_OFFSET;
+
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.x, MAX_X_POS, false);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.y, MAX_Y_POS, false);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneVel.x, MAX_SPEED, false);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneVel.y, MAX_SPEED, false);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelNormPos.x, 1.0f, false);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelNormPos.y, 1.0f, false);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAngle, PI, false);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->lastAim.x, 1.0f, false);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->lastAim.y, 1.0f, false);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAimAngle, PI, false);
+            scalarObs[scalarObsOffset++] = scaleAmmo(e, enemyDrone);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->weaponCooldown, enemyDrone->weaponInfo->coolDown, true);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->charge, weaponCharge(enemyDrone->weaponInfo->type), true);
+            scalarObs[scalarObsOffset++] = enemyDrone->weaponInfo->type + 1;
+        }
 
         // compute active drone observations
         ASSERTF(scalarObsOffset == DRONE_OBS_OFFSET, "offset: %d", scalarObsOffset);
         const b2Vec2 agentDroneVel = b2Body_GetLinearVelocity(agentDrone->bodyID);
         const float agentDroneAimAngle = atan2f(agentDrone->lastAim.y, agentDrone->lastAim.x);
 
-        scalarObs[scalarObsOffset++] = scaleValue(e->stepsLeft, ROUND_STEPS, true);
         scalarObs[scalarObsOffset++] = scaleValue(agentDronePos.x, MAX_X_POS, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDronePos.y, MAX_Y_POS, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDroneVel.x, MAX_SPEED, false);
@@ -356,7 +371,13 @@ void computeObs(env *e) {
         scalarObs[scalarObsOffset++] = scaleAmmo(e, agentDrone);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->weaponCooldown, agentDrone->weaponInfo->coolDown, true);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->charge, weaponCharge(agentDrone->weaponInfo->type), true);
-        scalarObs[scalarObsOffset] = agentDrone->weaponInfo->type + 1;
+        scalarObs[scalarObsOffset++] = hitShot;
+        scalarObs[scalarObsOffset++] = tookShot;
+        scalarObs[scalarObsOffset++] = agentDrone->stepInfo.ownShotTaken;
+        scalarObs[scalarObsOffset++] = agentDrone->weaponInfo->type + 1;
+
+        ASSERTF(scalarObsOffset == MISC_OBS_OFFSET, "offset: %d", scalarObsOffset);
+        scalarObs[scalarObsOffset] = scaleValue(e->stepsLeft, ROUND_STEPS, true);
     }
 }
 
@@ -386,7 +407,7 @@ void setupEnv(env *e) {
     e->bounds = bounds;
 
     DEBUG_LOG("creating drones");
-    for (int i = 0; i < e->numDrones; i++) {
+    for (uint8_t i = 0; i < e->numDrones; i++) {
         createDrone(e, i);
     }
 
@@ -394,7 +415,7 @@ void setupEnv(env *e) {
     placeRandFloatingWalls(e, mapIdx);
 
     DEBUG_LOG("creating weapon pickups");
-    for (int i = 0; i < maps[mapIdx]->weaponPickups; i++) {
+    for (uint8_t i = 0; i < maps[mapIdx]->weaponPickups; i++) {
         createWeaponPickup(e);
     }
 
@@ -523,9 +544,6 @@ float computeShotHitReward(env *e, const uint8_t enemyIdx) {
 
 float computeReward(env *e, droneEntity *drone) {
     float reward = 0.0f;
-    if (drone->dead) {
-        reward += DEATH_PUNISHMENT;
-    }
 
     // TODO: compute kill reward
     bool aimingAtEnemy = false;
@@ -533,7 +551,7 @@ float computeReward(env *e, droneEntity *drone) {
         if (i == drone->idx) {
             continue;
         }
-        if (drone->stepInfo.pickedUpWeapon && drone->stepInfo.prevWeapon != drone->weaponInfo->type && drone->stepInfo.prevWeapon == STANDARD_WEAPON) {
+        if (drone->stepInfo.pickedUpWeapon && drone->stepInfo.prevWeapon == STANDARD_WEAPON) {
             reward += WEAPON_PICKUP_REWARD;
         }
         if (drone->stepInfo.shotHit[i] || drone->stepInfo.explosionHit[i]) {
@@ -549,6 +567,8 @@ float computeReward(env *e, droneEntity *drone) {
         // only check if this drone has a clear line of sight to the
         // other drone if it's aiming in the other drone's direction,
         // raycasts are expensive
+        // TODO: test for overlap with angled rectangle instead, allow for greater
+        // aim tolerance
         const droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
         const b2Vec2 directionVec = b2Normalize(b2Sub(enemyDrone->pos.pos, drone->pos.pos));
         const float aimDot = b2Dot(drone->lastAim, directionVec);
@@ -571,25 +591,29 @@ float computeReward(env *e, droneEntity *drone) {
     return reward;
 }
 
+const float REWARD_EPS = 0.000001f;
+
 void computeRewards(env *e, const bool roundOver, const uint8_t winner) {
+    float rewards[e->numDrones];
+    memset(rewards, 0.0f, e->numDrones * sizeof(float));
+
     if (roundOver) {
-        if (winner < e->numAgents) {
-            e->rewards[winner] += WIN_REWARD;
-        }
-        e->stats[winner].reward += WIN_REWARD;
+        rewards[winner] += WIN_REWARD;
     }
 
-    for (int i = 0; i < e->numDrones; i++) {
+    for (uint8_t i = 0; i < e->numDrones; i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
-        const float reward = computeReward(e, drone);
-        if (i < e->numAgents) {
-            e->rewards[i] += reward;
-        }
-        e->stats[i].reward += reward;
+        rewards[i] += computeReward(e, drone);
+    }
 
-        if (reward != 0.0f) {
-            DEBUG_LOGF("step: %f drone: %d reward: %f", ROUND_STEPS - e->stepsLeft, i, reward);
-        }
+    // TODO: handle 1 agent correctly
+    if (e->numAgents > 1) {
+        // TODO: handle 3+ agents correctly
+        e->rewards[0] += rewards[0] - rewards[1];
+        e->rewards[1] += rewards[1] - rewards[0];
+
+        e->stats[0].reward += e->rewards[0];
+        e->stats[1].reward += e->rewards[1];
     }
 }
 
@@ -852,6 +876,13 @@ void stepEnv(env *e) {
 
             e->needsReset = true;
             break;
+        }
+    }
+
+    for (uint8_t i = 0; i < e->numAgents; i++) {
+        const float reward = e->rewards[i];
+        if (reward > REWARD_EPS || reward < -REWARD_EPS) {
+            DEBUG_LOGF("step: %f drone: %d reward: %f", ROUND_STEPS - e->stepsLeft, i, reward);
         }
     }
 

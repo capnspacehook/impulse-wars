@@ -41,6 +41,7 @@ void perfTest(const float testTime) {
     fastFree(actions);
     fastFree(rewards);
     fastFree(terminals);
+    fastFree(truncations);
     destroyLogBuffer(logs);
     fastFree(e);
 }

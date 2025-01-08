@@ -149,20 +149,19 @@ static inline float clamp(float f) {
     return fminf(fmaxf(f, -1.0f), 1.0f);
 }
 
-// normalize value to be between 0 and max, and clamp to 0 and max;
+// normalize value to be between 0 and max, or -max and max;
 // minIsZero determines if the min value is 0 or -max
 static inline float scaleValue(const float v, const float max, const bool minIsZero) {
     ASSERTF(v <= max, "v: %f, max: %f", v, max);
     ASSERTF(!minIsZero || v >= 0, "v: %f", v);
     ASSERTF(minIsZero || v >= -max, "v: %f, -max: %f", v, -max);
 
-    float scaled = 0.0f;
+    float scaled = v / max;
     if (minIsZero) {
-        scaled = v / max;
+        return fmaxf(fminf(scaled, max), 0.0f);
     } else {
-        scaled = (v + max) / (max * 2.0f);
+        return fmaxf(fminf(scaled, max), -1.0f);
     }
-    return fmaxf(fminf(scaled, max), 0.0f);
 }
 
 static inline uint8_t oneHotEncode(float *obs, const uint16_t offset, const uint8_t val, const uint8_t max) {

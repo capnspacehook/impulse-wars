@@ -412,14 +412,16 @@ bool explosionOverlapCallback(b2ShapeId shapeId, void *context) {
     entity *ent = (entity *)b2Shape_GetUserData(shapeId);
     droneEntity *hitDrone = (droneEntity *)ent->entity;
     if (hitDrone->idx == ctx->drone->idx) {
+        hitDrone->stepInfo.ownShotTaken = true;
         ctx->e->stats[hitDrone->idx].ownShotsTaken[ctx->weaponType]++;
         DEBUG_LOGF("drone %d hit itself with explosion from weapon %d", ctx->drone->idx, ctx->weaponType);
         return true;
     }
-    ctx->drone->stepInfo.explosionHit[hitDrone->idx] = true;
 
+    ctx->drone->stepInfo.explosionHit[hitDrone->idx] = true;
     ctx->e->stats[ctx->drone->idx].shotsHit[ctx->weaponType]++;
     DEBUG_LOGF("drone %d hit drone %d with explosion from weapon %d", ctx->drone->idx, hitDrone->idx, ctx->weaponType);
+    hitDrone->stepInfo.shotTaken[ctx->drone->idx] = true;
     ctx->e->stats[hitDrone->idx].shotsTaken[ctx->weaponType]++;
     DEBUG_LOGF("drone %d hit by explosion from drone %d with weapon %d", hitDrone->idx, ctx->drone->idx, ctx->weaponType);
 
@@ -429,7 +431,7 @@ bool explosionOverlapCallback(b2ShapeId shapeId, void *context) {
 void destroyProjectile(env *e, projectileEntity *projectile, const bool full) {
     // explode projectile if necessary
     b2ExplosionDef explosion;
-    if (weaponExplosion(projectile->weaponInfo->type, &explosion)) {
+    if (full && weaponExplosion(projectile->weaponInfo->type, &explosion)) {
         const b2Vec2 pos = getCachedPos(projectile->bodyID, &projectile->pos);
         explosion.position = pos;
         explosion.maskBits = FLOATING_WALL_SHAPE | DRONE_SHAPE;
@@ -735,16 +737,18 @@ bool handleProjectileBeginContact(env *e, const entity *proj, const entity *ent)
     } else if (ent->type != BOUNCY_WALL_ENTITY) {
         projectile->bounces++;
         if (ent->type == DRONE_ENTITY) {
-            const droneEntity *hitDrone = (droneEntity *)ent->entity;
+            droneEntity *hitDrone = (droneEntity *)ent->entity;
             if (projectile->droneIdx != hitDrone->idx) {
                 droneEntity *shooterDrone = safe_array_get_at(e->drones, projectile->droneIdx);
-                shooterDrone->stepInfo.shotHit[hitDrone->idx] = true;
 
+                shooterDrone->stepInfo.shotHit[hitDrone->idx] = true;
                 e->stats[shooterDrone->idx].shotsHit[projectile->weaponInfo->type]++;
                 DEBUG_LOGF("drone %d hit drone %d with weapon %d", shooterDrone->idx, hitDrone->idx, projectile->weaponInfo->type);
+                hitDrone->stepInfo.shotTaken[shooterDrone->idx] = true;
                 e->stats[hitDrone->idx].shotsTaken[projectile->weaponInfo->type]++;
                 DEBUG_LOGF("drone %d hit by drone %d with weapon %d", hitDrone->idx, shooterDrone->idx, projectile->weaponInfo->type);
             } else {
+                hitDrone->stepInfo.ownShotTaken = true;
                 e->stats[hitDrone->idx].ownShotsTaken[projectile->weaponInfo->type]++;
                 DEBUG_LOGF("drone %d hit by own weapon %d", hitDrone->idx, projectile->weaponInfo->type);
             }
