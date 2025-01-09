@@ -352,6 +352,8 @@ void computeObs(env *e) {
             const droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
             const b2Vec2 enemyDroneRelPos = b2Sub(enemyDrone->pos.pos, agentDronePos);
             const float enemyDroneDistance = b2Distance(enemyDrone->pos.pos, agentDronePos);
+            const b2Vec2 enemyDroneVel = b2Body_GetLinearVelocity(enemyDrone->bodyID);
+            const b2Vec2 enemyDroneAccel = b2Sub(enemyDroneVel, enemyDrone->lastVelocity);
             const b2Vec2 enemyDroneRelNormPos = b2Normalize(b2Sub(enemyDrone->pos.pos, agentDronePos));
             const float enemyDroneAngle = atan2f(enemyDroneRelNormPos.y, enemyDroneRelNormPos.x);
             const float enemyDroneAimAngle = atan2f(enemyDrone->lastAim.y, enemyDrone->lastAim.x);
@@ -360,8 +362,10 @@ void computeObs(env *e) {
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.x, MAX_X_POS, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.y, MAX_Y_POS, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneDistance, MAX_DISTANCE, true); // TODO: ablate this
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->lastVelocity.x, MAX_SPEED, false);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->lastVelocity.y, MAX_SPEED, false);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneVel.x, MAX_SPEED, false);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneVel.y, MAX_SPEED, false);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAccel.x, MAX_SPEED, false);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAccel.y, MAX_SPEED, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelNormPos.x, 1.0f, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelNormPos.y, 1.0f, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAngle, PI, false); // TODO: ablate this
@@ -376,12 +380,16 @@ void computeObs(env *e) {
 
         // compute active drone observations
         ASSERTF(scalarObsOffset == DRONE_OBS_OFFSET, "offset: %d", scalarObsOffset);
+        const b2Vec2 agentDroneVel = b2Body_GetLinearVelocity(agentDrone->bodyID);
+        const b2Vec2 agentDroneAccel = b2Sub(agentDroneVel, agentDrone->lastVelocity);
         const float agentDroneAimAngle = atan2f(agentDrone->lastAim.y, agentDrone->lastAim.x);
 
         scalarObs[scalarObsOffset++] = scaleValue(agentDronePos.x, MAX_X_POS, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDronePos.y, MAX_Y_POS, false);
-        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->lastVelocity.x, MAX_SPEED, false);
-        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->lastVelocity.y, MAX_SPEED, false);
+        scalarObs[scalarObsOffset++] = scaleValue(agentDroneVel.x, MAX_SPEED, false);
+        scalarObs[scalarObsOffset++] = scaleValue(agentDroneVel.y, MAX_SPEED, false);
+        scalarObs[scalarObsOffset++] = scaleValue(agentDroneAccel.x, MAX_SPEED, false);
+        scalarObs[scalarObsOffset++] = scaleValue(agentDroneAccel.y, MAX_SPEED, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->lastAim.x, 1.0f, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->lastAim.y, 1.0f, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDroneAimAngle, PI, false); // TODO: ablate this
