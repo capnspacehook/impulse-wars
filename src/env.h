@@ -80,6 +80,7 @@ logEntry aggregateAndClearLogBuffer(uint8_t numDrones, logBuffer *logs) {
     return log;
 }
 
+// returns a cell index that is closest to pos that isn't cellIdx
 uint16_t findNearestCell(const env *e, const b2Vec2 pos, const uint16_t cellIdx) {
     uint8_t cellOffsets[8][2] = {
         {-1, 0},  // left
@@ -359,6 +360,7 @@ void computeObs(env *e) {
             const float enemyDroneAimAngle = atan2f(enemyDrone->lastAim.y, enemyDrone->lastAim.x);
             scalarObsOffset = ENEMY_DRONE_OBS_OFFSET;
 
+            scalarObs[scalarObsOffset++] = (float)agentDrone->inLineOfSight[i];
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.x, MAX_X_POS, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.y, MAX_Y_POS, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneDistance, MAX_DISTANCE, true); // TODO: ablate this
@@ -574,7 +576,6 @@ float computeShotHitReward(env *e, const uint8_t enemyIdx) {
 float computeReward(env *e, droneEntity *drone) {
     float reward = 0.0f;
 
-    // TODO: compute kill reward
     bool aimingAtEnemy = false;
     for (uint8_t i = 0; i < e->numDrones; i++) {
         if (i == drone->idx) {
@@ -595,42 +596,33 @@ float computeReward(env *e, droneEntity *drone) {
         // to avoid constant clashing; always reward approaching when
         // the current weapon is the shotgun, it greatly benefits from
         // being close to enemies
-        if (velocityToEnemy > 1e-6f && (drone->weaponInfo->type == SHOTGUN_WEAPON || enemyDistance > DISTANCE_CUTOFF)) {
+        if (velocityToEnemy > 0.1f && (drone->weaponInfo->type == SHOTGUN_WEAPON || enemyDistance > DISTANCE_CUTOFF)) {
             reward += APPROACH_REWARD_COEF * velocityToEnemy;
         }
 
-        // if we know this drone is aiming at another drone, then we
-        // don't need to check if it's aiming at any more drones
-        if (aimingAtEnemy) {
+        // if we know this drone is aiming at another drone or doesn't
+        /// have the enemy drone in the line of sight, then we
+        // don't need to check if it's aiming at the enemy drone
+        if (aimingAtEnemy || !drone->inLineOfSight[i]) {
             continue;
         }
 
-        // only check if this drone has a clear line of sight to the
-        // other drone if it's aiming in the other drone's direction,
-        // raycasts are expensive
-        // TODO: test for overlap with angled rectangle instead, allow for greater
-        // aim tolerance
         const float aimDot = b2Dot(drone->lastAim, enemyDirection);
         const float distance = b2Distance(drone->pos.pos, enemyDrone->pos.pos);
         const float aimThreshold = cosf(atanf(AIM_TOLERANCE / distance));
         if (aimDot >= aimThreshold) {
-            const b2RayResult rayRes = droneAimingAt(e, drone);
-            ASSERT(b2Shape_IsValid(rayRes.shapeId));
-            const entity *ent = (entity *)b2Shape_GetUserData(rayRes.shapeId);
-            if (ent->type == DRONE_ENTITY) {
-                reward += AIM_REWARD;
-                if (drone->stepInfo.firedShot) {
-                    reward += AIMED_SHOT_REWARD;
-                }
-                aimingAtEnemy = true;
+            reward += AIM_REWARD;
+            if (drone->stepInfo.firedShot) {
+                reward += AIMED_SHOT_REWARD;
             }
+            aimingAtEnemy = true;
         }
     }
 
     return reward;
 }
 
-const float REWARD_EPS = 0.000001f;
+const float REWARD_EPS = 1.0e-6f;
 
 void computeRewards(env *e, const bool roundOver, const int8_t winner) {
     float rewards[e->numDrones];
@@ -822,6 +814,7 @@ void stepEnv(env *e) {
             droneEntity *drone = safe_array_get_at(e->drones, i);
             drone->lastVelocity = b2Body_GetLinearVelocity(drone->bodyID);
             memset(&drone->stepInfo, 0x0, sizeof(droneStepInfo));
+            memset(&drone->inLineOfSight, 0x0, sizeof(drone->inLineOfSight));
 
             agentActions actions;
             // take inputs from humans every frame

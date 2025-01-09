@@ -164,6 +164,7 @@ typedef struct droneEntity {
     b2Vec2 lastMove;
     b2Vec2 lastAim;
     b2Vec2 lastVelocity;
+    bool inLineOfSight[_MAX_DRONES];
     droneStepInfo stepInfo;
     bool dead;
 } droneEntity;

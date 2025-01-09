@@ -338,6 +338,7 @@ void createDrone(env *e, const uint8_t idx) {
     drone->lastVelocity = b2Vec2_zero;
     drone->dead = false;
     memset(&drone->stepInfo, 0x0, sizeof(droneStepInfo));
+    memset(&drone->inLineOfSight, 0x0, sizeof(drone->inLineOfSight));
 
     entity *ent = (entity *)fastMalloc(sizeof(entity));
     ent->type = DRONE_ENTITY;
@@ -667,20 +668,41 @@ void droneStep(env *e, droneEntity *drone, const float frameTime) {
     } else {
         drone->shotThisStep = false;
     }
-    ASSERT(drone->shotThisStep == false);
+    ASSERT(!drone->shotThisStep);
 
     const b2Vec2 pos = getCachedPos(drone->bodyID, &drone->pos);
     const float distance = b2Distance(drone->lastPos, pos);
     e->stats[drone->idx].distanceTraveled += distance;
     drone->lastPos = pos;
-}
 
-b2RayResult droneAimingAt(const env *e, droneEntity *drone) {
-    const b2Vec2 pos = getCachedPos(drone->bodyID, &drone->pos);
-    const b2Vec2 rayEnd = b2MulAdd(pos, 150.0f, drone->lastAim);
-    const b2Vec2 translation = b2Sub(rayEnd, pos);
-    const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | DRONE_SHAPE};
-    return b2World_CastRayClosest(e->worldID, pos, translation, filter);
+    // update line of sight info for this drone
+    for (uint8_t i = 0; i < e->numDrones; i++) {
+        if (i == drone->idx || drone->inLineOfSight[i]) {
+            continue;
+        }
+
+        droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
+        const b2Vec2 enemyPos = enemyDrone->pos.pos;
+        const float distance = b2Distance(enemyPos, pos);
+        const b2Vec2 enemyDirection = b2Normalize(b2Sub(enemyPos, pos));
+        const b2Vec2 rayEnd = b2MulAdd(pos, distance, enemyDirection);
+        const b2Vec2 translation = b2Sub(rayEnd, pos);
+        const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | DRONE_SHAPE};
+        const b2RayResult rayRes = b2World_CastRayClosest(e->worldID, pos, translation, filter);
+
+        if (!rayRes.hit) {
+            continue;
+        }
+        ASSERT(b2Shape_IsValid(rayRes.shapeId));
+        const entity *ent = b2Shape_GetUserData(rayRes.shapeId);
+        if (ent != NULL && ent->type == DRONE_ENTITY) {
+            // get the drone entity in case another drone is between the
+            // current drone and the enemy drone
+            droneEntity *closestDrone = ent->entity;
+            closestDrone->inLineOfSight[drone->idx] = true;
+            drone->inLineOfSight[closestDrone->idx] = true;
+        }
+    }
 }
 
 void projectilesStep(env *e) {

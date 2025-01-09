@@ -193,6 +193,14 @@ Color getDroneColor(const int droneIdx) {
     }
 }
 
+b2RayResult droneAimingAt(const env *e, droneEntity *drone) {
+    const b2Vec2 pos = getCachedPos(drone->bodyID, &drone->pos);
+    const b2Vec2 rayEnd = b2MulAdd(pos, 150.0f, drone->lastAim);
+    const b2Vec2 translation = b2Sub(rayEnd, pos);
+    const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | DRONE_SHAPE};
+    return b2World_CastRayClosest(e->worldID, pos, translation, filter);
+}
+
 void renderDroneGuides(const env *e, droneEntity *drone, const int droneIdx) {
     b2Vec2 pos = b2Body_GetPosition(drone->bodyID);
     const float rayX = b2XToRayX(e->client, pos.x);
