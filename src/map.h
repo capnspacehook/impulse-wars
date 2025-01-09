@@ -53,7 +53,7 @@ const char prototypeArenaLayout[] = {
     'D','O','O','O','O','O','O','O','O','O','O','O','O','O','w','O','O','O','O','D',
     'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
     'D','O','O','O','O','O','O','O','O','W','W','O','O','O','O','O','O','O','O','D',
-    'D','O','O','O','O','O','O','D','D','D','D','D','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','D','D','W','W','D','O','O','O','O','O','O','O','D',
     'D','O','O','O','O','d','O','D','D','D','D','D','O','O','O','O','O','O','O','D',
     'D','O','w','O','O','O','O','D','D','D','D','D','O','O','O','O','w','O','O','D',
     'D','O','O','O','O','O','O','D','D','D','D','D','O','O','O','O','O','O','O','D',
@@ -144,31 +144,143 @@ const mapEntry roomsMap = {
     .floatingStandardWalls = 3,
     .floatingBouncyWalls = 0,
     .floatingDeathWalls = 3,
-    .weaponPickups = 8,
+    .weaponPickups = 12,
     .defaultWeapon = SHOTGUN_WEAPON,
 };
 
+const char xArenaLayout[] = {
+    'D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','d','O','O','O','O','O','O','O','O','O','d','O','D',
+    'D','O','w','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','d','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','W','W','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','D','W','W','D','D','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','D','D','D','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','D','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','D','O','O','O','O','O','O','O','O','O','D','O','O','O','O','O','D',
+    'D','O','O','O','O','O','D','D','O','O','w','O','O','O','O','D','W','W','O','O','O','O','D',
+    'D','O','O','O','O','W','W','D','D','O','O','O','O','O','D','D','W','W','O','O','w','O','D',
+    'D','O','w','O','O','W','W','D','O','O','O','O','d','O','O','D','D','O','O','O','O','O','D',
+    'D','O','O','O','O','O','D','O','O','O','O','O','O','O','O','O','D','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','D','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','D','D','D','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','D','D','W','W','D','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','W','W','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','w','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','w','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','d','D',
+    'D','O','d','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D',
+};
+
+const mapEntry xArena = {
+    .layout = xArenaLayout,
+    .columns = 23,
+    .rows = 23,
+    .floatingStandardWalls = 0,
+    .floatingBouncyWalls = 0,
+    .floatingDeathWalls = 0,
+    .weaponPickups = 12,
+    .defaultWeapon = STANDARD_WEAPON,
+};
+
+const char crossBounceLayout[] = {
+    'D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D',
+    'D','B','B','B','B','O','O','O','O','B','D','D','D','D','B','O','O','O','O','B','B','B','B','D',
+    'D','B','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','B','D',
+    'D','B','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','B','D',
+    'D','B','O','O','B','B','O','O','O','O','O','w','d','O','O','O','O','O','B','B','O','O','B','D',
+    'D','O','O','O','B','D','D','O','O','O','O','O','O','O','O','O','O','D','D','B','O','O','O','D',
+    'D','O','O','O','O','D','O','O','O','O','O','O','O','O','O','O','O','O','D','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','D','B','O','O','B','D','O','O','O','O','O','O','O','O','D',
+    'D','B','O','O','O','O','O','O','D','D','B','O','O','B','D','D','O','O','O','O','O','O','B','D',
+    'D','D','O','O','O','O','O','O','B','B','B','O','O','B','B','B','O','O','O','O','O','O','D','D',
+    'D','D','O','O','d','O','O','O','O','O','O','O','O','O','O','O','O','O','O','w','O','O','D','D',
+    'D','D','O','O','w','O','O','O','O','O','O','O','O','O','O','O','O','O','O','d','O','O','D','D',
+    'D','D','O','O','O','O','O','O','B','B','B','O','O','B','B','B','O','O','O','O','O','O','D','D',
+    'D','B','O','O','O','O','O','O','D','D','B','O','O','B','D','D','O','O','O','O','O','O','B','D',
+    'D','O','O','O','O','O','O','O','O','D','B','O','O','B','D','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','D','O','O','O','O','O','O','O','O','O','O','O','O','D','O','O','O','O','D',
+    'D','O','O','O','B','D','D','O','O','O','O','O','O','O','O','O','O','D','D','B','O','O','O','D',
+    'D','B','O','O','B','B','O','O','O','O','O','d','w','O','O','O','O','O','B','B','O','O','B','D',
+    'D','B','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','B','D',
+    'D','B','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','B','D',
+    'D','B','B','B','B','O','O','O','O','B','D','D','D','D','B','O','O','O','O','B','B','B','B','D',
+    'D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D',
+};
+
+const mapEntry crossBounce = {
+    .layout = crossBounceLayout,
+    .columns = 24,
+    .rows = 24,
+    .floatingStandardWalls = 0,
+    .floatingBouncyWalls = 0,
+    .floatingDeathWalls = 0,
+    .weaponPickups = 12,
+    .defaultWeapon = STANDARD_WEAPON,// TODO: make this exploding weapon
+};
+
+const char asteriskArenaLayout[]= {
+    'D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','D','W','O','O','O','W','D','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','D','O','O','O','D','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','D','D','O','O','O','O','O','O','O','O','O','D','D','O','O','O','O','D',
+    'D','O','O','O','O','W','W','D','O','O','O','O','O','O','O','D','W','W','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','D','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','W','W','D','O','O','O','O','O','O','O','D','W','W','O','O','O','O','D',
+    'D','O','O','O','O','D','D','O','O','O','O','O','O','O','O','O','D','D','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','D','O','O','O','D','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','D','W','O','O','O','W','D','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D',
+};
+
+const mapEntry asteriskArena = {
+    .layout = asteriskArenaLayout,
+    .columns = 23,
+    .rows = 23,
+    .floatingStandardWalls = 0,
+    .floatingBouncyWalls = 0,
+    .floatingDeathWalls = 0,
+    .weaponPickups = 12,
+    .defaultWeapon = STANDARD_WEAPON,
+};
+
 const char foamPitLayout[] = {
-    'B','B','B','W','W','W','W','W','W','B','B','W','W','W','W','W','W','B','B','B',
+    'B','B','B','W','W','W','D','D','D','B','B','D','D','D','W','W','W','B','B','B',
     'B','O','O','O','O','O','O','O','D','B','B','D','O','O','O','O','O','O','O','B',
     'B','O','O','O','O','O','O','O','O','B','B','O','O','O','O','O','O','O','O','B',
     'W','O','O','d','O','O','O','O','O','O','O','O','O','O','O','O','d','O','O','W',
     'W','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','W',
     'W','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','W',
-    'W','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','W',
-    'W','O','O','O','O','O','O','d','O','O','O','O','d','O','O','O','O','O','O','W',
-    'W','D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D','W',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','d','O','O','O','O','d','O','O','O','O','O','O','D',
+    'D','D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D','D',
     'B','B','B','O','O','O','O','O','O','d','d','O','O','O','O','O','O','B','B','B',
     'B','B','B','O','O','O','O','O','O','d','d','O','O','O','O','O','O','B','B','B',
-    'W','D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D','W',
-    'W','O','O','O','O','O','O','d','O','O','O','O','d','O','O','O','O','O','O','W',
-    'W','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','W',
+    'D','D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D','D',
+    'D','O','O','O','O','O','O','d','O','O','O','O','d','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
     'W','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','W',
     'W','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','W',
     'W','O','O','d','O','O','O','O','O','O','O','O','O','O','O','O','d','O','O','W',
     'B','O','O','O','O','O','O','O','O','B','B','O','O','O','O','O','O','O','O','B',
     'B','O','O','O','O','O','O','O','D','B','B','D','O','O','O','O','O','O','O','B',
-    'B','B','B','W','W','W','W','W','W','B','B','W','W','W','W','W','W','B','B','B',
+    'B','B','B','W','W','W','D','D','D','B','B','D','D','D','W','W','W','B','B','B',
 };
 
 const mapEntry foamPitMap = {
@@ -184,7 +296,7 @@ const mapEntry foamPitMap = {
 
 // clang-format on
 
-#define NUM_MAPS 5
+#define NUM_MAPS 8
 
 #ifndef AUTOPXD
 const mapEntry *maps[] = {
@@ -192,6 +304,9 @@ const mapEntry *maps[] = {
     (mapEntry *)&prototypeArenaMap,
     (mapEntry *)&snipersMap,
     (mapEntry *)&roomsMap,
+    (mapEntry *)&xArena,
+    (mapEntry *)&crossBounce,
+    (mapEntry *)&asteriskArena,
     (mapEntry *)&foamPitMap,
 };
 #endif
