@@ -148,31 +148,31 @@ const mapEntry roomsMap = {
     .defaultWeapon = SHOTGUN_WEAPON,
 };
 
-const char clownHouseLayout[] = {
-    'W','W','W','B','B','W','B','B','W','B','B','W','B','B','W','B','B','W','W','W',
+const char foamPitLayout[] = {
+    'B','B','B','W','W','W','W','W','W','B','B','W','W','W','W','W','W','B','B','B',
+    'B','O','O','O','O','O','O','O','D','B','B','D','O','O','O','O','O','O','O','B',
+    'B','O','O','O','O','O','O','O','O','B','B','O','O','O','O','O','O','O','O','B',
+    'W','O','O','d','O','O','O','O','O','O','O','O','O','O','O','O','d','O','O','W',
     'W','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','W',
-    'W','O','d','O','O','O','O','O','O','O','O','O','O','O','O','O','O','d','O','W',
-    'B','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','B',
-    'B','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','B',
     'W','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','W',
-    'B','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','B',
-    'B','O','O','O','O','O','O','d','O','O','O','O','d','O','O','O','O','O','O','B',
     'W','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','W',
-    'B','O','O','O','O','O','O','O','O','d','d','O','O','O','O','O','O','O','O','B',
-    'B','O','O','O','O','O','O','O','O','d','d','O','O','O','O','O','O','O','O','B',
+    'W','O','O','O','O','O','O','d','O','O','O','O','d','O','O','O','O','O','O','W',
+    'W','D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D','W',
+    'B','B','B','O','O','O','O','O','O','d','d','O','O','O','O','O','O','B','B','B',
+    'B','B','B','O','O','O','O','O','O','d','d','O','O','O','O','O','O','B','B','B',
+    'W','D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D','W',
+    'W','O','O','O','O','O','O','d','O','O','O','O','d','O','O','O','O','O','O','W',
     'W','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','W',
-    'B','O','O','O','O','O','O','d','O','O','O','O','d','O','O','O','O','O','O','B',
-    'B','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','B',
     'W','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','W',
-    'B','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','B',
-    'B','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','B',
-    'W','O','d','O','O','O','O','O','O','O','O','O','O','O','O','O','O','d','O','W',
     'W','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','W',
-    'W','W','W','B','B','W','B','B','W','B','B','W','B','B','W','B','B','W','W','W',
+    'W','O','O','d','O','O','O','O','O','O','O','O','O','O','O','O','d','O','O','W',
+    'B','O','O','O','O','O','O','O','O','B','B','O','O','O','O','O','O','O','O','B',
+    'B','O','O','O','O','O','O','O','D','B','B','D','O','O','O','O','O','O','O','B',
+    'B','B','B','W','W','W','W','W','W','B','B','W','W','W','W','W','W','B','B','B',
 };
 
-const mapEntry clownHouseMap = {
-    .layout = clownHouseLayout,
+const mapEntry foamPitMap = {
+    .layout = foamPitLayout,
     .columns = 20,
     .rows = 20,
     .floatingStandardWalls = 0,
@@ -184,7 +184,7 @@ const mapEntry clownHouseMap = {
 
 // clang-format on
 
-#define NUM_MAPS 4
+#define NUM_MAPS 5
 
 #ifndef AUTOPXD
 const mapEntry *maps[] = {
@@ -192,7 +192,7 @@ const mapEntry *maps[] = {
     (mapEntry *)&prototypeArenaMap,
     (mapEntry *)&snipersMap,
     (mapEntry *)&roomsMap,
-    //(mapEntry *)&clownHouseMap,
+    (mapEntry *)&foamPitMap,
 };
 #endif
 

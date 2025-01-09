@@ -235,7 +235,7 @@ void computeObs(env *e) {
             scalarObs[scalarObsOffset] = wall->type;
 
             scalarObsOffset = NEAR_WALL_POS_OBS_OFFSET + (i * NEAR_WALL_POS_OBS_SIZE);
-            ASSERTF(scalarObsOffset <= FLOATING_WALL_INFO_OBS_OFFSET, "offset: %d", scalarObsOffset);
+            ASSERTF(scalarObsOffset <= FLOATING_WALL_TYPES_OBS_OFFSET, "offset: %d", scalarObsOffset);
             ASSERT(wall->pos.valid);
             const b2Vec2 wallRelPos = b2Sub(wall->pos.pos, agentDronePos);
             scalarObs[scalarObsOffset++] = scaleValue(wallRelPos.x, MAX_X_POS, false);
@@ -256,7 +256,7 @@ void computeObs(env *e) {
             scalarObs[scalarObsOffset] = wall->type + 1;
 
             scalarObsOffset = FLOATING_WALL_INFO_OBS_OFFSET + (i * FLOATING_WALL_INFO_OBS_SIZE);
-            ASSERTF(scalarObsOffset <= WEAPON_PICKUP_POS_OBS_OFFSET, "offset: %d", scalarObsOffset);
+            ASSERTF(scalarObsOffset <= WEAPON_PICKUP_TYPES_OBS_OFFSET, "offset: %d", scalarObsOffset);
             scalarObs[scalarObsOffset++] = scaleValue(wallRelPos.x, MAX_X_POS, false);
             scalarObs[scalarObsOffset++] = scaleValue(wallRelPos.y, MAX_Y_POS, false);
             scalarObs[scalarObsOffset++] = scaleValue(angle, MAX_ANGLE, false);
@@ -570,14 +570,14 @@ float computeReward(env *e, droneEntity *drone) {
 
         const droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
         const b2Vec2 enemyDirection = b2Normalize(b2Sub(enemyDrone->pos.pos, drone->pos.pos));
-        const float relVelocity = b2Dot(drone->lastVelocity, enemyDirection);
+        const float velocityToEnemy = b2Dot(drone->lastVelocity, enemyDirection);
         const float enemyDistance = b2Distance(enemyDrone->pos.pos, drone->pos.pos);
         // stop rewarding approaching an enemy if they're very close
         // to avoid constant clashing; always reward approaching when
         // the current weapon is the shotgun, it greatly benefits from
         // being close to enemies
-        if (relVelocity > 1e-6f && (drone->weaponInfo->type == SHOTGUN_WEAPON || enemyDistance > DISTANCE_CUTOFF)) {
-            reward += APPROACH_REWARD_COEF * relVelocity;
+        if (velocityToEnemy > 1e-6f && (drone->weaponInfo->type == SHOTGUN_WEAPON || enemyDistance > DISTANCE_CUTOFF)) {
+            reward += APPROACH_REWARD_COEF * velocityToEnemy;
         }
 
         // if we know this drone is aiming at another drone, then we
@@ -715,10 +715,17 @@ void updateHumanInputToggle(env *e) {
     }
 }
 
-agentActions getPlayerInputs(env *e, droneEntity *drone, const uint8_t gamepadIdx) {
+agentActions getPlayerInputs(env *e, droneEntity *drone, uint8_t gamepadIdx) {
     agentActions actions = {0};
 
+    bool controllerConnected = false;
     if (IsGamepadAvailable(gamepadIdx)) {
+        controllerConnected = true;
+    } else if (IsGamepadAvailable(0)) {
+        controllerConnected = true;
+        gamepadIdx = 0;
+    }
+    if (controllerConnected) {
         float lStickX = GetGamepadAxisMovement(gamepadIdx, GAMEPAD_AXIS_LEFT_X);
         float lStickY = GetGamepadAxisMovement(gamepadIdx, GAMEPAD_AXIS_LEFT_Y);
         float rStickX = GetGamepadAxisMovement(gamepadIdx, GAMEPAD_AXIS_RIGHT_X);

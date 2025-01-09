@@ -134,10 +134,10 @@ const float discToContActionMap[2][8] = {
 #define STANDARD_INV_MASS INV_MASS(STANDARD_DENSITY, STANDARD_RADIUS)
 #define STANDARD_BOUNCE 2
 
-#define MACHINEGUN_AMMO 35
+#define MACHINEGUN_AMMO 50
 #define MACHINEGUN_PROJECTILES 1
 #define MACHINEGUN_RECOIL_MAGNITUDE 8.0f
-#define MACHINEGUN_FIRE_MAGNITUDE 20.0f
+#define MACHINEGUN_FIRE_MAGNITUDE 22.5f
 #define MACHINEGUN_CHARGE 0.0f
 #define MACHINEGUN_COOL_DOWN 0.07f
 #define MACHINEGUN_MAX_DISTANCE 225.0f
@@ -173,7 +173,7 @@ const float discToContActionMap[2][8] = {
 #define IMPLODER_AMMO 1
 #define IMPLODER_PROJECTILES 1
 #define IMPLODER_RECOIL_MAGNITUDE 35.0f
-#define IMPLODER_FIRE_MAGNITUDE 25.0f
+#define IMPLODER_FIRE_MAGNITUDE 35.0f
 #define IMPLODER_CHARGE 2.0f
 #define IMPLODER_COOL_DOWN 0.0f
 #define IMPLODER_MAX_DISTANCE INFINITE
@@ -332,7 +332,7 @@ b2Vec2 weaponAdjustAim(uint64_t *seed, const enum weaponType type, const uint16_
         return normAim;
     case MACHINEGUN_WEAPON: {
         const float swayCoef = logBasef((heat / 5.0f) + 1, 180);
-        const float maxSway = 0.15f;
+        const float maxSway = 0.125f;
         const float swayX = randFloat(seed, maxSway * -swayCoef, maxSway * swayCoef);
         const float swayY = randFloat(seed, maxSway * -swayCoef, maxSway * swayCoef);
         b2Vec2 machinegunAim = {.x = normAim.x + swayX, .y = normAim.y + swayY};
@@ -341,7 +341,7 @@ b2Vec2 weaponAdjustAim(uint64_t *seed, const enum weaponType type, const uint16_
     case SNIPER_WEAPON:
         return normAim;
     case SHOTGUN_WEAPON: {
-        const float maxOffset = 0.15f;
+        const float maxOffset = 0.1f;
         const float offsetX = randFloat(seed, -maxOffset, maxOffset);
         const float offsetY = randFloat(seed, -maxOffset, maxOffset);
         b2Vec2 shotgunAim = {.x = normAim.x + offsetX, .y = normAim.y + offsetY};

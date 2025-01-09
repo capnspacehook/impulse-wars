@@ -63,6 +63,15 @@ void destroyRayClient(rayClient *client) {
 }
 
 void renderUI(const env *e) {
+    // render human control message
+    if (e->humanInput) {
+        const char *msg = "Human input: drone %d";
+        char buffer[strlen(msg) + 2];
+        snprintf(buffer, sizeof(buffer), msg, e->humanDroneInput);
+        DrawText(buffer, e->client->scale, 3 * e->client->scale, 20, LIME);
+    }
+
+    // render timer
     if (e->stepsLeft == 0) {
         DrawText("SUDDEN DEATH", (e->client->width / 2) - (8 * e->client->scale), e->client->scale, 2 * e->client->scale, WHITE);
         return;
