@@ -201,7 +201,6 @@ typedef struct env {
     uint16_t obsBytes;
     uint16_t mapObsBytes;
 
-    uint8_t *wallObs;
     uint8_t *obs;
     float *rewards;
     bool discretizeActions;

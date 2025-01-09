@@ -14,7 +14,7 @@ from pufferlib.pytorch import layer_init, _nativize_dtype, nativize_tensor
 from cy_impulse_wars import obsConstants
 
 
-cnnChannels = 32
+cnnChannels = 64
 weaponTypeEmbeddingDims = 2
 enemyDroneEncOutputSize = 64
 droneEncOutputSize = 64
@@ -75,11 +75,11 @@ class Policy(nn.Module):
                     self.mapObsInputChannels,
                     cnnChannels,
                     kernel_size=5,
-                    stride=2,
+                    stride=3,
                 )
             ),
             nn.LeakyReLU(),
-            layer_init(nn.Conv2d(cnnChannels, cnnChannels, kernel_size=3, stride=2)),
+            layer_init(nn.Conv2d(cnnChannels, cnnChannels, kernel_size=3, stride=1)),
             nn.LeakyReLU(),
             nn.Flatten(),
         )
@@ -160,7 +160,7 @@ class Policy(nn.Module):
         mapObs = (mapObs & self.unpackMask) >> self.unpackShift
         # reshape to 3D map
         return mapObs.permute(0, 2, 1).reshape(
-            (batchSize, 4, self.obsInfo.maxMapColumns, self.obsInfo.maxMapRows)
+            (batchSize, 4, self.obsInfo.mapObsRows, self.obsInfo.mapObsColumns)
         )
 
     def encode_observations(self, obs: th.Tensor) -> th.Tensor:
@@ -301,7 +301,7 @@ class Policy(nn.Module):
         mapSpace = spaces.Box(
             low=0,
             high=1,
-            shape=(self.mapObsInputChannels, self.obsInfo.maxMapColumns, self.obsInfo.maxMapRows),
+            shape=(self.mapObsInputChannels, self.obsInfo.mapObsRows, self.obsInfo.mapObsColumns),
             dtype=np.float32,
         )
 

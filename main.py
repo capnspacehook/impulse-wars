@@ -174,7 +174,7 @@ if __name__ == "__main__":
     parser.add_argument("--train.bptt-horizon", type=int, default=64)
     parser.add_argument("--train.clip-coef", type=float, default=0.2)
     parser.add_argument("--train.clip-vloss", action="store_false")
-    parser.add_argument("--train.ent-coef", type=float, default=0.0015)
+    parser.add_argument("--train.ent-coef", type=float, default=0.0025)
     parser.add_argument("--train.gae-lambda", type=float, default=0.98)
     parser.add_argument("--train.gamma", type=float, default=0.999)
     parser.add_argument("--train.learning-rate", type=float, default=0.00125)
@@ -192,7 +192,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--env.num-agents",
         type=int,
-        default=1,
+        default=2,
         help="Number of agents controlling drones, if this is less than --train.num-drones the other drones will do nothing",
     )
 
@@ -261,7 +261,7 @@ if __name__ == "__main__":
             policy = th.load(args.eval_model_path, map_location=args.train.device)
             policy.policy.policy.isTraining = False
 
-        for _ in range(5):
+        for _ in range(10):
             eval_policy(vecenv, policy, args.train.device)
     elif args.mode == "sweep":
         from sweep import sweep

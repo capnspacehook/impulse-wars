@@ -43,7 +43,10 @@ const uint16_t LOG_BUFFER_SIZE = 1024;
 // observation constants
 const uint8_t MAX_MAP_COLUMNS = _MAX_MAP_COLUMNS;
 const uint8_t MAX_MAP_ROWS = _MAX_MAP_ROWS;
-const uint16_t MAP_OBS_SIZE = MAX_MAP_COLUMNS * MAX_MAP_ROWS;
+
+const uint8_t MAP_OBS_ROWS = 11;
+const uint8_t MAP_OBS_COLUMNS = 11;
+const uint16_t MAP_OBS_SIZE = MAP_OBS_ROWS * MAP_OBS_COLUMNS;
 
 const uint8_t NUM_NEAR_WALL_OBS = 4;
 const uint8_t NEAR_WALL_POS_OBS_SIZE = 2;
