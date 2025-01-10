@@ -643,6 +643,15 @@ void computeRewards(env *e, const bool roundOver, const int8_t winner) {
         rewards[i] += computeReward(e, drone);
     }
 
+    // don't zero sum rewards if there's only one agent
+    if (e->numAgents == 1) {
+        for (uint8_t i = 0; i < e->numDrones; i++) {
+            e->rewards[i] += rewards[i];
+            e->stats[i].reward += rewards[i];
+        }
+        return;
+    }
+
     float totalReward = 0.0f;
     for (uint8_t i = 0; i < e->numDrones; i++) {
         totalReward += rewards[i];
@@ -858,7 +867,7 @@ void stepEnv(env *e) {
 
         // handle sudden death
         e->stepsLeft = fmaxf(e->stepsLeft - 1, 0.0f);
-        if (e->stepsLeft == 0) {
+        if (e->stepsLeft == 0 && e->numAgents > 1) {
             e->suddenDeathSteps = fmaxf(e->suddenDeathSteps - 1, 0.0f);
             if (e->suddenDeathSteps == 0) {
                 DEBUG_LOG("placing sudden death walls");
@@ -889,7 +898,10 @@ void stepEnv(env *e) {
 
         weaponPickupsStep(e, DELTA_TIME);
 
-        const bool roundOver = deadDrones >= e->numDrones - 1;
+        bool roundOver = deadDrones >= e->numDrones - 1;
+        if (e->numAgents == 1 && e->stepsLeft == 0) {
+            roundOver = true;
+        }
         computeRewards(e, roundOver, lastAlive);
 
         if (e->client != NULL) {
@@ -897,7 +909,13 @@ void stepEnv(env *e) {
         }
 
         if (roundOver) {
-            memset(e->terminals, 1, e->numAgents * sizeof(uint8_t));
+            if (e->numAgents == 1 && e->stepsLeft == 0) {
+                DEBUG_LOG("truncating episode");
+                memset(e->truncations, 1, e->numAgents * sizeof(uint8_t));
+            } else {
+                DEBUG_LOG("terminating episode");
+                memset(e->terminals, 1, e->numAgents * sizeof(uint8_t));
+            }
 
             if (lastAlive != -1) {
                 e->stats[lastAlive].wins = 1.0f;

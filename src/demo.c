@@ -2,7 +2,7 @@
 #include "render.h"
 
 int main(void) {
-    const int NUM_DRONES = 3;
+    const int NUM_DRONES = 2;
 
     env *e = (env *)fastCalloc(1, sizeof(env));
     uint8_t *obs = (uint8_t *)aligned_alloc(sizeof(float), alignedSize(NUM_DRONES * obsBytes(NUM_DRONES), sizeof(float)));
