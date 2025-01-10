@@ -75,16 +75,18 @@ const uint16_t PROJECTILE_POS_OBS_OFFSET = PROJECTILE_TYPES_OBS_OFFSET + NUM_PRO
 const uint16_t ENEMY_DRONE_OBS_OFFSET = PROJECTILE_POS_OBS_OFFSET + (NUM_PROJECTILE_OBS * PROJECTILE_INFO_OBS_SIZE);
 const uint8_t ENEMY_DRONE_OBS_SIZE = 18;
 
-const uint16_t DRONE_OBS_OFFSET = ENEMY_DRONE_OBS_OFFSET + ENEMY_DRONE_OBS_SIZE;
 const uint8_t DRONE_OBS_SIZE = 16;
 
 const uint8_t MISC_OBS_SIZE = 1;
-const uint16_t MISC_OBS_OFFSET = DRONE_OBS_OFFSET + DRONE_OBS_SIZE;
 
-const uint16_t SCALAR_OBS_SIZE = NEAR_WALL_OBS_SIZE + FLOATING_WALL_OBS_SIZE + WEAPON_PICKUP_OBS_SIZE + PROJECTILE_OBS_SIZE + ENEMY_DRONE_OBS_SIZE + DRONE_OBS_SIZE + MISC_OBS_SIZE;
+const uint16_t _SCALAR_OBS_SIZE = NEAR_WALL_OBS_SIZE + FLOATING_WALL_OBS_SIZE + WEAPON_PICKUP_OBS_SIZE + PROJECTILE_OBS_SIZE + DRONE_OBS_SIZE + MISC_OBS_SIZE;
 
-uint16_t obsBytes() {
-    return alignedSize((MAP_OBS_SIZE * sizeof(uint8_t)) + (SCALAR_OBS_SIZE * sizeof(float)), sizeof(float));
+uint16_t scalarObsSize(uint8_t numDrones) {
+    return _SCALAR_OBS_SIZE + ((numDrones - 1) * ENEMY_DRONE_OBS_SIZE);
+}
+
+uint16_t obsBytes(uint8_t numDrones) {
+    return alignedSize((MAP_OBS_SIZE * sizeof(uint8_t)) + (scalarObsSize(numDrones) * sizeof(float)), sizeof(float));
 }
 
 #define MAX_X_POS 100.0f

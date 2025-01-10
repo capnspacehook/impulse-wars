@@ -16,12 +16,10 @@ from cy_impulse_wars import obsConstants
 
 cnnChannels = 64
 weaponTypeEmbeddingDims = 2
-enemyDroneEncOutputSize = 64
-droneEncOutputSize = 64
+floatingWallOutputSize = 64
+droneEncOutputSize = 128
 encoderOutputSize = 128
 lstmOutputSize = 128
-actorSize = 128
-criticSize = 256
 
 
 class Recurrent(LSTMWrapper):
@@ -78,36 +76,37 @@ class Policy(nn.Module):
                     stride=3,
                 )
             ),
-            nn.LeakyReLU(),
+            nn.ReLU(),
             layer_init(nn.Conv2d(cnnChannels, cnnChannels, kernel_size=3, stride=1)),
-            nn.LeakyReLU(),
+            nn.ReLU(),
             nn.Flatten(),
         )
         cnnOutputSize = self._computeCNNShape()
 
-        self.enemyDroneEncoder = nn.Sequential(
+        self.floatingWallEncoder = nn.Sequential(
             layer_init(
                 nn.Linear(
-                    self.obsInfo.enemyDroneObsSize - 1 + weaponTypeEmbeddingDims, enemyDroneEncOutputSize
+                    self.obsInfo.wallTypes + 1 + self.obsInfo.floatingWallInfoObsSize, floatingWallOutputSize
                 )
             ),
-            nn.Tanh(),
+            nn.ReLU(),
         )
 
         self.droneEncoder = nn.Sequential(
             layer_init(
-                nn.Linear(self.obsInfo.droneObsSize - 1 + weaponTypeEmbeddingDims, droneEncOutputSize)
+                nn.Linear(
+                    ((self.numDrones - 1) * (weaponTypeEmbeddingDims + self.obsInfo.enemyDroneObsSize - 1))
+                    + (self.obsInfo.droneObsSize - 1 + weaponTypeEmbeddingDims),
+                    droneEncOutputSize,
+                )
             ),
-            nn.Tanh(),
+            nn.ReLU(),
         )
 
         featuresSize = (
             cnnOutputSize
             + (self.obsInfo.numNearWallObs * (self.obsInfo.wallTypes + self.obsInfo.nearWallPosObsSize))
-            + (
-                self.obsInfo.numFloatingWallObs
-                * (self.obsInfo.wallTypes + 1 + self.obsInfo.floatingWallInfoObsSize)
-            )
+            + floatingWallOutputSize
             + (
                 self.obsInfo.numWeaponPickupObs
                 * (weaponTypeEmbeddingDims + self.obsInfo.weaponPickupPosObsSize)
@@ -116,36 +115,23 @@ class Policy(nn.Module):
                 self.obsInfo.numProjectileObs
                 * (weaponTypeEmbeddingDims + self.obsInfo.projectileInfoObsSize - 1 + self.numDrones + 1)
             )
-            + enemyDroneEncOutputSize
             + droneEncOutputSize
             + self.obsInfo.miscObsSize
         )
 
         self.encoder = nn.Sequential(
             layer_init(nn.Linear(featuresSize, encoderOutputSize)),
-            nn.Tanh(),
+            nn.ReLU(),
         )
 
         if self.is_continuous:
-            self.actorMean = nn.Sequential(
-                layer_init(nn.Linear(lstmOutputSize, actorSize)),
-                nn.Tanh(),
-                layer_init(nn.Linear(actorSize, env.single_action_space.shape[0]), std=0.01),
-            )
+            self.actorMean = layer_init(nn.Linear(lstmOutputSize, env.single_action_space.shape[0]), std=0.01)
             self.actorLogStd = nn.Parameter(th.zeros(1, env.single_action_space.shape[0]))
         else:
             self.actionDim = env.single_action_space.nvec.tolist()
-            self.actor = nn.Sequential(
-                layer_init(nn.Linear(lstmOutputSize, actorSize)),
-                nn.Tanh(),
-                layer_init(nn.Linear(actorSize, sum(self.actionDim)), std=0.01),
-            )
+            self.actor = layer_init(nn.Linear(lstmOutputSize, sum(self.actionDim)), std=0.01)
 
-        self.critic = nn.Sequential(
-            layer_init(nn.Linear(lstmOutputSize, criticSize)),
-            nn.Tanh(),
-            layer_init(nn.Linear(criticSize, 1), std=1.0),
-        )
+        self.critic = layer_init(nn.Linear(lstmOutputSize, 1), std=1.0)
 
     def forward(self, obs: th.Tensor) -> Tuple[th.Tensor, th.Tensor]:
         hidden = self.encode_observations(obs)
@@ -214,8 +200,9 @@ class Policy(nn.Module):
         floatingWallInfoObs = floatingWallInfoObs.view(
             batchSize, self.obsInfo.numFloatingWallObs, self.obsInfo.floatingWallInfoObsSize
         )
-        floatingWalls = th.cat((floatingWallTypes, floatingWallInfoObs), dim=-1)
-        floatingWalls = th.flatten(floatingWalls, start_dim=1, end_dim=-1)
+        floatingWallObs = th.cat((floatingWallTypes, floatingWallInfoObs), dim=-1)
+        floatingWalls = self.floatingWallEncoder(floatingWallObs)
+        floatingWalls = th.max(floatingWalls, dim=1).values
 
         # process weapon pickup types and positions
         pickupTypeObs = scalarObs[
@@ -252,31 +239,38 @@ class Policy(nn.Module):
         projectiles = th.flatten(projectiles, start_dim=1, end_dim=-1)
 
         # process enemy drone observations
-        enemyDroneInfoObs = scalarObs[
-            :,
-            self.obsInfo.enemyDroneObsOffset : self.obsInfo.droneObsOffset - 1,
-        ]
         enemyDroneWeaponObs = scalarObs[
-            :, self.obsInfo.droneObsOffset - 1 : self.obsInfo.droneObsOffset
+            :, self.obsInfo.enemyDroneObsOffset : self.obsInfo.enemyDroneObsOffset + self.numDrones - 1
         ].int()
         enemyDroneWeapon = self.weaponTypeEmbedding(enemyDroneWeaponObs).squeeze(1).float()
-        enemyDroneObs = th.cat((enemyDroneInfoObs, enemyDroneWeapon), dim=-1)
-        enemyDrone = self.enemyDroneEncoder(enemyDroneObs)
+        enemyDroneInfoObs = scalarObs[
+            :, self.obsInfo.enemyDroneObsOffset + self.numDrones - 1 : self.obsInfo.droneObsOffset
+        ]
+        enemyDroneInfoObs = enemyDroneInfoObs.view(
+            batchSize, self.numDrones - 1, self.obsInfo.enemyDroneObsSize - 1
+        )
+        # if there are 2 drones there will only be 1 enemy drone
+        # observation and one less dimension than if there are 2+
+        # enemy drones
+        if self.numDrones == 2:
+            enemyDroneWeapon = enemyDroneWeapon.unsqueeze(1)
+        enemyDroneObs = th.cat((enemyDroneWeapon, enemyDroneInfoObs), dim=-1)
+        enemyDroneObs = th.flatten(enemyDroneObs, start_dim=1, end_dim=-1)
 
         # process agent drone observations
-        droneInfoObs = scalarObs[:, self.obsInfo.droneObsOffset : self.obsInfo.miscObsOffset - 1]
-        droneWeaponObs = scalarObs[:, self.obsInfo.miscObsOffset - 1].int()
-        droneWeapon = self.weaponTypeEmbedding(droneWeaponObs).float()
-        droneObs = th.cat((droneInfoObs, droneWeapon), dim=-1)
-        drone = self.droneEncoder(droneObs)
+        droneWeaponObs = scalarObs[:, self.obsInfo.droneObsOffset : self.obsInfo.droneObsOffset + 1].int()
+        droneWeapon = self.weaponTypeEmbedding(droneWeaponObs).squeeze(1).float()
+        droneInfoObs = scalarObs[:, self.obsInfo.droneObsOffset + 1 : self.obsInfo.miscObsOffset]
+        droneObs = th.cat((droneWeapon, droneInfoObs), dim=-1)
+
+        allDronesObs = th.cat((enemyDroneObs, droneObs), dim=1)
+        drones = self.droneEncoder(allDronesObs)
 
         # process misc observations
         miscObs = scalarObs[:, self.obsInfo.miscObsOffset :]
 
         # combine all observations and feed through final linear encoder
-        features = th.cat(
-            (map, nearWalls, floatingWalls, pickups, projectiles, enemyDrone, drone, miscObs), dim=-1
-        )
+        features = th.cat((map, nearWalls, floatingWalls, pickups, projectiles, drones, miscObs), dim=-1)
 
         return self.encoder(features), None
 

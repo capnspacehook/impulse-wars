@@ -56,7 +56,7 @@ class ImpulseWars(pufferlib.PufferEnv):
 
         self.numDrones = num_drones
         self.num_agents = num_agents * num_envs
-        self.obsInfo = obsConstants(num_drones)
+        self.obsInfo = obsConstants(self.numDrones)
         self.tick = 0
 
         # map observations are bit packed to save space, and scalar

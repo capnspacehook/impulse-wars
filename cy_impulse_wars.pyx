@@ -6,10 +6,10 @@ import pufferlib
 from impulse_wars cimport (
     MAX_DRONES,
     CONTINUOUS_ACTION_SIZE,
+    scalarObsSize,
     obsBytes,
     alignedSize,
     MAP_OBS_SIZE,
-    SCALAR_OBS_SIZE,
     NUM_WALL_TYPES,
     NUM_WEAPONS,
     MAP_OBS_ROWS,
@@ -36,10 +36,8 @@ from impulse_wars cimport (
     PROJECTILE_POS_OBS_OFFSET,
     ENEMY_DRONE_OBS_OFFSET,
     ENEMY_DRONE_OBS_SIZE,
-    DRONE_OBS_OFFSET,
     DRONE_OBS_SIZE,
     MISC_OBS_SIZE,
-    MISC_OBS_OFFSET,
     env,
     initEnv,
     rayClient,
@@ -69,11 +67,12 @@ def continuousActionsSize() -> int:
 
 
 def obsConstants(numDrones: int) -> pufferlib.Namespace:
+    droneObsOffset = ENEMY_DRONE_OBS_OFFSET + ((numDrones - 1) * ENEMY_DRONE_OBS_SIZE)
     return pufferlib.Namespace(
-        obsBytes=obsBytes(),
+        obsBytes=obsBytes(numDrones),
         mapObsSize=MAP_OBS_SIZE,
-        scalarObsSize=SCALAR_OBS_SIZE,
-        scalarObsBytes=SCALAR_OBS_SIZE * sizeof(float),
+        scalarObsSize=scalarObsSize(numDrones),
+        scalarObsBytes=scalarObsSize(numDrones) * sizeof(float),
         wallTypes=NUM_WALL_TYPES,
         weaponTypes=NUM_WEAPONS + 1,
         mapObsRows=MAP_OBS_ROWS,
@@ -101,10 +100,10 @@ def obsConstants(numDrones: int) -> pufferlib.Namespace:
         projectilePosObsOffset=PROJECTILE_POS_OBS_OFFSET,
         enemyDroneObsOffset=ENEMY_DRONE_OBS_OFFSET,
         enemyDroneObsSize=ENEMY_DRONE_OBS_SIZE,
-        droneObsOffset=DRONE_OBS_OFFSET,
+        droneObsOffset=droneObsOffset,
         droneObsSize=DRONE_OBS_SIZE,
         miscObsSize=MISC_OBS_SIZE,
-        miscObsOffset=MISC_OBS_OFFSET,
+        miscObsOffset=droneObsOffset + DRONE_OBS_SIZE,
     )
 
 

@@ -335,9 +335,9 @@ void computeObs(env *e) {
         }
 
         // compute enemy drone observations
-        // TODO: handle multiple enemy drones correctly
         bool hitShot = false;
         bool tookShot = false;
+        uint8_t processedDrones = 0;
         for (uint8_t i = 0; i < e->numDrones; i++) {
             if (i == agentIdx) {
                 continue;
@@ -358,8 +358,11 @@ void computeObs(env *e) {
             const b2Vec2 enemyDroneRelNormPos = b2Normalize(b2Sub(enemyDrone->pos.pos, agentDronePos));
             const float enemyDroneAngle = atan2f(enemyDroneRelNormPos.y, enemyDroneRelNormPos.x);
             const float enemyDroneAimAngle = atan2f(enemyDrone->lastAim.y, enemyDrone->lastAim.x);
-            scalarObsOffset = ENEMY_DRONE_OBS_OFFSET;
 
+            const uint16_t enemyDroneObsOffset = ENEMY_DRONE_OBS_OFFSET + processedDrones;
+            scalarObs[enemyDroneObsOffset] = enemyDrone->weaponInfo->type + 1;
+
+            scalarObsOffset = ENEMY_DRONE_OBS_OFFSET + (e->numDrones - 1) + (processedDrones * (ENEMY_DRONE_OBS_SIZE - 1));
             scalarObs[scalarObsOffset++] = (float)agentDrone->inLineOfSight[i];
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.x, MAX_X_POS, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.y, MAX_Y_POS, false);
@@ -377,15 +380,18 @@ void computeObs(env *e) {
             scalarObs[scalarObsOffset++] = scaleAmmo(e, enemyDrone);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->weaponCooldown, enemyDrone->weaponInfo->coolDown, true);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->charge, weaponCharge(enemyDrone->weaponInfo->type), true);
-            scalarObs[scalarObsOffset++] = enemyDrone->weaponInfo->type + 1;
+
+            processedDrones++;
+            ASSERTF(scalarObsOffset == ENEMY_DRONE_OBS_OFFSET + (e->numDrones - 1) + (processedDrones * (ENEMY_DRONE_OBS_SIZE - 1)), "offset: %d", scalarObsOffset);
         }
 
         // compute active drone observations
-        ASSERTF(scalarObsOffset == DRONE_OBS_OFFSET, "offset: %d", scalarObsOffset);
+        ASSERTF(scalarObsOffset == ENEMY_DRONE_OBS_OFFSET + ((e->numDrones - 1) * ENEMY_DRONE_OBS_SIZE), "offset: %d", scalarObsOffset);
         const b2Vec2 agentDroneVel = b2Body_GetLinearVelocity(agentDrone->bodyID);
         const b2Vec2 agentDroneAccel = b2Sub(agentDroneVel, agentDrone->lastVelocity);
         const float agentDroneAimAngle = atan2f(agentDrone->lastAim.y, agentDrone->lastAim.x);
 
+        scalarObs[scalarObsOffset++] = agentDrone->weaponInfo->type + 1;
         scalarObs[scalarObsOffset++] = scaleValue(agentDronePos.x, MAX_X_POS, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDronePos.y, MAX_Y_POS, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDroneVel.x, MAX_SPEED, false);
@@ -401,9 +407,8 @@ void computeObs(env *e) {
         scalarObs[scalarObsOffset++] = hitShot;
         scalarObs[scalarObsOffset++] = tookShot;
         scalarObs[scalarObsOffset++] = agentDrone->stepInfo.ownShotTaken;
-        scalarObs[scalarObsOffset++] = agentDrone->weaponInfo->type + 1;
 
-        ASSERTF(scalarObsOffset == MISC_OBS_OFFSET, "offset: %d", scalarObsOffset);
+        ASSERTF(scalarObsOffset == ENEMY_DRONE_OBS_OFFSET + ((e->numDrones - 1) * ENEMY_DRONE_OBS_SIZE) + DRONE_OBS_SIZE, "offset: %d", scalarObsOffset);
         scalarObs[scalarObsOffset] = scaleValue(e->stepsLeft, ROUND_STEPS, true);
     }
 }
@@ -463,7 +468,7 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
     e->numAgents = numAgents;
     e->isTraining = isTraining;
 
-    e->obsBytes = obsBytes();
+    e->obsBytes = obsBytes(e->numDrones);
     e->mapObsBytes = alignedSize(MAP_OBS_SIZE * sizeof(uint8_t), sizeof(float));
 
     e->obs = obs;
@@ -573,6 +578,7 @@ float computeShotHitReward(env *e, const uint8_t enemyIdx) {
     return scaleValue(fabsf(curEnemySpeed - prevEnemySpeed), MAX_SPEED, true) * SHOT_HIT_REWARD_COEF;
 }
 
+// TODO: add death punishment when there are more than 2 drones
 float computeReward(env *e, droneEntity *drone) {
     float reward = 0.0f;
 
@@ -637,14 +643,18 @@ void computeRewards(env *e, const bool roundOver, const int8_t winner) {
         rewards[i] += computeReward(e, drone);
     }
 
-    // TODO: handle 1 agent correctly
-    if (e->numAgents > 1) {
-        // TODO: handle 3+ agents correctly
-        e->rewards[0] += rewards[0] - rewards[1];
-        e->rewards[1] += rewards[1] - rewards[0];
+    float totalReward = 0.0f;
+    for (uint8_t i = 0; i < e->numDrones; i++) {
+        totalReward += rewards[i];
+    }
+    totalReward /= e->numDrones;
 
-        e->stats[0].reward += e->rewards[0];
-        e->stats[1].reward += e->rewards[1];
+    for (uint8_t i = 0; i < e->numDrones; i++) {
+        rewards[i] -= totalReward;
+        e->stats[i].reward += rewards[i];
+        if (i < e->numAgents) {
+            e->rewards[i] += rewards[i];
+        }
     }
 }
 
