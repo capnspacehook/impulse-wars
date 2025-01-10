@@ -4,7 +4,7 @@ void perfTest(const float testTime) {
     const uint8_t NUM_DRONES = 2;
 
     env *e = (env *)fastCalloc(1, sizeof(env));
-    uint8_t *obs = (uint8_t *)aligned_alloc(sizeof(float), alignedSize(NUM_DRONES * obsBytes(), sizeof(float)));
+    uint8_t *obs = (uint8_t *)aligned_alloc(sizeof(float), alignedSize(NUM_DRONES * obsBytes(NUM_DRONES), sizeof(float)));
     float *rewards = (float *)fastCalloc(NUM_DRONES, sizeof(float));
     float *actions = (float *)fastCalloc(NUM_DRONES * CONTINUOUS_ACTION_SIZE, sizeof(float));
     uint8_t *terminals = (unsigned char *)fastCalloc(NUM_DRONES, sizeof(uint8_t));
