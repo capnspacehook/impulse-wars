@@ -52,7 +52,7 @@ rayClient *createRayClient() {
 
     SetWindowSize(client->width, client->height);
 
-    SetTargetFPS(FRAME_RATE);
+    SetTargetFPS(EVAL_FRAME_RATE);
 
     return client;
 }
@@ -79,10 +79,10 @@ void renderUI(const env *e) {
 
     const int bufferSize = 3;
     char timerStr[bufferSize];
-    if (e->stepsLeft >= 10 * FRAME_RATE) {
-        snprintf(timerStr, bufferSize, "%d", (uint16_t)(e->stepsLeft / FRAME_RATE));
+    if (e->stepsLeft >= 10 * e->frameRate) {
+        snprintf(timerStr, bufferSize, "%d", (uint16_t)(e->stepsLeft / e->frameRate));
     } else {
-        snprintf(timerStr, bufferSize, "0%d", (uint16_t)(e->stepsLeft / FRAME_RATE));
+        snprintf(timerStr, bufferSize, "0%d", (uint16_t)(e->stepsLeft / e->frameRate));
     }
     DrawText(timerStr, (e->client->width / 2) - e->client->scale, e->client->scale, 2 * e->client->scale, WHITE);
 }
@@ -297,7 +297,7 @@ void renderDroneLabels(const env *e, const droneEntity *drone) {
     }
     DrawText(ammoStr, b2XToRayX(e->client, posX), b2YToRayY(e->client, pos.y + 1.5f), e->client->scale, WHITE);
 
-    const float maxCharge = weaponCharge(drone->weaponInfo->type);
+    const float maxCharge = weaponCharge(e, drone->weaponInfo->type);
     if (maxCharge == 0.0f) {
         return;
     }

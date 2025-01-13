@@ -626,7 +626,7 @@ void droneShoot(env *e, droneEntity *drone, const b2Vec2 aim) {
         return;
     }
     drone->charge++;
-    if (drone->charge < weaponCharge(drone->weaponInfo->type)) {
+    if (drone->charge < weaponCharge(e, drone->weaponInfo->type)) {
         return;
     }
 

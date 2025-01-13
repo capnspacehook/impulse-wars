@@ -211,6 +211,10 @@ typedef struct env {
     uint8_t *terminals;
     uint8_t *truncations;
 
+    uint8_t frameRate;
+    float deltaTime;
+    uint8_t frameSkip;
+    uint8_t box2dSubSteps;
     uint64_t randState;
     bool needsReset;
 
@@ -232,6 +236,8 @@ typedef struct env {
     kdtree *pickupTree;
     CC_SList *projectiles;
 
+    uint16_t totalSteps;
+    uint16_t totalSuddenDeathSteps;
     // steps left until sudden death
     uint16_t stepsLeft;
     // steps left until the next set of sudden death walls are spawned

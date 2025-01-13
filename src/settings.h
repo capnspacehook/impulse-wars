@@ -7,12 +7,12 @@
 #define INFINITE -1
 
 // general settings
-#define FRAME_RATE 10.0f
-#define DELTA_TIME 1.0f / FRAME_RATE
+#define TRAINING_ACTIONS_PER_SECOND 10
+#define TRAINING_FRAME_RATE TRAINING_ACTIONS_PER_SECOND
+#define TRAINING_BOX2D_SUBSTEPS 1
 
-#define BOX2D_SUBSTEPS 1
-
-#define FRAMESKIP 1
+#define EVAL_FRAME_RATE 120
+#define EVAL_BOX2D_SUBSTEPS 4
 
 #define _MAX_MAP_COLUMNS 24
 #define _MAX_MAP_ROWS 24
@@ -20,8 +20,8 @@
 
 #define MIN_SPAWN_DISTANCE 6.0f
 
-#define ROUND_STEPS 30 * FRAME_RATE
-#define SUDDEN_DEATH_STEPS 5.0f * FRAME_RATE
+#define ROUND_STEPS 30
+#define SUDDEN_DEATH_STEPS 5
 
 const uint8_t MAX_DRONES = _MAX_DRONES;
 
@@ -309,7 +309,7 @@ float weaponFire(uint64_t *seed, const enum weaponType type) {
 }
 
 // how many steps the weapon needs to be charged for before it can be fired
-uint16_t weaponCharge(const enum weaponType type) {
+uint16_t weaponCharge(const env *e, const enum weaponType type) {
     float charge = 0.0f;
     switch (type) {
     case STANDARD_WEAPON:
@@ -331,7 +331,7 @@ uint16_t weaponCharge(const enum weaponType type) {
         ERRORF("unknown weapon type %d", type);
     }
 
-    return (uint16_t)(charge * FRAME_RATE);
+    return (uint16_t)(charge * e->frameRate);
 }
 
 b2Vec2 weaponAdjustAim(uint64_t *seed, const enum weaponType type, const uint16_t heat, const b2Vec2 normAim) {

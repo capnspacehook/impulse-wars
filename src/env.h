@@ -380,7 +380,7 @@ void computeObs(env *e) {
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAimAngle, PI, false);
             scalarObs[scalarObsOffset++] = scaleAmmo(e, enemyDrone);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->weaponCooldown, enemyDrone->weaponInfo->coolDown, true);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->charge, weaponCharge(enemyDrone->weaponInfo->type), true);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->charge, weaponCharge(e, enemyDrone->weaponInfo->type), true);
 
             processedDrones++;
             ASSERTF(scalarObsOffset == ENEMY_DRONE_OBS_OFFSET + (e->numDrones - 1) + (processedDrones * (ENEMY_DRONE_OBS_SIZE - 1)), "offset: %d", scalarObsOffset);
@@ -404,13 +404,13 @@ void computeObs(env *e) {
         scalarObs[scalarObsOffset++] = scaleValue(agentDroneAimAngle, PI, false); // TODO: ablate this
         scalarObs[scalarObsOffset++] = scaleAmmo(e, agentDrone);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->weaponCooldown, agentDrone->weaponInfo->coolDown, true);
-        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->charge, weaponCharge(agentDrone->weaponInfo->type), true);
+        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->charge, weaponCharge(e, agentDrone->weaponInfo->type), true);
         scalarObs[scalarObsOffset++] = hitShot;
         scalarObs[scalarObsOffset++] = tookShot;
         scalarObs[scalarObsOffset++] = agentDrone->stepInfo.ownShotTaken;
 
         ASSERTF(scalarObsOffset == ENEMY_DRONE_OBS_OFFSET + ((e->numDrones - 1) * ENEMY_DRONE_OBS_SIZE) + DRONE_OBS_SIZE, "offset: %d", scalarObsOffset);
-        scalarObs[scalarObsOffset] = scaleValue(e->stepsLeft, ROUND_STEPS, true);
+        scalarObs[scalarObsOffset] = scaleValue(e->stepsLeft, e->totalSteps, true);
     }
 }
 
@@ -421,8 +421,8 @@ void setupEnv(env *e) {
     worldDef.gravity = (b2Vec2){.x = 0.0f, .y = 0.0f};
     e->worldID = b2CreateWorld(&worldDef);
 
-    e->stepsLeft = ROUND_STEPS;
-    e->suddenDeathSteps = SUDDEN_DEATH_STEPS;
+    e->stepsLeft = e->totalSteps;
+    e->suddenDeathSteps = e->totalSuddenDeathSteps;
     e->suddenDeathWallCounter = 0;
 
     DEBUG_LOG("creating map");
@@ -464,6 +464,15 @@ void setupEnv(env *e) {
     computeObs(e);
 }
 
+void setEnvFrameRate(env *e, uint8_t frameRate) {
+    e->frameRate = frameRate;
+    e->deltaTime = 1.0f / (float)frameRate;
+    e->frameSkip = frameRate / TRAINING_ACTIONS_PER_SECOND;
+
+    e->totalSteps = ROUND_STEPS * frameRate;
+    e->totalSuddenDeathSteps = SUDDEN_DEATH_STEPS * frameRate;
+}
+
 env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool discretizeActions, float *contActions, int32_t *discActions, float *rewards, uint8_t *terminals, uint8_t *truncations, logBuffer *logs, uint64_t seed, bool isTraining) {
     e->numDrones = numDrones;
     e->numAgents = numAgents;
@@ -480,6 +489,13 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
     e->terminals = terminals;
     e->truncations = truncations;
 
+    float frameRate = TRAINING_FRAME_RATE;
+    e->box2dSubSteps = TRAINING_BOX2D_SUBSTEPS;
+    if (!isTraining) {
+        frameRate = EVAL_FRAME_RATE;
+        e->box2dSubSteps = EVAL_BOX2D_SUBSTEPS;
+    }
+    setEnvFrameRate(e, frameRate);
     e->randState = seed;
     e->needsReset = false;
 
@@ -798,7 +814,7 @@ void stepEnv(env *e) {
     // reset reward buffer
     memset(e->rewards, 0x0, e->numAgents * sizeof(float));
 
-    for (int i = 0; i < FRAMESKIP; i++) {
+    for (int i = 0; i < e->frameSkip; i++) {
         e->episodeLength++;
 
         // handle actions
@@ -829,7 +845,7 @@ void stepEnv(env *e) {
         }
 
         // update entity info, step physics, and handle events
-        b2World_Step(e->worldID, DELTA_TIME, BOX2D_SUBSTEPS);
+        b2World_Step(e->worldID, e->deltaTime, e->box2dSubSteps);
 
         // mark old positions as invalid now that physics has been stepped
         // projectiles will have their positions correctly updated in projectilesStep
@@ -849,7 +865,7 @@ void stepEnv(env *e) {
             if (e->suddenDeathSteps == 0) {
                 DEBUG_LOG("placing sudden death walls");
                 handleSuddenDeath(e);
-                e->suddenDeathSteps = SUDDEN_DEATH_STEPS;
+                e->suddenDeathSteps = e->totalSuddenDeathSteps;
             }
         }
 
@@ -862,7 +878,7 @@ void stepEnv(env *e) {
         uint8_t deadDrones = 0;
         for (uint8_t i = 0; i < e->numDrones; i++) {
             droneEntity *drone = safe_array_get_at(e->drones, i);
-            droneStep(e, drone, DELTA_TIME);
+            droneStep(e, drone, e->deltaTime);
             if (drone->dead) {
                 deadDrones++;
                 if (i < e->numAgents) {
@@ -873,7 +889,7 @@ void stepEnv(env *e) {
             }
         }
 
-        weaponPickupsStep(e, DELTA_TIME);
+        weaponPickupsStep(e, e->deltaTime);
 
         bool roundOver = deadDrones >= e->numDrones - 1;
         if (e->numAgents == 1 && e->stepsLeft == 0) {
@@ -923,7 +939,7 @@ void stepEnv(env *e) {
     for (uint8_t i = 0; i < e->numAgents; i++) {
         const float reward = e->rewards[i];
         if (reward > REWARD_EPS || reward < -REWARD_EPS) {
-            DEBUG_LOGF("step: %f drone: %d reward: %f", ROUND_STEPS - e->stepsLeft, i, reward);
+            DEBUG_LOGF("step: %d drone: %d reward: %f", e->totalSteps - e->stepsLeft, i, reward);
         }
     }
 
