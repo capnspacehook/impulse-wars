@@ -122,6 +122,7 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
     const b2Vec2 dronePos = drone->pos.pos;
     const int16_t droneCellIdx = entityPosToCellIdx(e, dronePos);
     if (droneCellIdx == -1) {
+        // TODO: reset game instead? agent drone is out of bounds at 12.740652 -46.902985
         ERRORF("agent drone is out of bounds at %f %f", dronePos.x, dronePos.y);
     }
     const uint8_t droneCellRow = droneCellIdx % e->rows;
@@ -569,20 +570,19 @@ void resetEnv(env *e) {
     setupEnv(e);
 }
 
-float computeShotHitReward(env *e, const uint8_t enemyIdx) {
+float computeExplosionReward(env *e, const uint8_t enemyIdx) {
     // compute reward based off of how much the projectile(s) or explosion(s)
     // caused the enemy drone to change velocity
     const droneEntity *enemyDrone = safe_array_get_at(e->drones, enemyIdx);
     const float prevEnemySpeed = b2Length(enemyDrone->lastVelocity);
     const float curEnemySpeed = b2Length(b2Body_GetLinearVelocity(enemyDrone->bodyID));
-    return scaleValue(fabsf(curEnemySpeed - prevEnemySpeed), MAX_SPEED, true) * SHOT_HIT_REWARD_COEF;
+    return scaleValue(fabsf(curEnemySpeed - prevEnemySpeed), MAX_SPEED, true) * EXPLOSION_HIT_REWARD_COEF;
 }
 
 // TODO: add death punishment when there are more than 2 drones
 float computeReward(env *e, droneEntity *drone) {
     float reward = 0.0f;
 
-    bool aimingAtEnemy = false;
     for (uint8_t i = 0; i < e->numDrones; i++) {
         if (i == drone->idx) {
             continue;
@@ -590,38 +590,15 @@ float computeReward(env *e, droneEntity *drone) {
         if (drone->stepInfo.pickedUpWeapon && drone->stepInfo.prevWeapon == STANDARD_WEAPON) {
             reward += WEAPON_PICKUP_REWARD;
         }
-        if (drone->stepInfo.shotHit[i] || drone->stepInfo.explosionHit[i]) {
-            reward += computeShotHitReward(e, i);
+        if (drone->stepInfo.shotHit[i] != 0) {
+            // subtract 1 from the weapon type because 1 is added so we
+            // can use 0 as no shot was hit
+            const weaponInformation *weaponInfo = weaponInfos[drone->stepInfo.shotHit[i] - 1];
+            const float weaponForce = weaponInfo->fireMagnitude * weaponInfo->invMass;
+            reward += ((weaponForce * (0.5f * weaponForce)) * SHOT_HIT_REWARD_COEF) + 0.25f;
         }
-
-        const droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
-        const b2Vec2 enemyDirection = b2Normalize(b2Sub(enemyDrone->pos.pos, drone->pos.pos));
-        const float velocityToEnemy = b2Dot(drone->lastVelocity, enemyDirection);
-        const float enemyDistance = b2Distance(enemyDrone->pos.pos, drone->pos.pos);
-        // stop rewarding approaching an enemy if they're very close
-        // to avoid constant clashing; always reward approaching when
-        // the current weapon is the shotgun, it greatly benefits from
-        // being close to enemies
-        if (velocityToEnemy > 0.1f && (drone->weaponInfo->type == SHOTGUN_WEAPON || enemyDistance > DISTANCE_CUTOFF)) {
-            reward += APPROACH_REWARD_COEF * velocityToEnemy;
-        }
-
-        // if we know this drone is aiming at another drone or doesn't
-        /// have the enemy drone in the line of sight, then we
-        // don't need to check if it's aiming at the enemy drone
-        if (aimingAtEnemy || !drone->inLineOfSight[i]) {
-            continue;
-        }
-
-        const float aimDot = b2Dot(drone->lastAim, enemyDirection);
-        const float distance = b2Distance(drone->pos.pos, enemyDrone->pos.pos);
-        const float aimThreshold = cosf(atanf(AIM_TOLERANCE / distance));
-        if (aimDot >= aimThreshold) {
-            reward += AIM_REWARD;
-            if (drone->stepInfo.firedShot) {
-                reward += AIMED_SHOT_REWARD;
-            }
-            aimingAtEnemy = true;
+        if (drone->stepInfo.explosionHit[i]) {
+            reward += computeExplosionReward(e, i);
         }
     }
 

@@ -7,12 +7,12 @@
 #define INFINITE -1
 
 // general settings
-#define FRAME_RATE 60.0f
+#define FRAME_RATE 10.0f
 #define DELTA_TIME 1.0f / FRAME_RATE
 
-#define BOX2D_SUBSTEPS 2
+#define BOX2D_SUBSTEPS 1
 
-#define FRAMESKIP 4
+#define FRAMESKIP 1
 
 #define _MAX_MAP_COLUMNS 24
 #define _MAX_MAP_ROWS 24
@@ -20,7 +20,7 @@
 
 #define MIN_SPAWN_DISTANCE 6.0f
 
-#define ROUND_STEPS 91 * FRAME_RATE
+#define ROUND_STEPS 30 * FRAME_RATE
 #define SUDDEN_DEATH_STEPS 5.0f * FRAME_RATE
 
 const uint8_t MAX_DRONES = _MAX_DRONES;
@@ -30,12 +30,10 @@ const uint8_t MAX_DRONES = _MAX_DRONES;
 const uint16_t LOG_BUFFER_SIZE = 1024;
 
 // reward settings
-#define WIN_REWARD 3.0f
-#define APPROACH_REWARD_COEF 0.001f
-#define AIM_REWARD 0.02f
-#define AIMED_SHOT_REWARD 0.1f
-#define WEAPON_PICKUP_REWARD 1.0f
-#define SHOT_HIT_REWARD_COEF 5.0f
+#define WIN_REWARD 2.0f
+#define WEAPON_PICKUP_REWARD 0.25f
+#define SHOT_HIT_REWARD_COEF 0.0001f
+#define EXPLOSION_HIT_REWARD_COEF 5.0f
 
 #define DISTANCE_CUTOFF 15.0f
 #define AIM_TOLERANCE 1.0f
@@ -191,6 +189,7 @@ const weaponInformation standard = {
     .type = STANDARD_WEAPON,
     .isPhysicsBullet = true,
     .numProjectiles = STANDARD_PROJECTILES,
+    .fireMagnitude = STANDARD_FIRE_MAGNITUDE,
     .recoilMagnitude = STANDARD_RECOIL_MAGNITUDE,
     .coolDown = STANDARD_COOL_DOWN,
     .maxDistance = STANDARD_MAX_DISTANCE,
@@ -204,6 +203,7 @@ const weaponInformation machineGun = {
     .type = MACHINEGUN_WEAPON,
     .isPhysicsBullet = true,
     .numProjectiles = MACHINEGUN_PROJECTILES,
+    .fireMagnitude = MACHINEGUN_FIRE_MAGNITUDE,
     .recoilMagnitude = MACHINEGUN_RECOIL_MAGNITUDE,
     .coolDown = MACHINEGUN_COOL_DOWN,
     .maxDistance = MACHINEGUN_MAX_DISTANCE,
@@ -217,6 +217,7 @@ const weaponInformation sniper = {
     .type = SNIPER_WEAPON,
     .isPhysicsBullet = true,
     .numProjectiles = SNIPER_PROJECTILES,
+    .fireMagnitude = SNIPER_FIRE_MAGNITUDE,
     .recoilMagnitude = SNIPER_RECOIL_MAGNITUDE,
     .coolDown = SNIPER_COOL_DOWN,
     .maxDistance = SNIPER_MAX_DISTANCE,
@@ -230,6 +231,7 @@ const weaponInformation shotgun = {
     .type = SHOTGUN_WEAPON,
     .isPhysicsBullet = true,
     .numProjectiles = SHOTGUN_PROJECTILES,
+    .fireMagnitude = SHOTGUN_FIRE_MAGNITUDE,
     .recoilMagnitude = SHOTGUN_RECOIL_MAGNITUDE,
     .coolDown = SHOTGUN_COOL_DOWN,
     .maxDistance = SHOTGUN_MAX_DISTANCE,
@@ -243,6 +245,7 @@ const weaponInformation imploder = {
     .type = IMPLODER_WEAPON,
     .isPhysicsBullet = false,
     .numProjectiles = IMPLODER_PROJECTILES,
+    .fireMagnitude = IMPLODER_FIRE_MAGNITUDE,
     .recoilMagnitude = IMPLODER_RECOIL_MAGNITUDE,
     .coolDown = IMPLODER_COOL_DOWN,
     .maxDistance = IMPLODER_MAX_DISTANCE,

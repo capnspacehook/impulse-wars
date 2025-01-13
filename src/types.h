@@ -91,6 +91,7 @@ typedef struct weaponInformation {
     const enum weaponType type;
     const bool isPhysicsBullet;
     const uint8_t numProjectiles;
+    const float fireMagnitude;
     const float recoilMagnitude;
     const float coolDown;
     const float maxDistance;
@@ -128,7 +129,7 @@ typedef struct droneStepInfo {
     bool firedShot;
     bool pickedUpWeapon;
     enum weaponType prevWeapon;
-    bool shotHit[_MAX_DRONES];
+    uint8_t shotHit[_MAX_DRONES];
     bool explosionHit[_MAX_DRONES];
     bool shotTaken[_MAX_DRONES];
     bool ownShotTaken;

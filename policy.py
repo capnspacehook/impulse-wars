@@ -17,9 +17,8 @@ from cy_impulse_wars import obsConstants
 cnnChannels = 64
 weaponTypeEmbeddingDims = 2
 floatingWallOutputSize = 64
-droneEncOutputSize = 128
-encoderOutputSize = 128
-lstmOutputSize = 128
+encoderOutputSize = 256
+lstmOutputSize = 256
 
 
 class Recurrent(LSTMWrapper):
@@ -92,17 +91,6 @@ class Policy(nn.Module):
             nn.ReLU(),
         )
 
-        self.droneEncoder = nn.Sequential(
-            layer_init(
-                nn.Linear(
-                    ((self.numDrones - 1) * (weaponTypeEmbeddingDims + self.obsInfo.enemyDroneObsSize - 1))
-                    + (self.obsInfo.droneObsSize - 1 + weaponTypeEmbeddingDims),
-                    droneEncOutputSize,
-                )
-            ),
-            nn.ReLU(),
-        )
-
         featuresSize = (
             cnnOutputSize
             + (self.obsInfo.numNearWallObs * (self.obsInfo.wallTypes + self.obsInfo.nearWallPosObsSize))
@@ -115,7 +103,8 @@ class Policy(nn.Module):
                 self.obsInfo.numProjectileObs
                 * (weaponTypeEmbeddingDims + self.obsInfo.projectileInfoObsSize - 1 + self.numDrones + 1)
             )
-            + droneEncOutputSize
+            + ((self.numDrones - 1) * (weaponTypeEmbeddingDims + self.obsInfo.enemyDroneObsSize - 1))
+            + (self.obsInfo.droneObsSize - 1 + weaponTypeEmbeddingDims)
             + self.obsInfo.miscObsSize
         )
 
@@ -264,13 +253,14 @@ class Policy(nn.Module):
         droneObs = th.cat((droneWeapon, droneInfoObs), dim=-1)
 
         allDronesObs = th.cat((enemyDroneObs, droneObs), dim=1)
-        drones = self.droneEncoder(allDronesObs)
 
         # process misc observations
         miscObs = scalarObs[:, self.obsInfo.miscObsOffset :]
 
         # combine all observations and feed through final linear encoder
-        features = th.cat((map, nearWalls, floatingWalls, pickups, projectiles, drones, miscObs), dim=-1)
+        features = th.cat(
+            (map, nearWalls, floatingWalls, pickups, projectiles, allDronesObs, miscObs), dim=-1
+        )
 
         return self.encoder(features), None
 

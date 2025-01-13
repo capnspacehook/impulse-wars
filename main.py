@@ -119,6 +119,9 @@ def eval_policy(env: pufferlib.PufferEnv, policy, device, data=None, bestEval: f
             else:
                 actions, _ = policy(ob)
 
+            # TODO: only if discrete actions
+            actions = th.tensor([th.argmax(e) for e in actions])
+
             action = actions.cpu().numpy().reshape(env.action_space.shape)
 
         ob, reward, done, trunc, info = env.step(action)
@@ -170,29 +173,29 @@ if __name__ == "__main__":
     parser.add_argument("--train.compile-mode", type=str, default="reduce-overhead")
 
     parser.add_argument("--train.num-internal-envs", type=int, default=256)
-    parser.add_argument("--train.batch-size", type=int, default=262_144)
+    parser.add_argument("--train.batch-size", type=int, default=131_072)
     parser.add_argument("--train.bptt-horizon", type=int, default=64)
     parser.add_argument("--train.clip-coef", type=float, default=0.2)
     parser.add_argument("--train.clip-vloss", action="store_false")
-    parser.add_argument("--train.ent-coef", type=float, default=0.0025)
-    parser.add_argument("--train.gae-lambda", type=float, default=0.98)
-    parser.add_argument("--train.gamma", type=float, default=0.999)
-    parser.add_argument("--train.learning-rate", type=float, default=0.00125)
+    parser.add_argument("--train.ent-coef", type=float, default=0.0013354181228161276)
+    parser.add_argument("--train.gae-lambda", type=float, default=0.9341919288455168)
+    parser.add_argument("--train.gamma", type=float, default=0.9911001539288388)
+    parser.add_argument("--train.learning-rate", type=float, default=0.0001864609622641237)
     parser.add_argument("--train.anneal-lr", action="store_true")
     parser.add_argument("--train.max-grad-norm", type=float, default=0.5)
     parser.add_argument("--train.minibatch-size", type=int, default=32_768)
     parser.add_argument("--train.norm-adv", action="store_false")
-    parser.add_argument("--train.update-epochs", type=int, default=1)
+    parser.add_argument("--train.update-epochs", type=int, default=3)
     parser.add_argument("--train.vf-clip-coef", type=float, default=0.1)
-    parser.add_argument("--train.vf-coef", type=float, default=0.5)
+    parser.add_argument("--train.vf-coef", type=float, default=0.0740399510451186)
     parser.add_argument("--train.target-kl", type=float, default=0.2)
 
-    parser.add_argument("--env.discretize-actions", action="store_true")
+    parser.add_argument("--env.discretize-actions", action="store_false")
     parser.add_argument("--env.num-drones", type=int, default=2, help="Number of drones in the environment")
     parser.add_argument(
         "--env.num-agents",
         type=int,
-        default=2,
+        default=1,
         help="Number of agents controlling drones, if this is less than --train.num-drones the other drones will do nothing",
     )
 

@@ -796,7 +796,8 @@ bool handleProjectileBeginContact(env *e, const entity *proj, const entity *ent)
             if (projectile->droneIdx != hitDrone->idx) {
                 droneEntity *shooterDrone = safe_array_get_at(e->drones, projectile->droneIdx);
 
-                shooterDrone->stepInfo.shotHit[hitDrone->idx] = true;
+                // add 1 so we can differentiate between no weapon and weapon 0
+                shooterDrone->stepInfo.shotHit[hitDrone->idx] = projectile->weaponInfo->type + 1;
                 e->stats[shooterDrone->idx].shotsHit[projectile->weaponInfo->type]++;
                 DEBUG_LOGF("drone %d hit drone %d with weapon %d", shooterDrone->idx, hitDrone->idx, projectile->weaponInfo->type);
                 hitDrone->stepInfo.shotTaken[shooterDrone->idx] = true;
