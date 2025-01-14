@@ -614,6 +614,11 @@ float computeReward(env *e, droneEntity *drone) {
         if (i == drone->idx) {
             continue;
         }
+
+        // only reward picking up a weapon if the standard weapon was
+        // previously held; every weapon is better than the standard
+        // weapon, but other weapons are situational better so don't
+        // reward switching a non-standard weapon
         if (drone->stepInfo.pickedUpWeapon && drone->stepInfo.prevWeapon == STANDARD_WEAPON) {
             reward += WEAPON_PICKUP_REWARD;
         }
@@ -626,6 +631,18 @@ float computeReward(env *e, droneEntity *drone) {
         }
         if (drone->stepInfo.explosionHit[i]) {
             reward += computeExplosionReward(e, i);
+        }
+
+        const droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
+        const b2Vec2 enemyDirection = b2Normalize(b2Sub(enemyDrone->pos.pos, drone->pos.pos));
+        const float velocityToEnemy = b2Dot(drone->lastVelocity, enemyDirection);
+        const float enemyDistance = b2Distance(enemyDrone->pos.pos, drone->pos.pos);
+        // stop rewarding approaching an enemy if they're very close
+        // to avoid constant clashing; always reward approaching when
+        // the current weapon is the shotgun, it greatly benefits from
+        // being close to enemies
+        if (velocityToEnemy > 0.1f && (drone->weaponInfo->type == SHOTGUN_WEAPON || enemyDistance > DISTANCE_CUTOFF)) {
+            reward += APPROACH_REWARD;
         }
     }
 
