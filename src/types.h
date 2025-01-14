@@ -198,6 +198,7 @@ typedef struct agentActions {
 typedef struct env {
     uint8_t numDrones;
     uint8_t numAgents;
+    bool sittingDuck;
     bool isTraining;
 
     uint16_t obsBytes;

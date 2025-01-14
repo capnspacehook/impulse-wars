@@ -122,8 +122,10 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
     const b2Vec2 dronePos = drone->pos.pos;
     const int16_t droneCellIdx = entityPosToCellIdx(e, dronePos);
     if (droneCellIdx == -1) {
-        // TODO: reset game instead? agent drone is out of bounds at 12.740652 -46.902985
-        ERRORF("agent drone is out of bounds at %f %f", dronePos.x, dronePos.y);
+        DEBUG_LOGF("agent drone is out of bounds at %f %f", dronePos.x, dronePos.y);
+        memset(e->truncations, 0x0, e->numAgents * sizeof(uint8_t));
+        e->needsReset = true;
+        return;
     }
     const uint8_t droneCellRow = droneCellIdx % e->rows;
     const uint8_t droneCellCol = droneCellIdx / e->columns;
@@ -175,7 +177,10 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
         const b2Vec2 pos = b2Body_GetPosition(wall->bodyID);
         int16_t cellIdx = entityPosToCellIdx(e, pos);
         if (cellIdx == -1) {
-            ERRORF("floating wall %zu out of bounds at position %f %f", i, pos.x, pos.y);
+            DEBUG_LOGF("floating wall %zu out of bounds at position %f %f", i, pos.x, pos.y);
+            memset(e->truncations, 0x0, e->numAgents * sizeof(uint8_t));
+            e->needsReset = true;
+            return;
         }
         const uint8_t cellRow = cellIdx % e->rows;
         if (cellRow < startRow || cellRow > endRow) {
@@ -204,7 +209,10 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
             pos = otherDrone->pos.pos;
             cellIdx = entityPosToCellIdx(e, pos);
             if (cellIdx == -1) {
-                ERRORF("drone %d out of bounds at position %f %f", i, pos.x, pos.y);
+                DEBUG_LOGF("drone %d out of bounds at position %f %f", i, pos.x, pos.y);
+                memset(e->truncations, 0x0, e->numAgents * sizeof(uint8_t));
+                e->needsReset = true;
+                return;
             }
         }
 
@@ -473,9 +481,10 @@ void setEnvFrameRate(env *e, uint8_t frameRate) {
     e->totalSuddenDeathSteps = SUDDEN_DEATH_STEPS * frameRate;
 }
 
-env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool discretizeActions, float *contActions, int32_t *discActions, float *rewards, uint8_t *terminals, uint8_t *truncations, logBuffer *logs, uint64_t seed, bool isTraining) {
+env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool discretizeActions, float *contActions, int32_t *discActions, float *rewards, uint8_t *terminals, uint8_t *truncations, logBuffer *logs, uint64_t seed, bool sittingDuck, bool isTraining) {
     e->numDrones = numDrones;
     e->numAgents = numAgents;
+    e->sittingDuck = sittingDuck;
     e->isTraining = isTraining;
 
     e->obsBytes = obsBytes(e->numDrones);
@@ -599,6 +608,8 @@ float computeExplosionReward(env *e, const uint8_t enemyIdx) {
 float computeReward(env *e, droneEntity *drone) {
     float reward = 0.0f;
 
+    // TODO: try death punishment again
+
     for (uint8_t i = 0; i < e->numDrones; i++) {
         if (i == drone->idx) {
             continue;
@@ -636,8 +647,9 @@ void computeRewards(env *e, const bool roundOver, const int8_t winner) {
         rewards[i] += computeReward(e, drone);
     }
 
-    // don't zero sum rewards if there's only one agent
-    if (e->numAgents == 1) {
+    // don't zero sum rewards if there's only one agent and the enemy drone
+    // is a sitting duck
+    if (e->numAgents != e->numDrones) {
         for (uint8_t i = 0; i < e->numDrones; i++) {
             e->rewards[i] += rewards[i];
             e->stats[i].reward += rewards[i];
@@ -860,7 +872,7 @@ void stepEnv(env *e) {
 
         // handle sudden death
         e->stepsLeft = fmaxf(e->stepsLeft - 1, 0.0f);
-        if (e->stepsLeft == 0 && e->numAgents > 1) {
+        if (e->stepsLeft == 0 && e->numDrones != e->numAgents) {
             e->suddenDeathSteps = fmaxf(e->suddenDeathSteps - 1, 0.0f);
             if (e->suddenDeathSteps == 0) {
                 DEBUG_LOG("placing sudden death walls");
@@ -892,7 +904,9 @@ void stepEnv(env *e) {
         weaponPickupsStep(e, e->deltaTime);
 
         bool roundOver = deadDrones >= e->numDrones - 1;
-        if (e->numAgents == 1 && e->stepsLeft == 0) {
+        // if the enemy drone(s) are scripted don't enable sudden death
+        // so that the agent has to work for victories
+        if (e->numDrones != e->numAgents && e->stepsLeft == 0) {
             roundOver = true;
         }
         computeRewards(e, roundOver, lastAlive);
@@ -902,7 +916,7 @@ void stepEnv(env *e) {
         }
 
         if (roundOver) {
-            if (e->numAgents == 1 && e->stepsLeft == 0) {
+            if (e->numDrones != e->numAgents && e->stepsLeft == 0) {
                 DEBUG_LOG("truncating episode");
                 memset(e->truncations, 1, e->numAgents * sizeof(uint8_t));
             } else {

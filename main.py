@@ -47,9 +47,10 @@ def train(args) -> Deque[Dict[str, Any]] | None:
         num_envs=args.vec.num_envs,
         env_args=(args.train.num_internal_envs,),
         env_kwargs=dict(
-            discretize_actions=args.env.discretize_actions,
             num_drones=args.env.num_drones,
             num_agents=args.env.num_agents,
+            sitting_duck=args.env.sitting_duck,
+            discretize_actions=args.env.discretize_actions,
             is_training=True,
             seed=args.seed,
             render=args.render,
@@ -167,7 +168,7 @@ if __name__ == "__main__":
     parser.add_argument("--train.cpu-offload", action="store_true")
     parser.add_argument("--train.device", type=str, default="cuda" if th.cuda.is_available() else "cpu")
     parser.add_argument("--train.total-timesteps", type=int, default=250_000_000)
-    parser.add_argument("--train.checkpoint-interval", type=int, default=25)
+    parser.add_argument("--train.checkpoint-interval", type=int, default=100)
     parser.add_argument("--train.eval-interval", type=int, default=1_000_000)
     parser.add_argument("--train.compile", action="store_true")
     parser.add_argument("--train.compile-mode", type=str, default="reduce-overhead")
@@ -196,8 +197,9 @@ if __name__ == "__main__":
         "--env.num-agents",
         type=int,
         default=1,
-        help="Number of agents controlling drones, if this is less than --train.num-drones the other drones will do nothing",
+        help="Number of agents controlling drones, if this is less than --train.num-drones the other drones will be scripted",
     )
+    parser.add_argument("--env.sitting-duck", action="store_true", help="Scripted drones will do nothing")
 
     parser.add_argument("--vec.backend", type=str, default="multiprocessing")
     parser.add_argument("--vec.num-envs", type=int, default=8)
@@ -246,9 +248,10 @@ if __name__ == "__main__":
             num_envs=1,
             env_args=(1,),
             env_kwargs=dict(
-                discretize_actions=args.env.discretize_actions,
                 num_drones=args.env.num_drones,
                 num_agents=args.env.num_agents,
+                sitting_duck=args.env.sitting_duck,
+                discretize_actions=args.env.discretize_actions,
                 is_training=False,
                 render=True,
                 seed=args.seed,

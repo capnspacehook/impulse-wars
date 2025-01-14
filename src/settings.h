@@ -30,7 +30,7 @@ const uint8_t MAX_DRONES = _MAX_DRONES;
 const uint16_t LOG_BUFFER_SIZE = 1024;
 
 // reward settings
-#define WIN_REWARD 2.0f
+#define WIN_REWARD 3.0f
 #define WEAPON_PICKUP_REWARD 0.25f
 #define SHOT_HIT_REWARD_COEF 0.0001f
 #define EXPLOSION_HIT_REWARD_COEF 5.0f

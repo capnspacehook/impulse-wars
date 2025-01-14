@@ -42,6 +42,7 @@ class ImpulseWars(pufferlib.PufferEnv):
         num_envs: int,
         num_drones: int = 2,
         num_agents: int = 2,
+        sitting_duck: bool = False,
         discretize_actions: bool = False,
         is_training: bool = True,
         seed: int = 0,
@@ -110,6 +111,7 @@ class ImpulseWars(pufferlib.PufferEnv):
             self.truncations,
             seed,
             render,
+            sitting_duck,
             is_training,
         )
 
