@@ -20,7 +20,7 @@
 
 #define MIN_SPAWN_DISTANCE 6.0f
 
-#define ROUND_STEPS 90
+#define ROUND_STEPS 30
 #define SUDDEN_DEATH_STEPS 5
 
 const uint8_t MAX_DRONES = _MAX_DRONES;
@@ -31,6 +31,7 @@ const uint16_t LOG_BUFFER_SIZE = 1024;
 
 // reward settings
 #define WIN_REWARD 3.0f
+#define ENERGY_EMPTY_PUNISHMENT -0.5f
 #define WEAPON_PICKUP_REWARD 0.25f
 #define SHOT_HIT_REWARD_COEF 0.0001f
 #define EXPLOSION_HIT_REWARD_COEF 5.0f
@@ -72,9 +73,9 @@ const uint16_t PROJECTILE_TYPES_OBS_OFFSET = WEAPON_PICKUP_POS_OBS_OFFSET + (NUM
 const uint16_t PROJECTILE_POS_OBS_OFFSET = PROJECTILE_TYPES_OBS_OFFSET + NUM_PROJECTILE_OBS;
 
 const uint16_t ENEMY_DRONE_OBS_OFFSET = PROJECTILE_POS_OBS_OFFSET + (NUM_PROJECTILE_OBS * PROJECTILE_INFO_OBS_SIZE);
-const uint8_t ENEMY_DRONE_OBS_SIZE = 18;
+const uint8_t ENEMY_DRONE_OBS_SIZE = 22;
 
-const uint8_t DRONE_OBS_SIZE = 16;
+const uint8_t DRONE_OBS_SIZE = 20;
 
 const uint8_t MISC_OBS_SIZE = 1;
 
@@ -95,8 +96,8 @@ uint16_t obsBytes(uint8_t numDrones) {
 #define MAX_ANGLE (float)PI
 
 // action constants
-const uint8_t CONTINUOUS_ACTION_SIZE = 5;
-const uint8_t DISCRETE_ACTION_SIZE = 3;
+const uint8_t CONTINUOUS_ACTION_SIZE = 7;
+const uint8_t DISCRETE_ACTION_SIZE = 5;
 const float ACTION_NOOP_MAGNITUDE = 0.1f;
 
 #define DIAG_MAG 0.707107f

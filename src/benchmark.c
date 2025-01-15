@@ -11,7 +11,7 @@ void perfTest(const float testTime) {
     uint8_t *truncations = (uint8_t *)fastCalloc(NUM_DRONES, sizeof(uint8_t));
     logBuffer *logs = createLogBuffer(1);
 
-    initEnv(e, NUM_DRONES, NUM_DRONES, obs, false, actions, NULL, rewards, terminals, truncations, logs, 0, true);
+    initEnv(e, NUM_DRONES, NUM_DRONES, obs, false, actions, NULL, rewards, terminals, truncations, logs, 0, false, true);
 
     const time_t start = time(NULL);
     int steps = 0;
@@ -23,6 +23,8 @@ void perfTest(const float testTime) {
             e->contActions[actionOffset + 2] = randFloat(&e->randState, -1.0f, 1.0f);
             e->contActions[actionOffset + 3] = randFloat(&e->randState, -1.0f, 1.0f);
             e->contActions[actionOffset + 4] = randFloat(&e->randState, -1.0f, 1.0f);
+            e->contActions[actionOffset + 5] = randFloat(&e->randState, -1.0f, 1.0f);
+            e->contActions[actionOffset + 6] = randFloat(&e->randState, -1.0f, 1.0f);
 
             actionOffset += CONTINUOUS_ACTION_SIZE;
         }

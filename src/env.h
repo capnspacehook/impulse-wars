@@ -72,6 +72,11 @@ logEntry aggregateAndClearLogBuffer(uint8_t numDrones, logBuffer *logs) {
                 log.stats[j].ownShotsTaken[k] += logs->logs[i].stats[j].ownShotsTaken[k] / logSize;
                 log.stats[j].weaponsPickedUp[k] += logs->logs[i].stats[j].weaponsPickedUp[k] / logSize;
                 log.stats[j].shotDistances[k] += logs->logs[i].stats[j].shotDistances[k] / logSize;
+                log.stats[j].lightBrakeTime += logs->logs[i].stats[j].lightBrakeTime / logSize;
+                log.stats[j].heavyBrakeTime += logs->logs[i].stats[j].heavyBrakeTime / logSize;
+                log.stats[j].totalBursts += logs->logs[i].stats[j].totalBursts / logSize;
+                log.stats[j].burstsHit += logs->logs[i].stats[j].burstsHit / logSize;
+                log.stats[j].energyEmptied += logs->logs[i].stats[j].energyEmptied / logSize;
             }
         }
     }
@@ -365,8 +370,13 @@ void computeObs(env *e) {
             const b2Vec2 enemyDroneVel = b2Body_GetLinearVelocity(enemyDrone->bodyID);
             const b2Vec2 enemyDroneAccel = b2Sub(enemyDroneVel, enemyDrone->lastVelocity);
             const b2Vec2 enemyDroneRelNormPos = b2Normalize(b2Sub(enemyDrone->pos.pos, agentDronePos));
-            const float enemyDroneAngle = atan2f(enemyDroneRelNormPos.y, enemyDroneRelNormPos.x);
             const float enemyDroneAimAngle = atan2f(enemyDrone->lastAim.y, enemyDrone->lastAim.x);
+            float enemyDroneBraking = 0.0f;
+            if (enemyDrone->lightBraking) {
+                enemyDroneBraking = 1.0f;
+            } else if (enemyDrone->heavyBraking) {
+                enemyDroneBraking = 2.0f;
+            }
 
             const uint16_t enemyDroneObsOffset = ENEMY_DRONE_OBS_OFFSET + processedDrones;
             scalarObs[enemyDroneObsOffset] = enemyDrone->weaponInfo->type + 1;
@@ -375,20 +385,24 @@ void computeObs(env *e) {
             scalarObs[scalarObsOffset++] = (float)agentDrone->inLineOfSight[i];
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.x, MAX_X_POS, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.y, MAX_Y_POS, false);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneDistance, MAX_DISTANCE, true); // TODO: ablate this
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneDistance, MAX_DISTANCE, true);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneVel.x, MAX_SPEED, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneVel.y, MAX_SPEED, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAccel.x, MAX_SPEED, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAccel.y, MAX_SPEED, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelNormPos.x, 1.0f, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelNormPos.y, 1.0f, false);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAngle, PI, false); // TODO: ablate this
             scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->lastAim.x, 1.0f, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->lastAim.y, 1.0f, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAimAngle, PI, false);
             scalarObs[scalarObsOffset++] = scaleAmmo(e, enemyDrone);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->weaponCooldown, enemyDrone->weaponInfo->coolDown, true);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->charge, weaponCharge(e, enemyDrone->weaponInfo->type), true);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->energyLeft, DRONE_ENERGY_MAX, true);
+            scalarObs[scalarObsOffset++] = (float)enemyDrone->energyFullyDepleted;
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneBraking, 2.0f, true);
+            scalarObs[scalarObsOffset++] = (float)enemyDrone->chargingBurst;
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->burstCharge, DRONE_ENERGY_MAX, true);
 
             processedDrones++;
             ASSERTF(scalarObsOffset == ENEMY_DRONE_OBS_OFFSET + (e->numDrones - 1) + (processedDrones * (ENEMY_DRONE_OBS_SIZE - 1)), "offset: %d", scalarObsOffset);
@@ -398,7 +412,12 @@ void computeObs(env *e) {
         ASSERTF(scalarObsOffset == ENEMY_DRONE_OBS_OFFSET + ((e->numDrones - 1) * ENEMY_DRONE_OBS_SIZE), "offset: %d", scalarObsOffset);
         const b2Vec2 agentDroneVel = b2Body_GetLinearVelocity(agentDrone->bodyID);
         const b2Vec2 agentDroneAccel = b2Sub(agentDroneVel, agentDrone->lastVelocity);
-        const float agentDroneAimAngle = atan2f(agentDrone->lastAim.y, agentDrone->lastAim.x);
+        float agentDroneBraking = 0.0f;
+        if (agentDrone->lightBraking) {
+            agentDroneBraking = 1.0f;
+        } else if (agentDrone->heavyBraking) {
+            agentDroneBraking = 2.0f;
+        }
 
         scalarObs[scalarObsOffset++] = agentDrone->weaponInfo->type + 1;
         scalarObs[scalarObsOffset++] = scaleValue(agentDronePos.x, MAX_X_POS, false);
@@ -409,10 +428,14 @@ void computeObs(env *e) {
         scalarObs[scalarObsOffset++] = scaleValue(agentDroneAccel.y, MAX_SPEED, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->lastAim.x, 1.0f, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->lastAim.y, 1.0f, false);
-        scalarObs[scalarObsOffset++] = scaleValue(agentDroneAimAngle, PI, false); // TODO: ablate this
         scalarObs[scalarObsOffset++] = scaleAmmo(e, agentDrone);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->weaponCooldown, agentDrone->weaponInfo->coolDown, true);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->charge, weaponCharge(e, agentDrone->weaponInfo->type), true);
+        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->energyLeft, DRONE_ENERGY_MAX, true);
+        scalarObs[scalarObsOffset++] = (float)agentDrone->energyFullyDepleted;
+        scalarObs[scalarObsOffset++] = scaleValue(agentDroneBraking, 2.0f, true);
+        scalarObs[scalarObsOffset++] = (float)agentDrone->chargingBurst;
+        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->burstCharge, DRONE_ENERGY_MAX, true);
         scalarObs[scalarObsOffset++] = hitShot;
         scalarObs[scalarObsOffset++] = tookShot;
         scalarObs[scalarObsOffset++] = agentDrone->stepInfo.ownShotTaken;
@@ -616,6 +639,10 @@ float computeReward(env *e, droneEntity *drone) {
             continue;
         }
 
+        if (drone->energyFullyDepleted && drone->energyRefillWait == DRONE_ENERGY_REFILL_EMPTY_WAIT * e->frameRate) {
+            reward += ENERGY_EMPTY_PUNISHMENT;
+        }
+
         // only reward picking up a weapon if the standard weapon was
         // previously held; every weapon is better than the standard
         // weapon, but other weapons are situational better so don't
@@ -699,22 +726,37 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
 
     if (e->discretizeActions && manualActions == NULL) {
         const uint8_t offset = drone->idx * DISCRETE_ACTION_SIZE;
-        const uint8_t move = e->discActions[offset + 0];
-        // 8 is no-op for both move and aim
+        uint8_t move = e->discActions[offset + 0];
+        // 0 is no-op for both move and aim
         ASSERT(move <= 8);
-        if (move != 8) {
+        if (move != 0) {
+            move++;
             actions.move.x = discToContActionMap[0][move];
             actions.move.y = discToContActionMap[1][move];
         }
-        const uint8_t aim = e->discActions[offset + 1];
+        uint8_t aim = e->discActions[offset + 1];
         ASSERT(move <= 8);
-        if (aim != 8) {
+        if (aim != 0) {
+            aim++;
             actions.aim.x = discToContActionMap[0][aim];
             actions.aim.y = discToContActionMap[1][aim];
         }
         const uint8_t shoot = e->discActions[offset + 2];
         ASSERT(shoot <= 1);
         actions.shoot = (bool)shoot;
+        const uint8_t brake = e->discActions[offset + 3];
+        ASSERT(brake <= 2);
+        if (brake == 1) {
+            actions.brakeLight = true;
+        } else if (brake == 2) {
+            actions.brakeHeavy = true;
+        }
+        const uint8_t burst = e->discActions[offset + 4];
+        ASSERT(burst <= 1);
+        actions.chargeBurst = (bool)burst;
+        if (!actions.chargeBurst && drone->chargingBurst) {
+            actions.burst = true;
+        }
         return actions;
     }
 
@@ -723,6 +765,13 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
         actions.move = (b2Vec2){.x = tanhf(e->contActions[offset + 0]), .y = tanhf(e->contActions[offset + 1])};
         actions.aim = (b2Vec2){.x = tanhf(e->contActions[offset + 2]), .y = tanhf(e->contActions[offset + 3])};
         actions.shoot = (bool)e->contActions[offset + 4];
+        const float brake = tanhf(e->contActions[offset + 5]);
+        actions.brakeLight = brake < 2.0f / 3.0f && brake > 0.0f;
+        actions.brakeHeavy = brake < -2.0f / 3.0f;
+        actions.chargeBurst = (bool)e->contActions[offset + 6];
+        if (!actions.chargeBurst && drone->chargingBurst) {
+            actions.burst = true;
+        }
     } else {
         actions.move = manualActions->move;
         actions.aim = manualActions->aim;
@@ -881,6 +930,10 @@ void stepEnv(env *e) {
         for (uint8_t i = 0; i < e->numDrones; i++) {
             droneEntity *drone = safe_array_get_at(e->drones, i);
             drone->lastVelocity = b2Body_GetLinearVelocity(drone->bodyID);
+        }
+
+        for (uint8_t i = 0; i < e->numDrones; i++) {
+            droneEntity *drone = safe_array_get_at(e->drones, i);
             memset(&drone->stepInfo, 0x0, sizeof(droneStepInfo));
             memset(&drone->inLineOfSight, 0x0, sizeof(drone->inLineOfSight));
 

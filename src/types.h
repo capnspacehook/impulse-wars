@@ -145,7 +145,12 @@ typedef struct droneStats {
     float shotsTaken[_NUM_WEAPONS];
     float ownShotsTaken[_NUM_WEAPONS];
     float weaponsPickedUp[_NUM_WEAPONS];
-    float shotDistances[_NUM_WEAPONS];
+    float shotDistances[_NUM_WEAPONS]; // TODO: remove?
+    float lightBrakeTime;
+    float heavyBrakeTime;
+    float totalBursts;
+    float burstsHit;
+    float energyEmptied;
     float wins;
 } droneStats;
 
@@ -163,6 +168,7 @@ typedef struct droneEntity {
     bool chargingBurst;
     float burstCharge;
     bool energyFullyDepleted;
+    bool energyFullyDepletedThisStep;
     uint16_t energyRefillWait;
     bool shotThisStep;
 

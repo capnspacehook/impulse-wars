@@ -270,7 +270,9 @@ class Policy(nn.Module):
             if self.isTraining:
                 actionLogStd = self.actorLogStd.expand_as(actionMean)
                 actionStd = th.exp(actionLogStd)
-                actionMean += th.empty(actionMean.shape,dtype=actionMean.dtype, device=actionMean.device).uniform_(-0.25, 0.25)
+                actionMean += th.empty(
+                    actionMean.shape, dtype=actionMean.dtype, device=actionMean.device
+                ).uniform_(-0.25, 0.25)
                 action = Normal(actionMean, actionStd)
             else:
                 action = actionMean

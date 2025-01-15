@@ -339,6 +339,7 @@ void createDrone(env *e, const uint8_t idx) {
     drone->chargingBurst = false;
     drone->burstCharge = 0.0f;
     drone->energyFullyDepleted = false;
+    drone->energyFullyDepletedThisStep = false;
     drone->energyRefillWait = 0;
     drone->shotThisStep = false;
     drone->idx = idx;
@@ -681,7 +682,7 @@ void droneShoot(env *e, droneEntity *drone, const b2Vec2 aim) {
     }
 }
 
-void droneBrake(const env *e, droneEntity *drone, const bool lightBrake, const bool heavyBrake) {
+void droneBrake(env *e, droneEntity *drone, const bool lightBrake, const bool heavyBrake) {
     // if the drone isn't braking or energy is fully depleted, return
     // unless the drone was braking during the last step
     if ((!lightBrake && !heavyBrake) || drone->energyFullyDepleted) {
@@ -704,23 +705,27 @@ void droneBrake(const env *e, droneEntity *drone, const bool lightBrake, const b
             b2Body_SetLinearDamping(drone->bodyID, DRONE_LINEAR_DAMPING * DRONE_LIGHT_BRAKE_COEF);
         }
         drone->energyLeft = fmaxf(drone->energyLeft - (DRONE_LIGHT_BRAKE_DRAIN_RATE * e->deltaTime), 0.0f);
+        e->stats[drone->idx].lightBrakeTime += e->deltaTime;
     } else if (heavyBrake) {
         if (!drone->heavyBraking) {
             drone->heavyBraking = true;
             b2Body_SetLinearDamping(drone->bodyID, DRONE_LINEAR_DAMPING * DRONE_HEAVY_BRAKE_COEF);
         }
         drone->energyLeft = fmaxf(drone->energyLeft - (DRONE_HEAVY_BRAKE_DRAIN_RATE * e->deltaTime), 0.0f);
+        e->stats[drone->idx].heavyBrakeTime += e->deltaTime;
     }
 
     // if energy is empty but burst is being charged, let burst functions
     // handle energy refill
     if (drone->energyLeft == 0.0f && !drone->chargingBurst) {
         drone->energyFullyDepleted = true;
+        drone->energyFullyDepletedThisStep = true;
         drone->energyRefillWait = DRONE_ENERGY_REFILL_EMPTY_WAIT * (float)e->frameRate;
+        e->stats[drone->idx].energyEmptied++;
     }
 }
 
-void droneChargeBurst(const env *e, droneEntity *drone) {
+void droneChargeBurst(env *e, droneEntity *drone) {
     if (drone->energyFullyDepleted) {
         return;
     }
@@ -732,6 +737,7 @@ void droneChargeBurst(const env *e, droneEntity *drone) {
 
     if (drone->energyLeft == 0.0f) {
         drone->energyFullyDepleted = true;
+        e->stats[drone->idx].energyEmptied++;
     }
 }
 
@@ -759,7 +765,8 @@ float getShapeProjectedPerimeter(const b2ShapeId shapeID, const b2Vec2 line) {
 }
 
 typedef struct burstExplosionCtx {
-    const droneEntity *parentDrone;
+    env *e;
+    droneEntity *parentDrone;
     const b2ExplosionDef *def;
 } burstExplosionCtx;
 
@@ -773,10 +780,15 @@ bool burstExplodeCallback(b2ShapeId shapeID, void *context) {
     const entity *entity = b2Shape_GetUserData(shapeID);
     // the explosion shouldn't affect the parent drone
     if (entity->type == DRONE_ENTITY) {
-        const droneEntity *drone = (droneEntity *)entity->entity;
+        droneEntity *drone = (droneEntity *)entity->entity;
         if (drone->idx == ctx->parentDrone->idx) {
             return true;
         }
+        ctx->parentDrone->stepInfo.explosionHit[drone->idx] = true;
+        ctx->e->stats[ctx->parentDrone->idx].burstsHit++;
+        DEBUG_LOGF("drone %d hit drone %d with burst", ctx->parentDrone->idx, drone->idx);
+        drone->stepInfo.shotTaken[ctx->parentDrone->idx] = true;
+        DEBUG_LOGF("drone %d hit burst from drone %d", drone->idx, ctx->parentDrone->idx);
     }
 
     b2BodyId bodyID = b2Shape_GetBody(shapeID);
@@ -818,7 +830,7 @@ bool burstExplodeCallback(b2ShapeId shapeID, void *context) {
     return true;
 }
 
-void burstExplode(const env *e, const droneEntity *drone, const b2ExplosionDef *def) {
+void burstExplode(env *e, droneEntity *drone, const b2ExplosionDef *def) {
     const float fullRadius = def->radius + def->falloff;
     b2AABB aabb = {
         .lowerBound.x = def->position.x - fullRadius,
@@ -830,7 +842,7 @@ void burstExplode(const env *e, const droneEntity *drone, const b2ExplosionDef *
     b2QueryFilter filter = b2DefaultQueryFilter();
     filter.maskBits = def->maskBits;
 
-    burstExplosionCtx ctx = {.parentDrone = drone, .def = def};
+    burstExplosionCtx ctx = {.e = e, .parentDrone = drone, .def = def};
     b2World_OverlapAABB(e->worldID, aabb, filter, burstExplodeCallback, &ctx);
 }
 
@@ -853,10 +865,12 @@ void droneBurst(env *e, droneEntity *drone) {
     drone->chargingBurst = false;
     drone->burstCharge = 0.0f;
     if (drone->energyLeft == 0.0f) {
+        drone->energyFullyDepletedThisStep = true;
         drone->energyRefillWait = DRONE_ENERGY_REFILL_EMPTY_WAIT * (float)e->frameRate;
     } else {
         drone->energyRefillWait = DRONE_ENERGY_REFILL_WAIT * (float)e->frameRate;
     }
+    e->stats[drone->idx].totalBursts++;
 
     if (e->client != NULL) {
         explosionInfo *explInfo = fastMalloc(sizeof(explosionInfo));
@@ -875,7 +889,7 @@ void droneAddEnergy(droneEntity *drone, float energy) {
     }
 }
 
-void droneDiscardWeapon(const env *e, droneEntity *drone) {
+void droneDiscardWeapon(env *e, droneEntity *drone) {
     if (drone->weaponInfo->type == e->defaultWeapon->type || (drone->energyFullyDepleted && !drone->chargingBurst)) {
         return;
     }
@@ -888,7 +902,9 @@ void droneDiscardWeapon(const env *e, droneEntity *drone) {
 
     if (drone->energyLeft == 0.0f) {
         drone->energyFullyDepleted = true;
+        drone->energyFullyDepletedThisStep = true;
         drone->energyRefillWait = DRONE_ENERGY_REFILL_EMPTY_WAIT * (float)e->frameRate;
+        e->stats[drone->idx].energyEmptied++;
     } else {
         drone->energyRefillWait = DRONE_ENERGY_REFILL_WAIT * (float)e->frameRate;
     }
@@ -906,7 +922,9 @@ void droneStep(env *e, droneEntity *drone) {
     ASSERT(!drone->shotThisStep);
 
     // manage drone brake
-    if (drone->energyRefillWait != 0.0f) {
+    if (drone->energyFullyDepletedThisStep) {
+        drone->energyFullyDepletedThisStep = false;
+    } else if (drone->energyRefillWait != 0.0f) {
         drone->energyRefillWait = fmaxf(drone->energyRefillWait - 1, 0.0f);
     } else if (drone->energyLeft != DRONE_ENERGY_MAX && !drone->chargingBurst) {
         // don't start recharging energy until the burst charge is used

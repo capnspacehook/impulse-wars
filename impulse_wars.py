@@ -29,6 +29,12 @@ def transformRawLog(numDrones: int, rawLog: Dict[str, float]):
         log[f"drone_{i}_own_shots_taken"] = sum(stats["ownShotsTaken"])
         log[f"drone_{i}_weapons_picked_up"] = sum(stats["weaponsPickedUp"])
         log[f"drone_{i}_shots_distance"] = sum(stats["shotDistances"])
+        log[f"drone_{i}_light_brake_time"] = stats["lightBrakeTime"]
+        log[f"drone_{i}_heavy_brake_time"] = stats["heavyBrakeTime"]
+        log[f"drone_{i}_bursts"] = stats["totalBursts"]
+        log[f"drone_{i}_burst_hit"] = stats["burstsHit"]
+        log[f"drone_{i}_energy_emptied"] = stats["energyEmptied"]
+
         count += 1
         if count >= numDrones:
             break
@@ -69,9 +75,11 @@ class ImpulseWars(pufferlib.PufferEnv):
         if discretize_actions:
             self.single_action_space = gymnasium.spaces.MultiDiscrete(
                 [
-                    9,  # move, cardinal directions + diagonal directions + noop
-                    9,  # aim, cardinal directions + diagonal directions + noop
-                    2,  # shoot
+                    9,  # move, noop + cardinal directions + diagonal directions
+                    9,  # aim, noop + cardinal directions + diagonal directions
+                    2,  # shoot or not
+                    3,  # brake, noop + light brake + hard brake
+                    2,  # burst
                 ]
             )
         else:
