@@ -7,29 +7,31 @@
 #include "helpers.h"
 
 const float DEFAULT_SCALE = 11.0f;
-const int DEFAULT_WIDTH = 1250;
-const int DEFAULT_HEIGHT = 1000;
-const int HEIGHT_LEEWAY = 100;
+const uint16_t DEFAULT_WIDTH = 1250;
+const uint16_t DEFAULT_HEIGHT = 1000;
+const uint16_t HEIGHT_LEEWAY = 100;
+
+const float EXPLOSION_TIME = 0.5f;
 
 const Color barolo = {.r = 165, .b = 8, .g = 37, .a = 255};
 
 const float halfDroneRadius = DRONE_RADIUS / 2.0f;
 const float aimGuideHeight = 0.3f * DRONE_RADIUS;
 
-static inline float b2XToRayX(const rayClient *c, const float x) {
-    return c->halfWidth + (x * c->scale);
+static inline float b2XToRayX(const env *e, const float x) {
+    return e->client->halfWidth + (x * e->renderScale);
 }
 
-static inline float b2YToRayY(const rayClient *c, const float y) {
-    return (c->halfHeight + (y * c->scale)) + (2 * c->scale);
+static inline float b2YToRayY(const env *e, const float y) {
+    return (e->client->halfHeight + (y * e->renderScale)) + (2 * e->renderScale);
 }
 
-static inline Vector2 b2VecToRayVec(const rayClient *c, const b2Vec2 v) {
-    return (Vector2){.x = b2XToRayX(c, v.x), .y = b2YToRayY(c, v.y)};
+static inline Vector2 b2VecToRayVec(const env *e, const b2Vec2 v) {
+    return (Vector2){.x = b2XToRayX(e, v.x), .y = b2YToRayY(e, v.y)};
 }
 
-static inline b2Vec2 rayVecToB2Vec(const rayClient *c, const Vector2 v) {
-    return (b2Vec2){.x = (v.x - c->halfWidth) / c->scale, .y = ((v.y - c->halfHeight - (2 * c->scale)) / c->scale)};
+static inline b2Vec2 rayVecToB2Vec(const env *e, const Vector2 v) {
+    return (b2Vec2){.x = (v.x - e->client->halfWidth) / e->renderScale, .y = ((v.y - e->client->halfHeight - (2 * e->renderScale)) / e->renderScale)};
 }
 
 rayClient *createRayClient() {
@@ -62,6 +64,27 @@ void destroyRayClient(rayClient *client) {
     fastFree(client);
 }
 
+void setEnvRenderScale(env *e) {
+    float scale = e->client->scale;
+    switch (e->columns) {
+    case 20:
+        scale *= 1.05f;
+        break;
+    case 21:
+        break;
+    case 23:
+        scale *= 0.925f;
+        break;
+    case 24:
+        scale *= 0.88f;
+        break;
+    default:
+        ERRORF("unsupported number of map columns: %d", e->columns);
+    }
+    DEBUG_LOGF("setting render scale to %f before %f columns %d", scale, e->client->scale, e->columns);
+    e->renderScale = scale;
+}
+
 void renderUI(const env *e) {
     // render human control message
     if (e->humanInput) {
@@ -87,19 +110,45 @@ void renderUI(const env *e) {
     DrawText(timerStr, (e->client->width / 2) - e->client->scale, e->client->scale, 2 * e->client->scale, WHITE);
 }
 
+void renderExplosions(const env *e) {
+    CC_ArrayIter iter;
+    cc_array_iter_init(&iter, e->explosions);
+    explosionInfo *explosion;
+    while (cc_array_iter_next(&iter, (void **)&explosion) != CC_ITER_END) {
+        if (explosion->renderSteps == UINT16_MAX) {
+            explosion->renderSteps = EXPLOSION_TIME * e->frameRate;
+        } else if (explosion->renderSteps == 0) {
+            fastFree(explosion);
+            cc_array_iter_remove(&iter, NULL);
+            continue;
+        }
+
+        const uint8_t alpha = (uint8_t)(255.0f * ((float)explosion->renderSteps / (EXPLOSION_TIME * e->frameRate)));
+        DEBUG_LOGF("alpha: %d", alpha);
+        Color falloffColor = GRAY;
+        falloffColor.a = alpha;
+        Color explosionColor = RAYWHITE;
+        explosionColor.a = alpha;
+
+        DrawCircleV(b2VecToRayVec(e, explosion->def.position), (explosion->def.radius + explosion->def.falloff) * e->renderScale, falloffColor);
+        DrawCircleV(b2VecToRayVec(e, explosion->def.position), explosion->def.radius * e->renderScale, explosionColor);
+        explosion->renderSteps = fmaxf(explosion->renderSteps - 1, 0);
+    }
+}
+
 void renderEmptyCell(const env *e, const b2Vec2 emptyCell, const size_t idx) {
     Rectangle rec = {
-        .x = b2XToRayX(e->client, emptyCell.x - (WALL_THICKNESS / 2.0f)),
-        .y = b2YToRayY(e->client, emptyCell.y - (WALL_THICKNESS / 2.0f)),
-        .width = WALL_THICKNESS * e->client->scale,
-        .height = WALL_THICKNESS * e->client->scale,
+        .x = b2XToRayX(e, emptyCell.x - (WALL_THICKNESS / 2.0f)),
+        .y = b2YToRayY(e, emptyCell.y - (WALL_THICKNESS / 2.0f)),
+        .width = WALL_THICKNESS * e->renderScale,
+        .height = WALL_THICKNESS * e->renderScale,
     };
-    DrawRectangleLinesEx(rec, e->client->scale / 20.0f, RAYWHITE);
+    DrawRectangleLinesEx(rec, e->renderScale / 20.0f, RAYWHITE);
 
     const int bufferSize = 4;
     char idxStr[bufferSize];
     snprintf(idxStr, bufferSize, "%zu", idx);
-    DrawText(idxStr, rec.x, rec.y, 1.5f * e->client->scale, WHITE);
+    DrawText(idxStr, rec.x, rec.y, 1.5f * e->renderScale, WHITE);
 }
 
 void renderWall(const env *e, const wallEntity *wall) {
@@ -119,15 +168,15 @@ void renderWall(const env *e, const wallEntity *wall) {
     }
 
     b2Vec2 wallPos = b2Body_GetPosition(wall->bodyID);
-    Vector2 pos = b2VecToRayVec(e->client, wallPos);
+    Vector2 pos = b2VecToRayVec(e, wallPos);
     Rectangle rec = {
         .x = pos.x,
         .y = pos.y,
-        .width = wall->extent.x * e->client->scale * 2.0f,
-        .height = wall->extent.y * e->client->scale * 2.0f,
+        .width = wall->extent.x * e->renderScale * 2.0f,
+        .height = wall->extent.y * e->renderScale * 2.0f,
     };
 
-    Vector2 origin = {.x = wall->extent.x * e->client->scale, .y = wall->extent.y * e->client->scale};
+    Vector2 origin = {.x = wall->extent.x * e->renderScale, .y = wall->extent.y * e->renderScale};
     float angle = 0.0f;
     if (wall->isFloating) {
         angle = b2Rot_GetAngle(b2Body_GetRotation(wall->bodyID));
@@ -146,14 +195,14 @@ void renderWeaponPickup(const env *e, const weaponPickupEntity *pickup) {
     }
 
     b2Vec2 pickupPos = b2Body_GetPosition(pickup->bodyID);
-    Vector2 pos = b2VecToRayVec(e->client, pickupPos);
+    Vector2 pos = b2VecToRayVec(e, pickupPos);
     Rectangle rec = {
         .x = pos.x,
         .y = pos.y,
-        .width = PICKUP_THICKNESS * e->client->scale,
-        .height = PICKUP_THICKNESS * e->client->scale,
+        .width = PICKUP_THICKNESS * e->renderScale,
+        .height = PICKUP_THICKNESS * e->renderScale,
     };
-    Vector2 origin = {.x = (PICKUP_THICKNESS / 2.0f) * e->client->scale, .y = (PICKUP_THICKNESS / 2.0f) * e->client->scale};
+    Vector2 origin = {.x = (PICKUP_THICKNESS / 2.0f) * e->renderScale, .y = (PICKUP_THICKNESS / 2.0f) * e->renderScale};
     DrawRectanglePro(rec, origin, 0.0f, LIME);
 
     char *name = "";
@@ -174,7 +223,7 @@ void renderWeaponPickup(const env *e, const weaponPickupEntity *pickup) {
         ERRORF("unknown weapon pickup type %d", pickup->weapon);
     }
 
-    DrawText(name, rec.x - origin.x + (0.1f * e->client->scale), rec.y - origin.y + e->client->scale, e->client->scale, BLACK);
+    DrawText(name, rec.x - origin.x + (0.1f * e->renderScale), rec.y - origin.y + e->renderScale, e->renderScale, BLACK);
 }
 
 Color getDroneColor(const int droneIdx) {
@@ -203,8 +252,8 @@ b2RayResult droneAimingAt(const env *e, droneEntity *drone) {
 
 void renderDroneGuides(const env *e, droneEntity *drone, const int droneIdx) {
     b2Vec2 pos = b2Body_GetPosition(drone->bodyID);
-    const float rayX = b2XToRayX(e->client, pos.x);
-    const float rayY = b2YToRayY(e->client, pos.y);
+    const float rayX = b2XToRayX(e, pos.x);
+    const float rayY = b2YToRayY(e, pos.y);
     const Color droneColor = getDroneColor(droneIdx);
 
     // render thruster move guide
@@ -214,10 +263,10 @@ void renderDroneGuides(const env *e, droneEntity *drone, const int droneIdx) {
         Rectangle moveGuide = {
             .x = rayX,
             .y = rayY,
-            .width = ((halfDroneRadius * moveMagnitude) + halfDroneRadius) * e->client->scale * 2.0f,
-            .height = halfDroneRadius * e->client->scale * 2.0f,
+            .width = ((halfDroneRadius * moveMagnitude) + halfDroneRadius) * e->renderScale * 2.0f,
+            .height = halfDroneRadius * e->renderScale * 2.0f,
         };
-        DrawRectanglePro(moveGuide, (Vector2){.x = 0.0f, .y = 0.5f * e->client->scale}, moveRot, droneColor);
+        DrawRectanglePro(moveGuide, (Vector2){.x = 0.0f, .y = 0.5f * e->renderScale}, moveRot, droneColor);
     }
 
     // find length of laser aiming guide by where it touches the nearest shape
@@ -271,23 +320,35 @@ void renderDroneGuides(const env *e, droneEntity *drone, const int droneIdx) {
     Rectangle aimGuide = {
         .x = rayX,
         .y = rayY,
-        .width = aimGuideWidth * e->client->scale,
-        .height = aimGuideHeight * e->client->scale,
+        .width = aimGuideWidth * e->renderScale,
+        .height = aimGuideHeight * e->renderScale,
     };
     const float aimAngle = RAD2DEG * b2Rot_GetAngle(b2MakeRot(b2Atan2(drone->lastAim.y, drone->lastAim.x)));
-    DrawRectanglePro(aimGuide, (Vector2){.x = 0.0f, .y = (aimGuideHeight / 2.0f) * e->client->scale}, aimAngle, droneColor);
+    DrawRectanglePro(aimGuide, (Vector2){.x = 0.0f, .y = (aimGuideHeight / 2.0f) * e->renderScale}, aimAngle, droneColor);
 }
 
 void renderDrone(const env *e, const droneEntity *drone, const int droneIdx) {
     const b2Vec2 pos = b2Body_GetPosition(drone->bodyID);
-    const Vector2 raylibPos = b2VecToRayVec(e->client, pos);
-    DrawCircleV(raylibPos, DRONE_RADIUS * e->client->scale, BLACK);
-    DrawCircleLinesV(raylibPos, DRONE_RADIUS * e->client->scale, getDroneColor(droneIdx));
+    const Vector2 raylibPos = b2VecToRayVec(e, pos);
+    DrawCircleV(raylibPos, DRONE_RADIUS * e->renderScale, getDroneColor(droneIdx));
+    DrawCircleV(raylibPos, DRONE_RADIUS * 0.85f * e->renderScale, BLACK);
 }
 
 void renderDroneLabels(const env *e, const droneEntity *drone) {
     const b2Vec2 pos = b2Body_GetPosition(drone->bodyID);
 
+    // draw brake meter
+    const float brakeMeterInnerRadius = 10.0f;
+    const float brakeMeterOuterRadius = 5.0f;
+    const Vector2 brakeMeterOrigin = {.x = b2XToRayX(e, pos.x), .y = b2YToRayY(e, pos.y)};
+    const float breakMeterEndAngle = 360.f * drone->brakeLeft;
+    Color brakeMeterColor = RAYWHITE;
+    if (drone->brakeFullyDepleted) {
+        brakeMeterColor = DARKGRAY;
+    }
+    DrawRing(brakeMeterOrigin, brakeMeterInnerRadius, brakeMeterOuterRadius, 0.0f, breakMeterEndAngle, 1, brakeMeterColor);
+
+    // draw ammo count
     const int bufferSize = 5;
     char ammoStr[bufferSize];
     snprintf(ammoStr, bufferSize, "%d", drone->ammo);
@@ -295,45 +356,40 @@ void renderDroneLabels(const env *e, const droneEntity *drone) {
     if (drone->ammo >= 10 || drone->ammo == INFINITE) {
         posX -= 0.25f;
     }
-    DrawText(ammoStr, b2XToRayX(e->client, posX), b2YToRayY(e->client, pos.y + 1.5f), e->client->scale, WHITE);
+    DrawText(ammoStr, b2XToRayX(e, posX), b2YToRayY(e, pos.y + 1.5f), e->renderScale, WHITE);
 
     const float maxCharge = weaponCharge(e, drone->weaponInfo->type);
     if (maxCharge == 0.0f) {
         return;
     }
 
+    // draw charge meter
     const float chargeMeterWidth = 2.0f;
     const float chargeMeterHeight = 1.0f;
     Rectangle outlineRec = {
-        .x = b2XToRayX(e->client, pos.x - (chargeMeterWidth / 2.0f)),
-        .y = b2YToRayY(e->client, pos.y - (chargeMeterHeight / 2.0f) + 3.0f),
-        .width = chargeMeterWidth * e->client->scale,
-        .height = chargeMeterHeight * e->client->scale,
+        .x = b2XToRayX(e, pos.x - (chargeMeterWidth / 2.0f)),
+        .y = b2YToRayY(e, pos.y - (chargeMeterHeight / 2.0f) + 3.0f),
+        .width = chargeMeterWidth * e->renderScale,
+        .height = chargeMeterHeight * e->renderScale,
     };
-    DrawRectangleLinesEx(outlineRec, e->client->scale / 20.0f, RAYWHITE);
+    DrawRectangleLinesEx(outlineRec, e->renderScale / 20.0f, RAYWHITE);
 
     const float fillRecWidth = (drone->charge / maxCharge) * chargeMeterWidth;
     Rectangle fillRec = {
-        .x = b2XToRayX(e->client, pos.x - 1.0f),
-        .y = b2YToRayY(e->client, pos.y - (chargeMeterHeight / 2.0f) + 3.0f),
-        .width = fillRecWidth * e->client->scale,
-        .height = chargeMeterHeight * e->client->scale,
+        .x = b2XToRayX(e, pos.x - 1.0f),
+        .y = b2YToRayY(e, pos.y - (chargeMeterHeight / 2.0f) + 3.0f),
+        .width = fillRecWidth * e->renderScale,
+        .height = chargeMeterHeight * e->renderScale,
     };
     const Vector2 origin = {.x = 0.0f, .y = 0.0f};
     DrawRectanglePro(fillRec, origin, 0.0f, RAYWHITE);
 }
 
 void renderProjectiles(env *e) {
-    if (e->explosionSteps != 0) {
-        DrawCircleV(b2VecToRayVec(e->client, e->explosion.position), e->explosion.falloff * 2.0f * e->client->scale, GRAY);
-        DrawCircleV(b2VecToRayVec(e->client, e->explosion.position), e->explosion.radius * e->client->scale, RAYWHITE);
-        e->explosionSteps = fmaxf(e->explosionSteps - 1, 0);
-    }
-
     for (SNode *cur = e->projectiles->head; cur != NULL; cur = cur->next) {
         projectileEntity *projectile = (projectileEntity *)cur->data;
         b2Vec2 pos = b2Body_GetPosition(projectile->bodyID);
-        DrawCircleV(b2VecToRayVec(e->client, pos), e->client->scale * projectile->weaponInfo->radius, PURPLE);
+        DrawCircleV(b2VecToRayVec(e, pos), e->renderScale * projectile->weaponInfo->radius, PURPLE);
     }
 }
 
@@ -341,9 +397,16 @@ void renderEnv(env *e) {
     BeginDrawing();
 
     ClearBackground(BLACK);
-    DrawFPS(e->client->scale, e->client->scale);
+    DrawFPS(e->renderScale, e->renderScale);
 
     renderUI(e);
+
+    renderExplosions(e);
+
+    for (size_t i = 0; i < cc_array_size(e->pickups); i++) {
+        const weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
+        renderWeaponPickup(e, pickup);
+    }
 
     for (uint8_t i = 0; i < e->numDrones; i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
@@ -370,12 +433,7 @@ void renderEnv(env *e) {
         renderWall(e, wall);
     }
 
-    for (size_t i = 0; i < cc_array_size(e->pickups); i++) {
-        const weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
-        renderWeaponPickup(e, pickup);
-    }
-
-    renderProjectiles(e);
+        renderProjectiles(e);
 
     for (uint8_t i = 0; i < e->numDrones; i++) {
         const droneEntity *drone = safe_array_get_at(e->drones, i);

@@ -328,6 +328,11 @@ void createDrone(env *e, const uint8_t idx) {
     drone->weaponCooldown = 0.0f;
     drone->heat = 0;
     drone->charge = 0;
+    drone->brakeLeft = DRONE_BRAKE_MAX;
+    drone->lightBraking = false;
+    drone->heavyBraking = false;
+    drone->brakeFullyDepleted = false;
+    drone->brakeRefillWait = 0;
     drone->shotThisStep = false;
     drone->idx = idx;
     drone->initalPos = droneBodyDef.position;
@@ -356,13 +361,6 @@ void destroyDrone(droneEntity *drone) {
 
     b2DestroyBody(drone->bodyID);
     fastFree(drone);
-}
-
-void droneMove(const droneEntity *drone, const b2Vec2 direction) {
-    ASSERT_VEC_BOUNDED(direction);
-
-    b2Vec2 force = b2MulSV(DRONE_MOVE_MAGNITUDE, direction);
-    b2Body_ApplyForceToCenter(drone->bodyID, force, true);
 }
 
 void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
@@ -449,8 +447,13 @@ void destroyProjectile(env *e, projectileEntity *projectile, const bool full) {
         explosion.position = pos;
         explosion.maskBits = FLOATING_WALL_SHAPE | DRONE_SHAPE;
         b2World_Explode(e->worldID, &explosion);
-        e->explosion = explosion;
-        e->explosionSteps = EXPLOSION_STEPS;
+
+        if (e->client != NULL) {
+            explosionInfo *explInfo = fastMalloc(sizeof(explosionInfo));
+            explInfo->def = explosion;
+            explInfo->renderSteps = UINT16_MAX;
+            cc_array_add(e->explosions, explInfo);
+        }
 
         // check if enemy drone is in explosion radius
         const float totalRadius = explosion.radius + explosion.falloff;
@@ -604,6 +607,13 @@ void handleSuddenDeath(env *e) {
     }
 }
 
+void droneMove(const droneEntity *drone, const b2Vec2 direction) {
+    ASSERT_VEC_BOUNDED(direction);
+
+    b2Vec2 force = b2MulSV(DRONE_MOVE_MAGNITUDE, direction);
+    b2Body_ApplyForceToCenter(drone->bodyID, force, true);
+}
+
 void droneChangeWeapon(const env *e, droneEntity *drone, const enum weaponType newWeapon) {
     // only top up ammo if the weapon is the same
     if (drone->weaponInfo->type != newWeapon) {
@@ -658,10 +668,69 @@ void droneShoot(env *e, droneEntity *drone, const b2Vec2 aim) {
     }
 }
 
-void droneStep(env *e, droneEntity *drone, const float frameTime) {
-    ASSERT(frameTime != 0.0f);
+void droneBrake(const env *e, droneEntity *drone, const bool lightBrake, const bool heavyBrake) {
+    if ((!lightBrake && !heavyBrake) || drone->brakeFullyDepleted) {
+        if (drone->lightBraking || drone->heavyBraking) {
+            drone->lightBraking = false;
+            drone->heavyBraking = false;
+            b2Body_SetLinearDamping(drone->bodyID, DRONE_LINEAR_DAMPING);
+            if (drone->brakeRefillWait == 0.0f) {
+                drone->brakeRefillWait = DRONE_BRAKE_REFILL_WAIT * e->frameRate;
+            }
+        }
+        return;
+    }
 
-    drone->weaponCooldown = fmaxf(drone->weaponCooldown - frameTime, 0.0f);
+    if (lightBrake) {
+        if (!drone->lightBraking) {
+            drone->lightBraking = true;
+            b2Body_SetLinearDamping(drone->bodyID, DRONE_LINEAR_DAMPING * DRONE_LIGHT_BRAKE_COEF);
+        }
+        drone->brakeLeft = fmaxf(drone->brakeLeft - (DRONE_LIGHT_BRAKE_DRAIN_RATE * e->deltaTime), 0.0f);
+    } else if (heavyBrake) {
+        if (!drone->heavyBraking) {
+            drone->heavyBraking = true;
+            b2Body_SetLinearDamping(drone->bodyID, DRONE_LINEAR_DAMPING * DRONE_HEAVY_BRAKE_COEF);
+        }
+        drone->brakeLeft = fmaxf(drone->brakeLeft - (DRONE_HEAVY_BRAKE_DRAIN_RATE * e->deltaTime), 0.0f);
+    }
+
+    if (drone->brakeLeft == 0.0f) {
+        drone->brakeFullyDepleted = true;
+        drone->brakeRefillWait = DRONE_BRAKE_REFILL_EMPTY_WAIT * (float)e->frameRate;
+    }
+}
+
+void droneBurst(env *e, droneEntity *drone) {
+    if (drone->brakeFullyDepleted) {
+        return;
+    }
+
+    const b2Vec2 pos = getCachedPos(drone->bodyID, &drone->pos);
+    const float radius = (3.0f * drone->brakeLeft) + 2.0f;
+    b2ExplosionDef explosion = {
+        .position = pos,
+        .radius = radius,
+        .impulsePerLength = 100.0f * drone->brakeLeft,
+        .falloff = radius,
+        .maskBits = FLOATING_WALL_SHAPE | PROJECTILE_SHAPE,
+    };
+    b2World_Explode(e->worldID, &explosion);
+    drone->brakeLeft = 0.0f;
+    drone->brakeFullyDepleted = true;
+    drone->brakeRefillWait = DRONE_BRAKE_REFILL_EMPTY_WAIT * (float)e->frameRate;
+
+    if (e->client != NULL) {
+        explosionInfo *explInfo = fastMalloc(sizeof(explosionInfo));
+        explInfo->def = explosion;
+        explInfo->renderSteps = UINT16_MAX;
+        cc_array_add(e->explosions, explInfo);
+    }
+}
+
+void droneStep(env *e, droneEntity *drone) {
+    // manage weapon charge and heat
+    drone->weaponCooldown = fmaxf(drone->weaponCooldown - e->deltaTime, 0.0f);
     if (!drone->shotThisStep) {
         drone->charge = fmaxf(drone->charge - 1, 0);
         drone->heat = fmaxf(drone->heat - 1, 0);
@@ -669,6 +738,16 @@ void droneStep(env *e, droneEntity *drone, const float frameTime) {
         drone->shotThisStep = false;
     }
     ASSERT(!drone->shotThisStep);
+
+    // manage drone brake
+    if (drone->brakeRefillWait != 0.0f) {
+        drone->brakeRefillWait = fmaxf(drone->brakeRefillWait - 1, 0.0f);
+    } else if (drone->brakeLeft != DRONE_BRAKE_MAX) {
+        drone->brakeLeft = fminf(drone->brakeLeft + (DRONE_BRAKE_REFILL_RATE * e->deltaTime), DRONE_BRAKE_MAX);
+    }
+    if (drone->brakeLeft == DRONE_BRAKE_MAX) {
+        drone->brakeFullyDepleted = false;
+    }
 
     const b2Vec2 pos = getCachedPos(drone->bodyID, &drone->pos);
     const float distance = b2Distance(drone->lastPos, pos);
@@ -734,15 +813,13 @@ void projectilesStep(env *e) {
     }
 }
 
-void weaponPickupsStep(env *e, const float frameTime) {
-    ASSERT(frameTime != 0.0f);
-
+void weaponPickupsStep(env *e) {
     CC_ArrayIter iter;
     cc_array_iter_init(&iter, e->pickups);
     weaponPickupEntity *pickup;
     while (cc_array_iter_next(&iter, (void **)&pickup) != CC_ITER_END) {
         if (pickup->respawnWait != 0.0f) {
-            pickup->respawnWait = fmaxf(pickup->respawnWait - frameTime, 0.0f);
+            pickup->respawnWait = fmaxf(pickup->respawnWait - e->deltaTime, 0.0f);
             if (pickup->respawnWait == 0.0f) {
                 // b2Vec2 oldPos = pickup->pos;
                 b2Vec2 pos;
@@ -796,6 +873,7 @@ bool handleProjectileBeginContact(env *e, const entity *proj, const entity *ent)
             if (projectile->droneIdx != hitDrone->idx) {
                 droneEntity *shooterDrone = safe_array_get_at(e->drones, projectile->droneIdx);
 
+                shooterDrone->brakeLeft = fminf(shooterDrone->brakeLeft + projectile->weaponInfo->brakeRefill, DRONE_BRAKE_MAX);
                 // add 1 so we can differentiate between no weapon and weapon 0
                 shooterDrone->stepInfo.shotHit[hitDrone->idx] = projectile->weaponInfo->type + 1;
                 e->stats[shooterDrone->idx].shotsHit[projectile->weaponInfo->type]++;
@@ -905,6 +983,8 @@ void handleWeaponPickupBeginTouch(env *e, const entity *sensor, entity *visitor)
         drone->stepInfo.pickedUpWeapon = true;
         drone->stepInfo.prevWeapon = drone->weaponInfo->type;
         droneChangeWeapon(e, drone, pickup->weapon);
+
+        drone->brakeLeft = fminf(drone->brakeLeft + WEAPON_PICKUP_BRAKE_REFILL, DRONE_BRAKE_MAX);
 
         e->stats[drone->idx].weaponsPickedUp[pickup->weapon]++;
         DEBUG_LOGF("drone %d picked up weapon %d", drone->idx, pickup->weapon);

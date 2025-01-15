@@ -466,6 +466,7 @@ void setupEnv(env *e) {
     }
 
     if (e->client != NULL) {
+        setEnvRenderScale(e);
         renderEnv(e);
     }
 
@@ -516,8 +517,8 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
     cc_array_new(&e->floatingWalls);
     cc_array_new(&e->drones);
     cc_array_new(&e->pickups);
-    // e->pickupTree = kd_create(2);
     cc_slist_new(&e->projectiles);
+    cc_array_new(&e->explosions);
 
     e->humanInput = false;
     e->humanDroneInput = 0;
@@ -571,8 +572,8 @@ void clearEnv(env *e) {
     cc_array_remove_all(e->floatingWalls);
     cc_array_remove_all(e->drones);
     cc_array_remove_all(e->pickups);
-    // kd_clear(e->pickupTree);
     cc_slist_remove_all(e->projectiles);
+    cc_array_remove_all(e->explosions);
 
     b2DestroyWorld(e->worldID);
 }
@@ -586,8 +587,8 @@ void destroyEnv(env *e) {
     cc_array_destroy(e->floatingWalls);
     cc_array_destroy(e->drones);
     cc_array_destroy(e->pickups);
-    free(e->pickupTree);
     cc_slist_destroy(e->projectiles);
+    cc_array_destroy(e->explosions);
 }
 
 void resetEnv(env *e) {
@@ -726,6 +727,9 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
         actions.move = manualActions->move;
         actions.aim = manualActions->aim;
         actions.shoot = manualActions->shoot;
+        actions.brakeLight = manualActions->brakeLight;
+        actions.brakeHeavy = manualActions->brakeHeavy;
+        actions.burst = manualActions->burst;
     }
 
     ASSERT_VEC_BOUNDED(actions.move);
@@ -788,6 +792,16 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, uint8_t gamepadIdx) {
             shoot = IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_RIGHT_TRIGGER_1);
         }
 
+        if (IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_LEFT_TRIGGER_2)) {
+            actions.brakeLight = true;
+        } else if (IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_LEFT_TRIGGER_1)) {
+            actions.brakeHeavy = true;
+        }
+
+        if (IsGamepadButtonPressed(gamepadIdx, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)) {
+            actions.burst = true;
+        }
+
         actions.move = (b2Vec2){.x = lStickX, .y = lStickY};
         actions.aim = (b2Vec2){.x = rStickX, .y = rStickY};
         actions.shoot = shoot;
@@ -811,7 +825,7 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, uint8_t gamepadIdx) {
 
     Vector2 mousePos = (Vector2){.x = (float)GetMouseX(), .y = (float)GetMouseY()};
     b2Vec2 dronePos = b2Body_GetPosition(drone->bodyID);
-    actions.aim = b2Normalize(b2Sub(rayVecToB2Vec(e->client, mousePos), dronePos));
+    actions.aim = b2Normalize(b2Sub(rayVecToB2Vec(e, mousePos), dronePos));
 
     if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
         actions.shoot = true;
@@ -865,9 +879,13 @@ void stepEnv(env *e) {
                 actions = stepActions[i];
             }
 
+            if (actions.burst) {
+                droneBurst(e, drone);
+            }
             if (!b2VecEqual(actions.move, b2Vec2_zero)) {
                 droneMove(drone, actions.move);
             }
+            droneBrake(e, drone, actions.brakeLight, actions.brakeHeavy);
             if (actions.shoot) {
                 droneShoot(e, drone, actions.aim);
             }
@@ -907,7 +925,7 @@ void stepEnv(env *e) {
         uint8_t deadDrones = 0;
         for (uint8_t i = 0; i < e->numDrones; i++) {
             droneEntity *drone = safe_array_get_at(e->drones, i);
-            droneStep(e, drone, e->deltaTime);
+            droneStep(e, drone);
             if (drone->dead) {
                 deadDrones++;
                 if (i < e->numAgents) {
@@ -918,7 +936,7 @@ void stepEnv(env *e) {
             }
         }
 
-        weaponPickupsStep(e, e->deltaTime);
+        weaponPickupsStep(e);
 
         bool roundOver = deadDrones >= e->numDrones - 1;
         // if the enemy drone(s) are scripted don't enable sudden death

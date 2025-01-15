@@ -20,12 +20,12 @@
 
 #define MIN_SPAWN_DISTANCE 6.0f
 
-#define ROUND_STEPS 30
+#define ROUND_STEPS 90
 #define SUDDEN_DEATH_STEPS 5
 
 const uint8_t MAX_DRONES = _MAX_DRONES;
 
-#define EXPLOSION_STEPS 5
+#define EXPLOSION_STEPS 10
 
 const uint16_t LOG_BUFFER_SIZE = 1024;
 
@@ -114,21 +114,33 @@ const float discToContActionMap[2][8] = {
 
 // weapon pickup settings
 #define PICKUP_THICKNESS 3.0f
-#define PICKUP_RESPAWN_WAIT 1.0f
+#define PICKUP_RESPAWN_WAIT 3.0f
 
 // drone settings
 #define DRONE_WALL_SPAWN_DISTANCE 7.5f
 #define DRONE_DRONE_SPAWN_DISTANCE 10.0f
 #define DRONE_RADIUS 1.0f
 #define DRONE_DENSITY 1.25f
-#define DRONE_MOVE_MAGNITUDE 25.0f
+#define DRONE_MOVE_MAGNITUDE 35.0f
 #define DRONE_LINEAR_DAMPING 1.0f
 #define DRONE_MOVE_AIM_DIVISOR 10.0f
+
+#define DRONE_BRAKE_MAX 1.0f
+#define DRONE_LIGHT_BRAKE_COEF 2.5f
+#define DRONE_HEAVY_BRAKE_COEF 5.0f
+#define DRONE_LIGHT_BRAKE_DRAIN_RATE 0.3f
+#define DRONE_HEAVY_BRAKE_DRAIN_RATE 0.7f
+#define DRONE_BRAKE_REFILL_WAIT 0.5f
+#define DRONE_BRAKE_REFILL_EMPTY_WAIT 3.0f
+#define DRONE_BRAKE_REFILL_RATE 0.03f
+
+#define PROJECTILE_BRAKE_REFILL_DENOM 600.0f
+#define WEAPON_PICKUP_BRAKE_REFILL 0.1f
 
 // weapon projectile settings
 #define STANDARD_AMMO INFINITE
 #define STANDARD_PROJECTILES 1
-#define STANDARD_RECOIL_MAGNITUDE 12.5f
+#define STANDARD_RECOIL_MAGNITUDE 20.0f
 #define STANDARD_FIRE_MAGNITUDE 15.5f
 #define STANDARD_CHARGE 0.0f
 #define STANDARD_COOL_DOWN 0.37f
@@ -140,7 +152,7 @@ const float discToContActionMap[2][8] = {
 
 #define MACHINEGUN_AMMO 50
 #define MACHINEGUN_PROJECTILES 1
-#define MACHINEGUN_RECOIL_MAGNITUDE 8.0f
+#define MACHINEGUN_RECOIL_MAGNITUDE 12.8f
 #define MACHINEGUN_FIRE_MAGNITUDE 22.5f
 #define MACHINEGUN_CHARGE 0.0f
 #define MACHINEGUN_COOL_DOWN 0.07f
@@ -149,10 +161,11 @@ const float discToContActionMap[2][8] = {
 #define MACHINEGUN_DENSITY 3.0f
 #define MACHINEGUN_INV_MASS INV_MASS(MACHINEGUN_DENSITY, MACHINEGUN_RADIUS)
 #define MACHINEGUN_BOUNCE 1
+#define MACHINEGUN_BRAKE_REFILL_COEF 0.1f
 
 #define SNIPER_AMMO 3
 #define SNIPER_PROJECTILES 1
-#define SNIPER_RECOIL_MAGNITUDE 60.0f
+#define SNIPER_RECOIL_MAGNITUDE 96.0f
 #define SNIPER_FIRE_MAGNITUDE 200.0f
 #define SNIPER_CHARGE 1.0f
 #define SNIPER_COOL_DOWN 1.5f
@@ -161,10 +174,11 @@ const float discToContActionMap[2][8] = {
 #define SNIPER_DENSITY 1.5f
 #define SNIPER_INV_MASS INV_MASS(SNIPER_DENSITY, SNIPER_RADIUS)
 #define SNIPER_BOUNCE 0
+#define SNIPER_BRAKE_REFILL_COEF 1.2f
 
 #define SHOTGUN_AMMO 8
 #define SHOTGUN_PROJECTILES 8
-#define SHOTGUN_RECOIL_MAGNITUDE 75.0f
+#define SHOTGUN_RECOIL_MAGNITUDE 120.0f
 #define SHOTGUN_FIRE_MAGNITUDE 20.0f
 #define SHOTGUN_CHARGE 0.0f
 #define SHOTGUN_COOL_DOWN 1.0f
@@ -173,10 +187,11 @@ const float discToContActionMap[2][8] = {
 #define SHOTGUN_DENSITY 3.0f
 #define SHOTGUN_INV_MASS INV_MASS(SHOTGUN_DENSITY, SHOTGUN_RADIUS)
 #define SHOTGUN_BOUNCE 1
+#define SHOTGUN_BRAKE_REFILL_COEF 0.5f
 
 #define IMPLODER_AMMO 1
 #define IMPLODER_PROJECTILES 1
-#define IMPLODER_RECOIL_MAGNITUDE 35.0f
+#define IMPLODER_RECOIL_MAGNITUDE 65.0f
 #define IMPLODER_FIRE_MAGNITUDE 35.0f
 #define IMPLODER_CHARGE 2.0f
 #define IMPLODER_COOL_DOWN 0.0f
@@ -198,6 +213,7 @@ const weaponInformation standard = {
     .density = STANDARD_DENSITY,
     .invMass = STANDARD_INV_MASS,
     .maxBounces = STANDARD_BOUNCE + 1,
+    .brakeRefill = (STANDARD_FIRE_MAGNITUDE * STANDARD_INV_MASS) / PROJECTILE_BRAKE_REFILL_DENOM,
 };
 
 const weaponInformation machineGun = {
@@ -212,6 +228,7 @@ const weaponInformation machineGun = {
     .density = MACHINEGUN_DENSITY,
     .invMass = MACHINEGUN_INV_MASS,
     .maxBounces = MACHINEGUN_BOUNCE + 1,
+    .brakeRefill = ((MACHINEGUN_FIRE_MAGNITUDE * MACHINEGUN_INV_MASS) / PROJECTILE_BRAKE_REFILL_DENOM) * MACHINEGUN_BRAKE_REFILL_COEF,
 };
 
 const weaponInformation sniper = {
@@ -226,6 +243,7 @@ const weaponInformation sniper = {
     .density = SNIPER_DENSITY,
     .invMass = SNIPER_INV_MASS,
     .maxBounces = SNIPER_BOUNCE + 1,
+    .brakeRefill = ((SNIPER_FIRE_MAGNITUDE * SNIPER_INV_MASS) / PROJECTILE_BRAKE_REFILL_DENOM) * SNIPER_BRAKE_REFILL_COEF,
 };
 
 const weaponInformation shotgun = {
@@ -240,6 +258,7 @@ const weaponInformation shotgun = {
     .density = SHOTGUN_DENSITY,
     .invMass = SHOTGUN_INV_MASS,
     .maxBounces = SHOTGUN_BOUNCE + 1,
+    .brakeRefill = ((SHOTGUN_FIRE_MAGNITUDE * SHOTGUN_INV_MASS) / PROJECTILE_BRAKE_REFILL_DENOM) * SHOTGUN_BRAKE_REFILL_COEF,
 };
 
 const weaponInformation imploder = {
@@ -254,6 +273,7 @@ const weaponInformation imploder = {
     .density = IMPLODER_DENSITY,
     .invMass = IMPLODER_INV_MASS,
     .maxBounces = IMPLODER_BOUNCE + 1,
+    .brakeRefill = (IMPLODER_FIRE_MAGNITUDE * IMPLODER_INV_MASS) / PROJECTILE_BRAKE_REFILL_DENOM,
 };
 
 #ifndef AUTOPXD

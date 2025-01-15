@@ -99,6 +99,7 @@ typedef struct weaponInformation {
     const float density;
     const float invMass;
     const uint8_t maxBounces;
+    const float brakeRefill;
 } weaponInformation;
 
 typedef struct weaponPickupEntity {
@@ -156,6 +157,12 @@ typedef struct droneEntity {
     float weaponCooldown;
     uint16_t heat;
     uint16_t charge;
+    // TODO: rename to energy
+    float brakeLeft;
+    bool lightBraking;
+    bool heavyBraking;
+    bool brakeFullyDepleted;
+    uint16_t brakeRefillWait;
     bool shotThisStep;
 
     uint8_t idx;
@@ -189,10 +196,18 @@ typedef struct rayClient {
     uint16_t halfHeight;
 } rayClient;
 
+typedef struct explosionInfo {
+    b2ExplosionDef def;
+    uint16_t renderSteps;
+} explosionInfo;
+
 typedef struct agentActions {
     b2Vec2 move;
     b2Vec2 aim;
     bool shoot;
+    bool brakeLight;
+    bool brakeHeavy;
+    bool burst;
 } agentActions;
 
 typedef struct env {
@@ -234,7 +249,6 @@ typedef struct env {
     CC_Array *floatingWalls;
     CC_Array *drones;
     CC_Array *pickups;
-    kdtree *pickupTree;
     CC_SList *projectiles;
 
     uint16_t totalSteps;
@@ -247,13 +261,11 @@ typedef struct env {
     uint8_t suddenDeathWallCounter;
 
     rayClient *client;
+    float renderScale;
+    // used for rendering explosions
+    CC_Array *explosions;
     bool humanInput;
     uint8_t humanDroneInput;
-
-    // used for rendering explosions
-    // TODO: use hitInfo
-    uint8_t explosionSteps;
-    b2ExplosionDef explosion;
 } env;
 
 #endif

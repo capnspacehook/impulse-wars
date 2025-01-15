@@ -17,6 +17,7 @@ int main(void) {
 
     rayClient *client = createRayClient();
     e->client = client;
+    resetEnv(e);
 
     while (true) {
         if (WindowShouldClose()) {
