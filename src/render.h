@@ -110,6 +110,30 @@ void renderUI(const env *e) {
     DrawText(timerStr, (e->client->width / 2) - e->client->scale, e->client->scale, 2 * e->client->scale, WHITE);
 }
 
+void renderBrakeTrails(const env *e) {
+    CC_ArrayIter brakeTrailIter;
+    cc_array_iter_init(&brakeTrailIter, e->brakeTrailPoints);
+    brakeTrailPoint *trailPoint;
+    while (cc_array_iter_next(&brakeTrailIter, (void **)&trailPoint) != CC_ITER_END) {
+        if (trailPoint->lifetime == UINT16_MAX) {
+            trailPoint->lifetime = 2.0f * e->frameRate;
+        } else if (trailPoint->lifetime == 0) {
+            fastFree(trailPoint);
+            cc_array_iter_remove(&brakeTrailIter, NULL);
+            continue;
+        }
+
+        Color trailColor = GRAY;
+        trailColor.a = 32.0f * (trailPoint->lifetime / (2.0f * e->frameRate));
+        float radius = 0.3f * e->renderScale;
+        if (trailPoint->heavyBrake) {
+            radius = 0.5f * e->renderScale;
+        }
+        DrawCircleV(b2VecToRayVec(e, trailPoint->pos), radius, trailColor);
+        trailPoint->lifetime--;
+    }
+}
+
 void renderExplosions(const env *e) {
     CC_ArrayIter iter;
     cc_array_iter_init(&iter, e->explosions);
@@ -419,6 +443,8 @@ void renderEnv(env *e) {
         const weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
         renderWeaponPickup(e, pickup);
     }
+
+    renderBrakeTrails(e);
 
     for (uint8_t i = 0; i < e->numDrones; i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);

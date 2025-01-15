@@ -541,6 +541,7 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
     cc_array_new(&e->drones);
     cc_array_new(&e->pickups);
     cc_slist_new(&e->projectiles);
+    cc_array_new(&e->brakeTrailPoints);
     cc_array_new(&e->explosions);
 
     e->humanInput = false;
@@ -589,6 +590,16 @@ void clearEnv(env *e) {
         fastFree(cell);
     }
 
+    for (size_t i = 0; i < cc_array_size(e->brakeTrailPoints); i++) {
+        brakeTrailPoint *trailPoint = safe_array_get_at(e->brakeTrailPoints, i);
+        fastFree(trailPoint);
+    }
+
+    for (size_t i = 0; i < cc_array_size(e->explosions); i++) {
+        explosionInfo *explosion = safe_array_get_at(e->explosions, i);
+        fastFree(explosion);
+    }
+
     cc_array_remove_all(e->cells);
     cc_array_remove_all(e->walls);
     kd_clear(e->wallTree);
@@ -596,6 +607,7 @@ void clearEnv(env *e) {
     cc_array_remove_all(e->drones);
     cc_array_remove_all(e->pickups);
     cc_slist_remove_all(e->projectiles);
+    cc_array_remove_all(e->brakeTrailPoints);
     cc_array_remove_all(e->explosions);
 
     b2DestroyWorld(e->worldID);
@@ -611,6 +623,7 @@ void destroyEnv(env *e) {
     cc_array_destroy(e->drones);
     cc_array_destroy(e->pickups);
     cc_slist_destroy(e->projectiles);
+    cc_array_destroy(e->brakeTrailPoints);
     cc_array_destroy(e->explosions);
 }
 

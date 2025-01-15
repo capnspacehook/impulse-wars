@@ -203,6 +203,12 @@ typedef struct rayClient {
     uint16_t halfHeight;
 } rayClient;
 
+typedef struct brakeTrailPoint {
+    b2Vec2 pos;
+    bool heavyBrake;
+    uint16_t lifetime;
+} brakeTrailPoint;
+
 typedef struct explosionInfo {
     b2ExplosionDef def;
     uint16_t renderSteps;
@@ -271,6 +277,7 @@ typedef struct env {
 
     rayClient *client;
     float renderScale;
+    CC_Array *brakeTrailPoints;
     // used for rendering explosions
     CC_Array *explosions;
     bool humanInput;

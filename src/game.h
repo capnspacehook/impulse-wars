@@ -723,6 +723,14 @@ void droneBrake(env *e, droneEntity *drone, const bool lightBrake, const bool he
         drone->energyRefillWait = DRONE_ENERGY_REFILL_EMPTY_WAIT * (float)e->frameRate;
         e->stats[drone->idx].energyEmptied++;
     }
+
+    if (e->client != NULL) {
+        brakeTrailPoint *trailPoint = fastMalloc(sizeof(brakeTrailPoint));
+        trailPoint->pos = drone->pos.pos;
+        trailPoint->heavyBrake = heavyBrake;
+        trailPoint->lifetime = UINT16_MAX;
+        cc_array_add(e->brakeTrailPoints, trailPoint);
+    }
 }
 
 void droneChargeBurst(env *e, droneEntity *drone) {
