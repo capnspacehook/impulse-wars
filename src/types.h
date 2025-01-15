@@ -99,7 +99,7 @@ typedef struct weaponInformation {
     const float density;
     const float invMass;
     const uint8_t maxBounces;
-    const float brakeRefill;
+    const float energyRefill;
 } weaponInformation;
 
 typedef struct weaponPickupEntity {
@@ -157,12 +157,13 @@ typedef struct droneEntity {
     float weaponCooldown;
     uint16_t heat;
     uint16_t charge;
-    // TODO: rename to energy
-    float brakeLeft;
+    float energyLeft;
     bool lightBraking;
     bool heavyBraking;
-    bool brakeFullyDepleted;
-    uint16_t brakeRefillWait;
+    bool chargingBurst;
+    float burstCharge;
+    bool energyFullyDepleted;
+    uint16_t energyRefillWait;
     bool shotThisStep;
 
     uint8_t idx;
@@ -207,7 +208,9 @@ typedef struct agentActions {
     bool shoot;
     bool brakeLight;
     bool brakeHeavy;
+    bool chargeBurst;
     bool burst;
+    bool discardWeapon;
 } agentActions;
 
 typedef struct env {

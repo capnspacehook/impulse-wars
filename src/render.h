@@ -9,11 +9,12 @@
 const float DEFAULT_SCALE = 11.0f;
 const uint16_t DEFAULT_WIDTH = 1250;
 const uint16_t DEFAULT_HEIGHT = 1000;
-const uint16_t HEIGHT_LEEWAY = 100;
+const uint16_t HEIGHT_LEEWAY = 75;
 
 const float EXPLOSION_TIME = 0.5f;
 
-const Color barolo = {.r = 165, .b = 8, .g = 37, .a = 255};
+const Color barolo = {.r = 165, .g = 37, .b = 8, .a = 255};
+const Color bambooBrown = {.r = 204, .g = 129, .b = 0, .a = 255};
 
 const float halfDroneRadius = DRONE_RADIUS / 2.0f;
 const float aimGuideHeight = 0.3f * DRONE_RADIUS;
@@ -81,7 +82,6 @@ void setEnvRenderScale(env *e) {
     default:
         ERRORF("unsupported number of map columns: %d", e->columns);
     }
-    DEBUG_LOGF("setting render scale to %f before %f columns %d", scale, e->client->scale, e->columns);
     e->renderScale = scale;
 }
 
@@ -124,7 +124,6 @@ void renderExplosions(const env *e) {
         }
 
         const uint8_t alpha = (uint8_t)(255.0f * ((float)explosion->renderSteps / (EXPLOSION_TIME * e->frameRate)));
-        DEBUG_LOGF("alpha: %d", alpha);
         Color falloffColor = GRAY;
         falloffColor.a = alpha;
         Color explosionColor = RAYWHITE;
@@ -210,8 +209,9 @@ void renderWeaponPickup(const env *e, const weaponPickupEntity *pickup) {
     case MACHINEGUN_WEAPON:
         name = "MCGN";
         break;
+        // TODO: rename to railgun everywhere
     case SNIPER_WEAPON:
-        name = "SNPR";
+        name = "RAIL";
         break;
     case SHOTGUN_WEAPON:
         name = "SHGN";
@@ -284,7 +284,7 @@ void renderDroneGuides(const env *e, droneEntity *drone, const int droneIdx) {
         proxyA.count = 1;
         proxyA.points[0] = (b2Vec2){.x = 0.0f, .y = 0.0f};
     }
-    const b2ShapeProxy proxyB = makeDistanceProxy(ent->type, &shapeIsCircle);
+    const b2ShapeProxy proxyB = makeDistanceProxy(ent, &shapeIsCircle);
     const b2DistanceInput input = {
         .proxyA = proxyA,
         .proxyB = proxyB,
@@ -331,22 +331,34 @@ void renderDrone(const env *e, const droneEntity *drone, const int droneIdx) {
     const b2Vec2 pos = b2Body_GetPosition(drone->bodyID);
     const Vector2 raylibPos = b2VecToRayVec(e, pos);
     DrawCircleV(raylibPos, DRONE_RADIUS * e->renderScale, getDroneColor(droneIdx));
-    DrawCircleV(raylibPos, DRONE_RADIUS * 0.85f * e->renderScale, BLACK);
+    DrawCircleV(raylibPos, DRONE_RADIUS * 0.8f * e->renderScale, BLACK);
 }
 
-void renderDroneLabels(const env *e, const droneEntity *drone) {
+void renderDroneUI(const env *e, const droneEntity *drone) {
     const b2Vec2 pos = b2Body_GetPosition(drone->bodyID);
 
-    // draw brake meter
-    const float brakeMeterInnerRadius = 10.0f;
-    const float brakeMeterOuterRadius = 5.0f;
-    const Vector2 brakeMeterOrigin = {.x = b2XToRayX(e, pos.x), .y = b2YToRayY(e, pos.y)};
-    const float breakMeterEndAngle = 360.f * drone->brakeLeft;
-    Color brakeMeterColor = RAYWHITE;
-    if (drone->brakeFullyDepleted) {
-        brakeMeterColor = DARKGRAY;
+    // draw energy meter
+    const float energyMeterInnerRadius = 0.6f * e->renderScale;
+    const float energyMeterOuterRadius = 0.3f * e->renderScale;
+    const Vector2 energyMeterOrigin = {.x = b2XToRayX(e, pos.x), .y = b2YToRayY(e, pos.y)};
+    float energyMeterEndAngle = 360.f * drone->energyLeft;
+    Color energyMeterColor = RAYWHITE;
+    if (drone->energyFullyDepleted && drone->energyRefillWait != 0.0f) {
+        energyMeterColor = bambooBrown;
+        energyMeterEndAngle = 360.0f * (1.0f - (drone->energyRefillWait / (DRONE_ENERGY_REFILL_EMPTY_WAIT * e->frameRate)));
+    } else if (drone->energyFullyDepleted) {
+        energyMeterColor = GRAY;
     }
-    DrawRing(brakeMeterOrigin, brakeMeterInnerRadius, brakeMeterOuterRadius, 0.0f, breakMeterEndAngle, 1, brakeMeterColor);
+    DrawRing(energyMeterOrigin, energyMeterInnerRadius, energyMeterOuterRadius, 0.0f, energyMeterEndAngle, 1, energyMeterColor);
+
+    // draw burst charge indicator
+    if (drone->chargingBurst) {
+        Color burstChargeColor = RAYWHITE;
+        burstChargeColor.a = fminf((255.0f * drone->burstCharge) + 50.0f, 255.0f);
+        const float burstChargeOuterRadius = ((DRONE_BURST_RADIUS_BASE * drone->burstCharge) + DRONE_BURST_RADIUS_MIN) * e->renderScale;
+        const float burstChargeInnerRadius = burstChargeOuterRadius - (0.1f * e->renderScale);
+        DrawRing(energyMeterOrigin, burstChargeInnerRadius, burstChargeOuterRadius, 0.0f, 360.0f, 1, burstChargeColor);
+    }
 
     // draw ammo count
     const int bufferSize = 5;
@@ -433,14 +445,14 @@ void renderEnv(env *e) {
         renderWall(e, wall);
     }
 
-        renderProjectiles(e);
+    renderProjectiles(e);
 
     for (uint8_t i = 0; i < e->numDrones; i++) {
         const droneEntity *drone = safe_array_get_at(e->drones, i);
         if (drone->dead) {
             continue;
         }
-        renderDroneLabels(e, drone);
+        renderDroneUI(e, drone);
     }
 
     // for (size_t i = 0; i < cc_array_size(e->cells); i++) {

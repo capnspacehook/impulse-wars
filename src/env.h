@@ -729,7 +729,9 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
         actions.shoot = manualActions->shoot;
         actions.brakeLight = manualActions->brakeLight;
         actions.brakeHeavy = manualActions->brakeHeavy;
+        actions.chargeBurst = manualActions->chargeBurst;
         actions.burst = manualActions->burst;
+        actions.discardWeapon = manualActions->discardWeapon;
     }
 
     ASSERT_VEC_BOUNDED(actions.move);
@@ -788,9 +790,6 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, uint8_t gamepadIdx) {
         float rStickY = GetGamepadAxisMovement(gamepadIdx, GAMEPAD_AXIS_RIGHT_Y);
 
         bool shoot = IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_RIGHT_TRIGGER_2);
-        if (!shoot) {
-            shoot = IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_RIGHT_TRIGGER_1);
-        }
 
         if (IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_LEFT_TRIGGER_2)) {
             actions.brakeLight = true;
@@ -798,8 +797,14 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, uint8_t gamepadIdx) {
             actions.brakeHeavy = true;
         }
 
-        if (IsGamepadButtonPressed(gamepadIdx, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)) {
+        if (IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_RIGHT_TRIGGER_1) || IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)) {
+            actions.chargeBurst = true;
+        } else if (drone->chargingBurst && (IsGamepadButtonUp(gamepadIdx, GAMEPAD_BUTTON_RIGHT_TRIGGER_1) || IsGamepadButtonUp(gamepadIdx, GAMEPAD_BUTTON_RIGHT_FACE_DOWN))) {
             actions.burst = true;
+        }
+
+        if (IsGamepadButtonPressed(gamepadIdx, GAMEPAD_BUTTON_RIGHT_FACE_LEFT)) {
+            actions.discardWeapon = true;
         }
 
         actions.move = (b2Vec2){.x = lStickX, .y = lStickY};
@@ -829,6 +834,14 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, uint8_t gamepadIdx) {
 
     if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
         actions.shoot = true;
+    }
+    if (IsMouseButtonDown(KEY_SPACE)) {
+        actions.brakeLight = true;
+    }
+    if (IsKeyDown(MOUSE_BUTTON_RIGHT)) {
+        actions.chargeBurst = true;
+    } else if (drone->chargingBurst && IsKeyUp(MOUSE_BUTTON_RIGHT)) {
+        actions.burst = true;
     }
 
     return computeActions(e, drone, &actions);
@@ -879,6 +892,9 @@ void stepEnv(env *e) {
                 actions = stepActions[i];
             }
 
+            if (actions.chargeBurst) {
+                droneChargeBurst(e, drone);
+            }
             if (actions.burst) {
                 droneBurst(e, drone);
             }
@@ -888,6 +904,9 @@ void stepEnv(env *e) {
             droneBrake(e, drone, actions.brakeLight, actions.brakeHeavy);
             if (actions.shoot) {
                 droneShoot(e, drone, actions.aim);
+            }
+            if (actions.discardWeapon) {
+                droneDiscardWeapon(e, drone);
             }
         }
 

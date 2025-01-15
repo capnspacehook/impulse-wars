@@ -208,9 +208,14 @@ void createSuddenDeathWalls(env *e, const b2Vec2 startPos, const b2Vec2 size) {
     }
 }
 
-b2ShapeProxy makeDistanceProxy(const enum entityType type, bool *isCircle) {
+b2ShapeProxy makeDistanceProxy(const entity *ent, bool *isCircle) {
     b2ShapeProxy proxy = {0};
-    switch (type) {
+    switch (ent->type) {
+    case PROJECTILE_ENTITY:
+        *isCircle = true;
+        const projectileEntity *proj = (projectileEntity *)ent->entity;
+        proxy.radius = proj->weaponInfo->radius;
+        break;
     case DRONE_ENTITY:
         *isCircle = true;
         proxy.radius = DRONE_RADIUS;
@@ -232,7 +237,7 @@ b2ShapeProxy makeDistanceProxy(const enum entityType type, bool *isCircle) {
         proxy.points[3] = (b2Vec2){.x = +FLOATING_WALL_THICKNESS / 2.0f, .y = +FLOATING_WALL_THICKNESS / 2.0f};
         break;
     default:
-        ERRORF("unknown entity type for shape distance: %d", type);
+        ERRORF("unknown entity type for shape distance: %d", ent->type);
     }
 
     return proxy;
@@ -328,11 +333,13 @@ void createDrone(env *e, const uint8_t idx) {
     drone->weaponCooldown = 0.0f;
     drone->heat = 0;
     drone->charge = 0;
-    drone->brakeLeft = DRONE_BRAKE_MAX;
+    drone->energyLeft = DRONE_ENERGY_MAX;
     drone->lightBraking = false;
     drone->heavyBraking = false;
-    drone->brakeFullyDepleted = false;
-    drone->brakeRefillWait = 0;
+    drone->chargingBurst = false;
+    drone->burstCharge = 0.0f;
+    drone->energyFullyDepleted = false;
+    drone->energyRefillWait = 0;
     drone->shotThisStep = false;
     drone->idx = idx;
     drone->initalPos = droneBodyDef.position;
@@ -607,9 +614,15 @@ void handleSuddenDeath(env *e) {
     }
 }
 
-void droneMove(const droneEntity *drone, const b2Vec2 direction) {
+void droneMove(droneEntity *drone, b2Vec2 direction) {
     ASSERT_VEC_BOUNDED(direction);
 
+    // if energy is fully depleted half movement until energy starts
+    // to refill again
+    if (drone->energyFullyDepleted && drone->energyRefillWait != 0.0f) {
+        direction = b2MulSV(0.5f, direction);
+        drone->lastMove = direction;
+    }
     b2Vec2 force = b2MulSV(DRONE_MOVE_MAGNITUDE, direction);
     b2Body_ApplyForceToCenter(drone->bodyID, force, true);
 }
@@ -669,62 +682,215 @@ void droneShoot(env *e, droneEntity *drone, const b2Vec2 aim) {
 }
 
 void droneBrake(const env *e, droneEntity *drone, const bool lightBrake, const bool heavyBrake) {
-    if ((!lightBrake && !heavyBrake) || drone->brakeFullyDepleted) {
+    // if the drone isn't braking or energy is fully depleted, return
+    // unless the drone was braking during the last step
+    if ((!lightBrake && !heavyBrake) || drone->energyFullyDepleted) {
         if (drone->lightBraking || drone->heavyBraking) {
             drone->lightBraking = false;
             drone->heavyBraking = false;
             b2Body_SetLinearDamping(drone->bodyID, DRONE_LINEAR_DAMPING);
-            if (drone->brakeRefillWait == 0.0f) {
-                drone->brakeRefillWait = DRONE_BRAKE_REFILL_WAIT * e->frameRate;
+            if (drone->energyRefillWait == 0.0f && !drone->chargingBurst) {
+                drone->energyRefillWait = DRONE_ENERGY_REFILL_WAIT * e->frameRate;
             }
         }
         return;
     }
+    ASSERT(!drone->energyFullyDepleted);
 
+    // apply additional brake damping and decrease energy
     if (lightBrake) {
         if (!drone->lightBraking) {
             drone->lightBraking = true;
             b2Body_SetLinearDamping(drone->bodyID, DRONE_LINEAR_DAMPING * DRONE_LIGHT_BRAKE_COEF);
         }
-        drone->brakeLeft = fmaxf(drone->brakeLeft - (DRONE_LIGHT_BRAKE_DRAIN_RATE * e->deltaTime), 0.0f);
+        drone->energyLeft = fmaxf(drone->energyLeft - (DRONE_LIGHT_BRAKE_DRAIN_RATE * e->deltaTime), 0.0f);
     } else if (heavyBrake) {
         if (!drone->heavyBraking) {
             drone->heavyBraking = true;
             b2Body_SetLinearDamping(drone->bodyID, DRONE_LINEAR_DAMPING * DRONE_HEAVY_BRAKE_COEF);
         }
-        drone->brakeLeft = fmaxf(drone->brakeLeft - (DRONE_HEAVY_BRAKE_DRAIN_RATE * e->deltaTime), 0.0f);
+        drone->energyLeft = fmaxf(drone->energyLeft - (DRONE_HEAVY_BRAKE_DRAIN_RATE * e->deltaTime), 0.0f);
     }
 
-    if (drone->brakeLeft == 0.0f) {
-        drone->brakeFullyDepleted = true;
-        drone->brakeRefillWait = DRONE_BRAKE_REFILL_EMPTY_WAIT * (float)e->frameRate;
+    // if energy is empty but burst is being charged, let burst functions
+    // handle energy refill
+    if (drone->energyLeft == 0.0f && !drone->chargingBurst) {
+        drone->energyFullyDepleted = true;
+        drone->energyRefillWait = DRONE_ENERGY_REFILL_EMPTY_WAIT * (float)e->frameRate;
     }
 }
 
+void droneChargeBurst(const env *e, droneEntity *drone) {
+    if (drone->energyFullyDepleted) {
+        return;
+    }
+
+    // take energy and put it into burst charge
+    drone->burstCharge = fminf(drone->burstCharge + (DRONE_BURST_CHARGE_RATE * e->deltaTime), DRONE_ENERGY_MAX);
+    drone->energyLeft = fmaxf(drone->energyLeft - (DRONE_BURST_CHARGE_RATE * e->deltaTime), 0.0f);
+    drone->chargingBurst = true;
+
+    if (drone->energyLeft == 0.0f) {
+        drone->energyFullyDepleted = true;
+    }
+}
+
+// simplified and copied from box2d/src/shape.c
+float getShapeProjectedPerimeter(const b2ShapeId shapeID, const b2Vec2 line) {
+    if (b2Shape_GetType(shapeID) == b2_circleShape) {
+        const b2Circle circle = b2Shape_GetCircle(shapeID);
+        return circle.radius * 2.0f;
+    }
+
+    const b2Polygon polygon = b2Shape_GetPolygon(shapeID);
+    const b2Vec2 *points = polygon.vertices;
+    int count = polygon.count;
+    B2_ASSERT(count > 0);
+    float value = b2Dot(points[0], line);
+    float lower = value;
+    float upper = value;
+    for (int i = 1; i < count; ++i) {
+        value = b2Dot(points[i], line);
+        lower = b2MinFloat(lower, value);
+        upper = b2MaxFloat(upper, value);
+    }
+
+    return upper - lower;
+}
+
+typedef struct burstExplosionCtx {
+    const droneEntity *parentDrone;
+    const b2ExplosionDef *def;
+} burstExplosionCtx;
+
+// b2World_Explode doesn't support filtering on shapes of the same category,
+// so we have to do it manually
+// mostly copied from box2d/src/world.c
+bool burstExplodeCallback(b2ShapeId shapeID, void *context) {
+    ASSERT(b2Shape_IsValid(shapeID));
+
+    const burstExplosionCtx *ctx = (burstExplosionCtx *)context;
+    const entity *entity = b2Shape_GetUserData(shapeID);
+    // the explosion shouldn't affect the parent drone
+    if (entity->type == DRONE_ENTITY) {
+        const droneEntity *drone = (droneEntity *)entity->entity;
+        if (drone->idx == ctx->parentDrone->idx) {
+            return true;
+        }
+    }
+
+    b2BodyId bodyID = b2Shape_GetBody(shapeID);
+    ASSERT(b2Body_IsValid(bodyID));
+    b2Transform transform = b2Body_GetTransform(bodyID);
+
+    bool isCircle = false;
+    b2DistanceInput input;
+    input.proxyA = makeDistanceProxy(entity, &isCircle);
+    input.proxyB = b2MakeProxy(&ctx->def->position, 1, 0.0f);
+    input.transformA = transform;
+    input.transformB = b2Transform_identity;
+    input.useRadii = isCircle;
+
+    b2SimplexCache cache = {0};
+    const b2DistanceOutput output = b2ShapeDistance(&cache, &input, NULL, 0);
+    if (output.distance > ctx->def->radius + ctx->def->falloff) {
+        return true;
+    }
+
+    const b2Vec2 closestPoint = output.pointA;
+    const b2Vec2 direction = b2Normalize(b2Sub(closestPoint, ctx->def->position));
+
+    b2Vec2 localLine = b2InvRotateVector(transform.q, b2LeftPerp(direction));
+    float perimeter = getShapeProjectedPerimeter(shapeID, localLine);
+    float scale = 1.0f;
+    if (output.distance > ctx->def->radius) {
+        scale = clamp((ctx->def->radius + ctx->def->falloff - output.distance) / ctx->def->falloff);
+    }
+
+    const float magnitude = (ctx->def->impulsePerLength + b2Length(ctx->parentDrone->lastVelocity)) * perimeter * scale;
+    const b2Vec2 impulse = b2MulSV(magnitude, direction);
+
+    b2Body_ApplyLinearImpulseToCenter(bodyID, impulse, true);
+    if (entityTypeIsWall(entity->type)) {
+        b2Body_ApplyAngularImpulse(bodyID, magnitude, true);
+    }
+
+    return true;
+}
+
+void burstExplode(const env *e, const droneEntity *drone, const b2ExplosionDef *def) {
+    const float fullRadius = def->radius + def->falloff;
+    b2AABB aabb = {
+        .lowerBound.x = def->position.x - fullRadius,
+        .lowerBound.y = def->position.y - fullRadius,
+        .upperBound.x = def->position.x + fullRadius,
+        .upperBound.y = def->position.y + fullRadius,
+    };
+
+    b2QueryFilter filter = b2DefaultQueryFilter();
+    filter.maskBits = def->maskBits;
+
+    burstExplosionCtx ctx = {.parentDrone = drone, .def = def};
+    b2World_OverlapAABB(e->worldID, aabb, filter, burstExplodeCallback, &ctx);
+}
+
 void droneBurst(env *e, droneEntity *drone) {
-    if (drone->brakeFullyDepleted) {
+    if (!drone->chargingBurst) {
         return;
     }
 
     const b2Vec2 pos = getCachedPos(drone->bodyID, &drone->pos);
-    const float radius = (3.0f * drone->brakeLeft) + 2.0f;
+    const float radius = (DRONE_BURST_RADIUS_BASE * drone->burstCharge) + DRONE_BURST_RADIUS_MIN;
     b2ExplosionDef explosion = {
         .position = pos,
         .radius = radius,
-        .impulsePerLength = 100.0f * drone->brakeLeft,
-        .falloff = radius,
-        .maskBits = FLOATING_WALL_SHAPE | PROJECTILE_SHAPE,
+        .impulsePerLength = (DRONE_BURST_IMPACT_BASE * drone->burstCharge) + DRONE_BURST_IMPACT_MIN,
+        .falloff = radius / 2.0f,
+        .maskBits = FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE,
     };
-    b2World_Explode(e->worldID, &explosion);
-    drone->brakeLeft = 0.0f;
-    drone->brakeFullyDepleted = true;
-    drone->brakeRefillWait = DRONE_BRAKE_REFILL_EMPTY_WAIT * (float)e->frameRate;
+    burstExplode(e, drone, &explosion);
+
+    drone->chargingBurst = false;
+    drone->burstCharge = 0.0f;
+    if (drone->energyLeft == 0.0f) {
+        drone->energyRefillWait = DRONE_ENERGY_REFILL_EMPTY_WAIT * (float)e->frameRate;
+    } else {
+        drone->energyRefillWait = DRONE_ENERGY_REFILL_WAIT * (float)e->frameRate;
+    }
 
     if (e->client != NULL) {
         explosionInfo *explInfo = fastMalloc(sizeof(explosionInfo));
         explInfo->def = explosion;
         explInfo->renderSteps = UINT16_MAX;
         cc_array_add(e->explosions, explInfo);
+    }
+}
+
+void droneAddEnergy(droneEntity *drone, float energy) {
+    // if a burst is charging, add the energy to the burst charge
+    if (drone->chargingBurst) {
+        drone->burstCharge = clamp(drone->burstCharge + energy);
+    } else {
+        drone->energyLeft = clamp(drone->energyLeft + energy);
+    }
+}
+
+void droneDiscardWeapon(const env *e, droneEntity *drone) {
+    if (drone->weaponInfo->type == e->defaultWeapon->type || (drone->energyFullyDepleted && !drone->chargingBurst)) {
+        return;
+    }
+
+    droneChangeWeapon(e, drone, e->defaultWeapon->type);
+    droneAddEnergy(drone, -WEAPON_PICKUP_ENERGY_REFILL * 2.0f);
+    if (drone->chargingBurst) {
+        return;
+    }
+
+    if (drone->energyLeft == 0.0f) {
+        drone->energyFullyDepleted = true;
+        drone->energyRefillWait = DRONE_ENERGY_REFILL_EMPTY_WAIT * (float)e->frameRate;
+    } else {
+        drone->energyRefillWait = DRONE_ENERGY_REFILL_WAIT * (float)e->frameRate;
     }
 }
 
@@ -740,13 +906,14 @@ void droneStep(env *e, droneEntity *drone) {
     ASSERT(!drone->shotThisStep);
 
     // manage drone brake
-    if (drone->brakeRefillWait != 0.0f) {
-        drone->brakeRefillWait = fmaxf(drone->brakeRefillWait - 1, 0.0f);
-    } else if (drone->brakeLeft != DRONE_BRAKE_MAX) {
-        drone->brakeLeft = fminf(drone->brakeLeft + (DRONE_BRAKE_REFILL_RATE * e->deltaTime), DRONE_BRAKE_MAX);
+    if (drone->energyRefillWait != 0.0f) {
+        drone->energyRefillWait = fmaxf(drone->energyRefillWait - 1, 0.0f);
+    } else if (drone->energyLeft != DRONE_ENERGY_MAX && !drone->chargingBurst) {
+        // don't start recharging energy until the burst charge is used
+        drone->energyLeft = fminf(drone->energyLeft + (DRONE_ENERGY_REFILL_RATE * e->deltaTime), DRONE_ENERGY_MAX);
     }
-    if (drone->brakeLeft == DRONE_BRAKE_MAX) {
-        drone->brakeFullyDepleted = false;
+    if (drone->energyLeft == DRONE_ENERGY_MAX) {
+        drone->energyFullyDepleted = false;
     }
 
     const b2Vec2 pos = getCachedPos(drone->bodyID, &drone->pos);
@@ -873,7 +1040,7 @@ bool handleProjectileBeginContact(env *e, const entity *proj, const entity *ent)
             if (projectile->droneIdx != hitDrone->idx) {
                 droneEntity *shooterDrone = safe_array_get_at(e->drones, projectile->droneIdx);
 
-                shooterDrone->brakeLeft = fminf(shooterDrone->brakeLeft + projectile->weaponInfo->brakeRefill, DRONE_BRAKE_MAX);
+                droneAddEnergy(shooterDrone, projectile->weaponInfo->energyRefill);
                 // add 1 so we can differentiate between no weapon and weapon 0
                 shooterDrone->stepInfo.shotHit[hitDrone->idx] = projectile->weaponInfo->type + 1;
                 e->stats[shooterDrone->idx].shotsHit[projectile->weaponInfo->type]++;
@@ -984,7 +1151,7 @@ void handleWeaponPickupBeginTouch(env *e, const entity *sensor, entity *visitor)
         drone->stepInfo.prevWeapon = drone->weaponInfo->type;
         droneChangeWeapon(e, drone, pickup->weapon);
 
-        drone->brakeLeft = fminf(drone->brakeLeft + WEAPON_PICKUP_BRAKE_REFILL, DRONE_BRAKE_MAX);
+        droneAddEnergy(drone, WEAPON_PICKUP_ENERGY_REFILL);
 
         e->stats[drone->idx].weaponsPickedUp[pickup->weapon]++;
         DEBUG_LOGF("drone %d picked up weapon %d", drone->idx, pickup->weapon);

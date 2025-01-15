@@ -145,8 +145,9 @@ static inline float logBasef(const float v, const float b) {
     return log2f(v) / log2(b);
 }
 
+// clamps between 0 and 1
 static inline float clamp(float f) {
-    return fminf(fmaxf(f, -1.0f), 1.0f);
+    return fminf(fmaxf(f, 0.0f), 1.0f);
 }
 
 // normalize value to be between 0 and max, or -max and max;
