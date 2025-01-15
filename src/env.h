@@ -835,12 +835,12 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, uint8_t gamepadIdx) {
     if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
         actions.shoot = true;
     }
-    if (IsMouseButtonDown(KEY_SPACE)) {
+    if (IsKeyDown(KEY_SPACE)) {
         actions.brakeLight = true;
     }
-    if (IsKeyDown(MOUSE_BUTTON_RIGHT)) {
+    if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
         actions.chargeBurst = true;
-    } else if (drone->chargingBurst && IsKeyUp(MOUSE_BUTTON_RIGHT)) {
+    } else if (drone->chargingBurst && IsMouseButtonUp(MOUSE_BUTTON_RIGHT)) {
         actions.burst = true;
     }
 
