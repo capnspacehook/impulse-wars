@@ -75,8 +75,8 @@ class ImpulseWars(pufferlib.PufferEnv):
         if discretize_actions:
             self.single_action_space = gymnasium.spaces.MultiDiscrete(
                 [
-                    9,  # move, noop + cardinal directions + diagonal directions
-                    9,  # aim, noop + cardinal directions + diagonal directions
+                    9,  # move, noop + 8 directions
+                    17,  # aim, noop + 16 directions
                     2,  # shoot or not
                     3,  # brake, noop + light brake + hard brake
                     2,  # burst

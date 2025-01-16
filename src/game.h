@@ -484,6 +484,8 @@ void destroyProjectile(env *e, projectileEntity *projectile, const bool full) {
     fastFree(ent);
 
     if (full) {
+        DEBUG_LOGF("proj %d speed: %f", projectile->weaponInfo->type, b2Length(b2Body_GetLinearVelocity(projectile->bodyID)));
+
         const enum cc_stat res = cc_slist_remove(e->projectiles, projectile, NULL);
         MAYBE_UNUSED(res);
         ASSERT(res == CC_OK);

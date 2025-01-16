@@ -744,15 +744,15 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
         ASSERT(move <= 8);
         if (move != 0) {
             move--;
-            actions.move.x = discToContActionMap[0][move];
-            actions.move.y = discToContActionMap[1][move];
+            actions.move.x = discMoveToContMoveMap[0][move];
+            actions.move.y = discMoveToContMoveMap[1][move];
         }
         uint8_t aim = e->discActions[offset + 1];
-        ASSERT(move <= 8);
+        ASSERT(move <= 16);
         if (aim != 0) {
             aim--;
-            actions.aim.x = discToContActionMap[0][aim];
-            actions.aim.y = discToContActionMap[1][aim];
+            actions.aim.x = discAimToContAimMap[0][aim];
+            actions.aim.y = discAimToContAimMap[1][aim];
         }
         const uint8_t shoot = e->discActions[offset + 2];
         ASSERT(shoot <= 1);

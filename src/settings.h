@@ -35,7 +35,7 @@ const uint16_t LOG_BUFFER_SIZE = 1024;
 #define WEAPON_PICKUP_REWARD 0.5f
 #define SHOT_HIT_REWARD_COEF 0.00015f
 #define EXPLOSION_HIT_REWARD_COEF 5.0f
-#define APPROACH_REWARD 0.01f
+#define APPROACH_REWARD 0.0f
 
 #define DISTANCE_CUTOFF 15.0f
 
@@ -99,16 +99,19 @@ const uint8_t CONTINUOUS_ACTION_SIZE = 7;
 const uint8_t DISCRETE_ACTION_SIZE = 5;
 const float ACTION_NOOP_MAGNITUDE = 0.1f;
 
-#define DIAG_MAG 0.707107f
-const float discToContActionMap[2][8] = {
-    {0.0f, 0.0f, -1.0f, 1.0f, -DIAG_MAG, DIAG_MAG, -DIAG_MAG, DIAG_MAG},
-    {-1.0f, 1.0f, 0.0f, 0.0f, -DIAG_MAG, -DIAG_MAG, DIAG_MAG, DIAG_MAG},
+const float discMoveToContMoveMap[2][8] = {
+    {1.0f, 0.707107f, 0.0f, -0.707107f, -1.0f, -0.707107f, 0.0f, 0.707107f},
+    {0.0f, 0.707107f, 1.0f, 0.707107f, 0.0f, -0.707107f, -1.0f, -0.707107f},
+};
+const float discAimToContAimMap[2][16] = {
+    {1.0f, 0.92388f, 0.707107f, 0.382683f, 0.0f, -0.382683f, -0.707107f, -0.92388f, -1.0f, -0.92388f, -0.707107f, -0.382683f, 0.0f, 0.382683f, 0.707107f, 0.92388f},
+    {0.0f, 0.382683f, 0.707107f, 0.92388f, 1.0f, 0.92388f, 0.707107f, 0.382683f, 0.0f, -0.382683f, -0.707107f, -0.92388f, -1.0f, -0.92388f, -0.707107f, -0.382683f},
 };
 
 // wall settings
 #define WALL_THICKNESS 4.0f
 #define FLOATING_WALL_THICKNESS 3.0f
-#define FLOATING_WALL_DAMPING 0.5f
+#define FLOATING_WALL_DAMPING 0.75f
 #define BOUNCY_WALL_RESTITUTION 1.0f
 #define WALL_DENSITY 4.0f
 
@@ -137,8 +140,8 @@ const float discToContActionMap[2][8] = {
 #define DRONE_BURST_CHARGE_RATE 0.75f
 #define DRONE_BURST_RADIUS_BASE 4.0f
 #define DRONE_BURST_RADIUS_MIN 3.0f
-#define DRONE_BURST_IMPACT_BASE 80.0f
-#define DRONE_BURST_IMPACT_MIN 20.0f
+#define DRONE_BURST_IMPACT_BASE 125.0f
+#define DRONE_BURST_IMPACT_MIN 25.0f
 
 #define PROJECTILE_ENERGY_REFILL_DENOM 600.0f
 #define WEAPON_PICKUP_ENERGY_REFILL 0.1f
@@ -147,19 +150,19 @@ const float discToContActionMap[2][8] = {
 #define STANDARD_AMMO INFINITE
 #define STANDARD_PROJECTILES 1
 #define STANDARD_RECOIL_MAGNITUDE 20.0f
-#define STANDARD_FIRE_MAGNITUDE 15.5f
+#define STANDARD_FIRE_MAGNITUDE 17.0f
 #define STANDARD_CHARGE 0.0f
 #define STANDARD_COOL_DOWN 0.37f
 #define STANDARD_MAX_DISTANCE 80.0f
 #define STANDARD_RADIUS 0.2
-#define STANDARD_DENSITY 3.0f
+#define STANDARD_DENSITY 3.25f
 #define STANDARD_INV_MASS INV_MASS(STANDARD_DENSITY, STANDARD_RADIUS)
 #define STANDARD_BOUNCE 2
 
 #define MACHINEGUN_AMMO 35
 #define MACHINEGUN_PROJECTILES 1
 #define MACHINEGUN_RECOIL_MAGNITUDE 12.8f
-#define MACHINEGUN_FIRE_MAGNITUDE 22.5f
+#define MACHINEGUN_FIRE_MAGNITUDE 25.0f
 #define MACHINEGUN_CHARGE 0.0f
 #define MACHINEGUN_COOL_DOWN 0.07f
 #define MACHINEGUN_MAX_DISTANCE 225.0f
@@ -172,12 +175,12 @@ const float discToContActionMap[2][8] = {
 #define SNIPER_AMMO 3
 #define SNIPER_PROJECTILES 1
 #define SNIPER_RECOIL_MAGNITUDE 96.0f
-#define SNIPER_FIRE_MAGNITUDE 200.0f
+#define SNIPER_FIRE_MAGNITUDE 300.0f
 #define SNIPER_CHARGE 1.0f
 #define SNIPER_COOL_DOWN 1.5f
 #define SNIPER_MAX_DISTANCE INFINITE
 #define SNIPER_RADIUS 0.5f
-#define SNIPER_DENSITY 1.5f
+#define SNIPER_DENSITY 2.0f
 #define SNIPER_INV_MASS INV_MASS(SNIPER_DENSITY, SNIPER_RADIUS)
 #define SNIPER_BOUNCE 0
 #define SNIPER_ENERGY_REFILL_COEF 1.2f
@@ -185,12 +188,12 @@ const float discToContActionMap[2][8] = {
 #define SHOTGUN_AMMO 8
 #define SHOTGUN_PROJECTILES 8
 #define SHOTGUN_RECOIL_MAGNITUDE 120.0f
-#define SHOTGUN_FIRE_MAGNITUDE 20.0f
+#define SHOTGUN_FIRE_MAGNITUDE 22.5f
 #define SHOTGUN_CHARGE 0.0f
 #define SHOTGUN_COOL_DOWN 1.0f
 #define SHOTGUN_MAX_DISTANCE 100.0f
 #define SHOTGUN_RADIUS 0.15f
-#define SHOTGUN_DENSITY 3.0f
+#define SHOTGUN_DENSITY 2.5f
 #define SHOTGUN_INV_MASS INV_MASS(SHOTGUN_DENSITY, SHOTGUN_RADIUS)
 #define SHOTGUN_BOUNCE 1
 #define SHOTGUN_ENERGY_REFILL_COEF 0.5f
@@ -198,7 +201,7 @@ const float discToContActionMap[2][8] = {
 #define IMPLODER_AMMO 1
 #define IMPLODER_PROJECTILES 1
 #define IMPLODER_RECOIL_MAGNITUDE 65.0f
-#define IMPLODER_FIRE_MAGNITUDE 35.0f
+#define IMPLODER_FIRE_MAGNITUDE 60.0f
 #define IMPLODER_CHARGE 2.0f
 #define IMPLODER_COOL_DOWN 0.0f
 #define IMPLODER_MAX_DISTANCE INFINITE
@@ -367,7 +370,7 @@ b2Vec2 weaponAdjustAim(uint64_t *seed, const enum weaponType type, const uint16_
         return normAim;
     case MACHINEGUN_WEAPON: {
         const float swayCoef = logBasef((heat / 5.0f) + 1, 180);
-        const float maxSway = 0.125f;
+        const float maxSway = 0.11f;
         const float swayX = randFloat(seed, maxSway * -swayCoef, maxSway * swayCoef);
         const float swayY = randFloat(seed, maxSway * -swayCoef, maxSway * swayCoef);
         b2Vec2 machinegunAim = {.x = normAim.x + swayX, .y = normAim.y + swayY};
