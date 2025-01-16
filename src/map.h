@@ -291,7 +291,7 @@ const mapEntry foamPitMap = {
     .floatingBouncyWalls = 0,
     .floatingDeathWalls = 0,
     .weaponPickups = 8,
-    .defaultWeapon = MACHINEGUN_WEAPON,
+    .defaultWeapon = STANDARD_WEAPON,
 };
 
 // clang-format on

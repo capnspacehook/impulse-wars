@@ -743,14 +743,14 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
         // 0 is no-op for both move and aim
         ASSERT(move <= 8);
         if (move != 0) {
-            move++;
+            move--;
             actions.move.x = discToContActionMap[0][move];
             actions.move.y = discToContActionMap[1][move];
         }
         uint8_t aim = e->discActions[offset + 1];
         ASSERT(move <= 8);
         if (aim != 0) {
-            aim++;
+            aim--;
             actions.aim.x = discToContActionMap[0][aim];
             actions.aim.y = discToContActionMap[1][aim];
         }
@@ -992,7 +992,7 @@ void stepEnv(env *e) {
 
         // handle sudden death
         e->stepsLeft = fmaxf(e->stepsLeft - 1, 0.0f);
-        if (e->stepsLeft == 0 && e->numDrones != e->numAgents) {
+        if (e->numDrones == e->numAgents && e->stepsLeft == 0) {
             e->suddenDeathSteps = fmaxf(e->suddenDeathSteps - 1, 0.0f);
             if (e->suddenDeathSteps == 0) {
                 DEBUG_LOG("placing sudden death walls");

@@ -116,7 +116,7 @@ void renderBrakeTrails(const env *e) {
     brakeTrailPoint *trailPoint;
     while (cc_array_iter_next(&brakeTrailIter, (void **)&trailPoint) != CC_ITER_END) {
         if (trailPoint->lifetime == UINT16_MAX) {
-            trailPoint->lifetime = 2.0f * e->frameRate;
+            trailPoint->lifetime = 3.0f * e->frameRate;
         } else if (trailPoint->lifetime == 0) {
             fastFree(trailPoint);
             cc_array_iter_remove(&brakeTrailIter, NULL);
@@ -124,7 +124,7 @@ void renderBrakeTrails(const env *e) {
         }
 
         Color trailColor = GRAY;
-        trailColor.a = 32.0f * (trailPoint->lifetime / (2.0f * e->frameRate));
+        trailColor.a = 32.0f * (trailPoint->lifetime / (3.0f * e->frameRate));
         float radius = 0.3f * e->renderScale;
         if (trailPoint->heavyBrake) {
             radius = 0.5f * e->renderScale;

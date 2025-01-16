@@ -12,7 +12,7 @@ int main(void) {
     uint8_t *truncations = (uint8_t *)fastCalloc(NUM_DRONES, sizeof(uint8_t));
     logBuffer *logs = createLogBuffer(LOG_BUFFER_SIZE);
 
-    initEnv(e, NUM_DRONES, 1, obs, false, actions, NULL, rewards, terminals, truncations, logs, time(NULL), false, false);
+    initEnv(e, NUM_DRONES, NUM_DRONES, obs, false, actions, NULL, rewards, terminals, truncations, logs, time(NULL), false, false);
     e->humanInput = true;
 
     rayClient *client = createRayClient();
