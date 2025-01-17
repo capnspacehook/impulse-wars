@@ -188,7 +188,7 @@ if __name__ == "__main__":
     parser.add_argument("--train.norm-adv", action="store_false")
     parser.add_argument("--train.update-epochs", type=int, default=3)
     parser.add_argument("--train.vf-clip-coef", type=float, default=0.1)
-    parser.add_argument("--train.vf-coef", type=float, default=0.0740399510451186)
+    parser.add_argument("--train.vf-coef", type=float, default=0.5)
     parser.add_argument("--train.target-kl", type=float, default=0.2)
 
     parser.add_argument("--env.discretize-actions", action="store_false")
@@ -199,6 +199,7 @@ if __name__ == "__main__":
         default=1,
         help="Number of agents controlling drones, if this is less than --train.num-drones the other drones will be scripted",
     )
+    parser.add_argument("--env.human-control", action="store_true", help="Enable human control by default")
     parser.add_argument("--env.sitting-duck", action="store_true", help="Scripted drones will do nothing")
 
     parser.add_argument("--vec.backend", type=str, default="multiprocessing")
@@ -253,6 +254,7 @@ if __name__ == "__main__":
                 sitting_duck=args.env.sitting_duck,
                 discretize_actions=args.env.discretize_actions,
                 is_training=False,
+                human_control=args.env.human_control,
                 render=True,
                 seed=args.seed,
             ),

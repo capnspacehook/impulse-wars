@@ -51,6 +51,7 @@ class ImpulseWars(pufferlib.PufferEnv):
         sitting_duck: bool = False,
         discretize_actions: bool = False,
         is_training: bool = True,
+        human_control: bool = False,
         seed: int = 0,
         render: bool = False,
         report_interval: int = 16,
@@ -121,6 +122,7 @@ class ImpulseWars(pufferlib.PufferEnv):
             render,
             sitting_duck,
             is_training,
+            human_control,
         )
 
     def reset(self, seed=None):
