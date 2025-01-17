@@ -103,7 +103,7 @@ bool findOpenPos(env *e, const enum shapeCategory type, b2Vec2 *emptyPos) {
     }
 }
 
-entity *createWall(env *e, const float posX, const float posY, const float width, const float height, uint16_t cellIdx, const enum entityType type, const bool floating) {
+entity *createWall(const env *e, const float posX, const float posY, const float width, const float height, uint16_t cellIdx, const enum entityType type, const bool floating) {
     ASSERT(entityTypeIsWall(type));
 
     if (floating) {
@@ -146,7 +146,7 @@ entity *createWall(env *e, const float posX, const float posY, const float width
     wall->mapCellIdx = cellIdx;
     wall->isFloating = floating;
     wall->type = type;
-    wall->isSuddenDeath = e->suddenDeathSteps == 0;
+    wall->isSuddenDeath = e->suddenDeathWallsPlaced;
 
     entity *ent = (entity *)fastMalloc(sizeof(entity));
     ent->type = type;
@@ -165,9 +165,14 @@ entity *createWall(env *e, const float posX, const float posY, const float width
     return ent;
 }
 
-void destroyWall(wallEntity *wall) {
+void destroyWall(const env *e, wallEntity *wall, const bool full) {
     entity *ent = (entity *)b2Shape_GetUserData(wall->shapeID);
     fastFree(ent);
+
+    if (full) {
+        mapCell *cell = safe_array_get_at(e->cells, wall->mapCellIdx);
+        cell->ent = NULL;
+    }
 
     b2DestroyBody(wall->bodyID);
     fastFree(wall);
@@ -197,9 +202,13 @@ void createSuddenDeathWalls(env *e, const b2Vec2 startPos, const b2Vec2 size) {
     }
     for (uint16_t i = startIdx; i <= endIdx; i += indexIncrement) {
         mapCell *cell = safe_array_get_at(e->cells, i);
-        if (cell->ent != NULL && cell->ent->type == WEAPON_PICKUP_ENTITY) {
-            weaponPickupEntity *pickup = (weaponPickupEntity *)cell->ent->entity;
-            pickup->respawnWait = PICKUP_RESPAWN_WAIT;
+        if (cell->ent != NULL) {
+            if (cell->ent->type == WEAPON_PICKUP_ENTITY) {
+                weaponPickupEntity *pickup = (weaponPickupEntity *)cell->ent->entity;
+                pickup->respawnWait = PICKUP_RESPAWN_WAIT;
+            } else {
+                continue;
+            }
         }
         entity *ent = createWall(e, cell->pos.x, cell->pos.y, WALL_THICKNESS, WALL_THICKNESS, i, DEATH_WALL_ENTITY, false);
         cell->ent = ent;
@@ -290,17 +299,14 @@ void createWeaponPickup(env *e) {
     // kd_insert(e->pickupTree, pos.x, pos.y, pickup);
 }
 
-void destroyWeaponPickup(env *e, weaponPickupEntity *pickup, const bool full) {
+void destroyWeaponPickup(const env *e, weaponPickupEntity *pickup) {
     entity *ent = (entity *)b2Shape_GetUserData(pickup->shapeID);
     fastFree(ent);
 
-    if (full) {
-        MAYBE_UNUSED(e);
-        // const bool deleted = kd_delete(e->pickupTree, pickup->pos.x, pickup->pos.y);
-        // MAYBE_UNUSED(deleted);
-        // ASSERT(deleted);
-        b2DestroyBody(pickup->bodyID);
-    }
+    mapCell *cell = safe_array_get_at(e->cells, pickup->mapCellIdx);
+    cell->ent = NULL;
+
+    b2DestroyBody(pickup->bodyID);
 
     fastFree(pickup);
 }
@@ -481,13 +487,12 @@ void destroyProjectile(env *e, projectileEntity *projectile, const bool full) {
     entity *ent = (entity *)b2Shape_GetUserData(projectile->shapeID);
     fastFree(ent);
 
-    if (full) {
-        DEBUG_LOGF("proj %d speed: %f", projectile->weaponInfo->type, b2Length(b2Body_GetLinearVelocity(projectile->bodyID)));
+    b2DestroyBody(projectile->bodyID);
 
+    if (full) {
         const enum cc_stat res = cc_slist_remove(e->projectiles, projectile, NULL);
         MAYBE_UNUSED(res);
         ASSERT(res == CC_OK);
-        b2DestroyBody(projectile->bodyID);
     } else {
         // only add to the stats if we are not clearing the environment,
         // otherwise this projectile's distance will be counted twice
@@ -497,18 +502,12 @@ void destroyProjectile(env *e, projectileEntity *projectile, const bool full) {
     fastFree(projectile);
 }
 
-void destroyAllProjectiles(env *e) {
-    for (SNode *cur = e->projectiles->head; cur != NULL; cur = cur->next) {
-        projectileEntity *p = (projectileEntity *)cur->data;
-        destroyProjectile(e, p, false);
-    }
-}
-
 void handleSuddenDeath(env *e) {
     ASSERT(e->suddenDeathSteps == 0);
 
     // create new walls that will close in on the arena
     e->suddenDeathWallCounter++;
+    e->suddenDeathWallsPlaced = true;
 
     // TODO: these magic numbers can probably be simplified somehow
     createSuddenDeathWalls(
@@ -585,14 +584,14 @@ void handleSuddenDeath(env *e) {
             const enum cc_stat res = cc_array_iter_remove(&floatingWallIter, NULL);
             MAYBE_UNUSED(res);
             ASSERT(res == CC_OK);
-            destroyWall(wall);
+            destroyWall(e, wall, false);
 
             DEBUG_LOGF("destroyed floating wall at %f, %f", pos.x, pos.y);
             continue;
         }
     }
 
-    // detroy all projectiles that are now overlapping with a newly placed wall
+        // detroy all projectiles that are now overlapping with a newly placed wall
     CC_SListIter projectileIter;
     cc_slist_iter_init(&projectileIter, e->projectiles);
     projectileEntity *projectile;
@@ -604,13 +603,8 @@ void handleSuddenDeath(env *e) {
         }
         const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
         if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
-            // we have to destroy the projectile using the iterator so
-            // we can continue to iterate correctly, copy the body ID
-            // so we can destroy it after the projectile has been freed
             cc_slist_iter_remove(&projectileIter, NULL);
-            const b2BodyId bodyID = projectile->bodyID;
             destroyProjectile(e, projectile, false);
-            b2DestroyBody(bodyID);
         }
     }
 }
@@ -998,9 +992,7 @@ void projectilesStep(env *e) {
             // we can continue to iterate correctly, copy the body ID
             // so we can destroy it after the projectile has been freed
             cc_slist_iter_remove(&iter, NULL);
-            const b2BodyId bodyID = projectile->bodyID;
             destroyProjectile(e, projectile, false);
-            b2DestroyBody(bodyID);
             continue;
         }
     }
@@ -1014,14 +1006,13 @@ void weaponPickupsStep(env *e) {
         if (pickup->respawnWait != 0.0f) {
             pickup->respawnWait = fmaxf(pickup->respawnWait - e->deltaTime, 0.0f);
             if (pickup->respawnWait == 0.0f) {
-                // b2Vec2 oldPos = pickup->pos;
                 b2Vec2 pos;
                 if (!findOpenPos(e, WEAPON_PICKUP_SHAPE, &pos)) {
                     const enum cc_stat res = cc_array_iter_remove(&iter, NULL);
                     MAYBE_UNUSED(res);
                     ASSERT(res == CC_OK);
                     DEBUG_LOG("destroying weapon pickup");
-                    destroyWeaponPickup(e, pickup, true);
+                    destroyWeaponPickup(e, pickup);
                     continue;
                 }
                 b2Body_SetTransform(pickup->bodyID, pos, b2Rot_identity);
@@ -1037,11 +1028,6 @@ void weaponPickupsStep(env *e) {
                 mapCell *cell = safe_array_get_at(e->cells, cellIdx);
                 entity *ent = (entity *)b2Shape_GetUserData(pickup->shapeID);
                 cell->ent = ent;
-
-                // const bool deleted = kd_delete(e->pickupTree, oldPos.x, oldPos.y);
-                // MAYBE_UNUSED(deleted);
-                // ASSERT(deleted);
-                // kd_insert(e->pickupTree, pickup->pos.x, pickup->pos.y, pickup);
             }
         }
     }

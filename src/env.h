@@ -358,7 +358,7 @@ void computeNearMapObs(env *e, const droneEntity *drone, float *scalarObs) {
         ASSERTF(offset <= NEAR_WALL_POS_OBS_OFFSET, "offset: %d", offset);
         scalarObs[offset] = wall->type;
 
-        DEBUG_LOGF("wall %d cell %d", i, entityPosToCellIdx(e, wall->pos.pos));
+        // DEBUG_LOGF("wall %d cell %d", i, entityPosToCellIdx(e, wall->pos.pos));
 
         offset = NEAR_WALL_POS_OBS_OFFSET + (i * NEAR_WALL_POS_OBS_SIZE);
         ASSERTF(offset <= FLOATING_WALL_TYPES_OBS_OFFSET, "offset: %d", offset);
@@ -384,7 +384,10 @@ void computeNearMapObs(env *e, const droneEntity *drone, float *scalarObs) {
         insertionSort(nearFloatingWalls, cc_array_size(e->floatingWalls));
 
         // compute type, position, angle and velocity of N nearest floating walls
-        for (uint8_t i = 0; i < NUM_FLOATING_WALL_OBS; i++) {
+        for (uint8_t i = 0; i < cc_array_size(e->floatingWalls); i++) {
+            if (i == NUM_FLOATING_WALL_OBS) {
+                break;
+            }
             const wallEntity *wall = (wallEntity *)nearFloatingWalls[i].entity;
 
             const b2Transform wallTransform = b2Body_GetTransform(wall->bodyID);
@@ -396,7 +399,7 @@ void computeNearMapObs(env *e, const droneEntity *drone, float *scalarObs) {
             ASSERTF(offset <= FLOATING_WALL_INFO_OBS_OFFSET, "offset: %d", offset);
             scalarObs[offset] = wall->type + 1;
 
-            DEBUG_LOGF("floating wall %d cell %d", i, entityPosToCellIdx(e, wall->pos.pos));
+            // DEBUG_LOGF("floating wall %d cell %d", i, entityPosToCellIdx(e, wall->pos.pos));
 
             offset = FLOATING_WALL_INFO_OBS_OFFSET + (i * FLOATING_WALL_INFO_OBS_SIZE);
             ASSERTF(offset <= WEAPON_PICKUP_TYPES_OBS_OFFSET, "offset: %d", offset);
@@ -438,7 +441,7 @@ void computeNearMapObs(env *e, const droneEntity *drone, float *scalarObs) {
         ASSERTF(offset <= WEAPON_PICKUP_POS_OBS_OFFSET, "offset: %d", offset);
         scalarObs[offset] = pickup->weapon + 1;
 
-        DEBUG_LOGF("pickup %d cell %d", i, entityPosToCellIdx(e, pickup->pos));
+        // DEBUG_LOGF("pickup %d cell %d", i, entityPosToCellIdx(e, pickup->pos));
 
         offset = WEAPON_PICKUP_POS_OBS_OFFSET + (i * WEAPON_PICKUP_POS_OBS_SIZE);
         ASSERTF(offset <= PROJECTILE_TYPES_OBS_OFFSET, "offset: %d", offset);
@@ -591,22 +594,19 @@ void computeObs(env *e) {
 void setupEnv(env *e) {
     e->needsReset = false;
 
-    b2WorldDef worldDef = b2DefaultWorldDef();
-    worldDef.gravity = (b2Vec2){.x = 0.0f, .y = 0.0f};
-    e->worldID = b2CreateWorld(&worldDef);
-
     e->stepsLeft = e->totalSteps;
     e->suddenDeathSteps = e->totalSuddenDeathSteps;
     e->suddenDeathWallCounter = 0;
 
-    DEBUG_LOG("creating map");
     uint8_t firstMap = 0;
     // don't evaluate on the boring empty map
     if (!e->isTraining) {
         firstMap = 1;
     }
-    const int mapIdx = randInt(&e->randState, firstMap, NUM_MAPS - 1);
-    createMap(e, mapIdx);
+    int mapIdx = randInt(&e->randState, firstMap, NUM_MAPS - 1);
+    DEBUG_LOGF("setting up map %d", e->mapIdx);
+    setupMap(e, mapIdx);
+    e->suddenDeathWallsPlaced = false;
 
     mapBounds bounds = {.min = {.x = FLT_MAX, .y = FLT_MAX}, .max = {.x = FLT_MIN, .y = FLT_MIN}};
     for (size_t i = 0; i < cc_array_size(e->walls); i++) {
@@ -677,6 +677,11 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
 
     e->logs = logs;
 
+    b2WorldDef worldDef = b2DefaultWorldDef();
+    worldDef.gravity = (b2Vec2){.x = 0.0f, .y = 0.0f};
+    e->worldID = b2CreateWorld(&worldDef);
+    e->mapIdx = -1;
+
     cc_array_new(&e->cells);
     cc_array_new(&e->walls);
     cc_array_new(&e->floatingWalls);
@@ -705,31 +710,24 @@ void clearEnv(env *e) {
     e->episodeLength = 0;
     memset(e->stats, 0x0, sizeof(e->stats));
 
-    for (size_t i = 0; i < cc_array_size(e->pickups); i++) {
-        weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
-        destroyWeaponPickup(e, pickup, false);
-    }
-
     for (uint8_t i = 0; i < e->numDrones; i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
         destroyDrone(drone);
     }
 
-    destroyAllProjectiles(e);
-
-    for (size_t i = 0; i < cc_array_size(e->walls); i++) {
-        wallEntity *wall = safe_array_get_at(e->walls, i);
-        destroyWall(wall);
-    }
-
     for (size_t i = 0; i < cc_array_size(e->floatingWalls); i++) {
         wallEntity *wall = safe_array_get_at(e->floatingWalls, i);
-        destroyWall(wall);
+        destroyWall(e, wall, false);
     }
 
-    for (size_t i = 0; i < cc_array_size(e->cells); i++) {
-        mapCell *cell = safe_array_get_at(e->cells, i);
-        fastFree(cell);
+    for (size_t i = 0; i < cc_array_size(e->pickups); i++) {
+        weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
+        destroyWeaponPickup(e, pickup);
+    }
+
+    for (SNode *cur = e->projectiles->head; cur != NULL; cur = cur->next) {
+        projectileEntity *p = (projectileEntity *)cur->data;
+        destroyProjectile(e, p, false);
     }
 
     for (size_t i = 0; i < cc_array_size(e->brakeTrailPoints); i++) {
@@ -742,25 +740,23 @@ void clearEnv(env *e) {
         fastFree(explosion);
     }
 
-    cc_array_remove_all(e->cells);
-    cc_array_remove_all(e->walls);
-    cc_array_remove_all(e->floatingWalls);
     cc_array_remove_all(e->drones);
+    cc_array_remove_all(e->floatingWalls);
     cc_array_remove_all(e->pickups);
     cc_slist_remove_all(e->projectiles);
     cc_array_remove_all(e->brakeTrailPoints);
     cc_array_remove_all(e->explosions);
-
-    b2DestroyWorld(e->worldID);
 }
 
 void destroyEnv(env *e) {
     clearEnv(e);
 
+    b2DestroyWorld(e->worldID);
+
     cc_array_destroy(e->cells);
     cc_array_destroy(e->walls);
-    cc_array_destroy(e->floatingWalls);
     cc_array_destroy(e->drones);
+    cc_array_destroy(e->floatingWalls);
     cc_array_destroy(e->pickups);
     cc_slist_destroy(e->projectiles);
     cc_array_destroy(e->brakeTrailPoints);

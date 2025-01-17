@@ -52,9 +52,10 @@ typedef struct mapEntry {
     const char *layout;
     const uint8_t columns;
     const uint8_t rows;
-    const uint8_t floatingStandardWalls;
-    const uint8_t floatingBouncyWalls;
-    const uint8_t floatingDeathWalls;
+    const uint8_t randFloatingStandardWalls;
+    const uint8_t randFloatingBouncyWalls;
+    const uint8_t randFloatingDeathWalls;
+    const bool hasSetFloatingWalls;
     const uint16_t weaponPickups;
     const enum weaponType defaultWeapon;
 } mapEntry;
@@ -253,6 +254,7 @@ typedef struct env {
     droneStats stats[_MAX_DRONES];
 
     b2WorldId worldID;
+    int8_t mapIdx;
     uint8_t columns;
     uint8_t rows;
     mapBounds bounds;
@@ -272,6 +274,7 @@ typedef struct env {
     uint16_t suddenDeathSteps;
     // the amount of sudden death walls that have been spawned
     uint8_t suddenDeathWallCounter;
+    bool suddenDeathWallsPlaced;
 
     rayClient *client;
     float renderScale;

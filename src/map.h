@@ -37,9 +37,10 @@ const mapEntry boringMap = {
     .layout = boringLayout,
     .columns = 21,
     .rows = 21,
-    .floatingStandardWalls = 0,
-    .floatingBouncyWalls = 0,
-    .floatingDeathWalls = 0,
+    .randFloatingStandardWalls = 0,
+    .randFloatingBouncyWalls = 0,
+    .randFloatingDeathWalls = 0,
+    .hasSetFloatingWalls = false,
     .weaponPickups = 8,
     .defaultWeapon = STANDARD_WEAPON,
 };
@@ -71,9 +72,10 @@ const mapEntry prototypeArenaMap = {
     .layout = prototypeArenaLayout,
     .columns = 20,
     .rows = 20,
-    .floatingStandardWalls = 0,
-    .floatingBouncyWalls = 0,
-    .floatingDeathWalls = 0,
+    .randFloatingStandardWalls = 0,
+    .randFloatingBouncyWalls = 0,
+    .randFloatingDeathWalls = 0,
+    .hasSetFloatingWalls = true,
     .weaponPickups = 8,
     .defaultWeapon = STANDARD_WEAPON,
 };
@@ -106,9 +108,10 @@ const mapEntry snipersMap = {
     .layout = snipersLayout,
     .columns = 21,
     .rows = 21,
-    .floatingStandardWalls = 0,
-    .floatingBouncyWalls = 0,
-    .floatingDeathWalls = 0,
+    .randFloatingStandardWalls = 0,
+    .randFloatingBouncyWalls = 0,
+    .randFloatingDeathWalls = 0,
+    .hasSetFloatingWalls = false,
     .weaponPickups = 6,
     .defaultWeapon = SNIPER_WEAPON,
 };
@@ -141,9 +144,10 @@ const mapEntry roomsMap = {
     .layout = roomsLayout,
     .columns = 21,
     .rows = 21,
-    .floatingStandardWalls = 3,
-    .floatingBouncyWalls = 0,
-    .floatingDeathWalls = 3,
+    .randFloatingStandardWalls = 3,
+    .randFloatingBouncyWalls = 0,
+    .randFloatingDeathWalls = 3,
+    .hasSetFloatingWalls = false,
     .weaponPickups = 12,
     .defaultWeapon = SHOTGUN_WEAPON,
 };
@@ -178,9 +182,10 @@ const mapEntry xArena = {
     .layout = xArenaLayout,
     .columns = 23,
     .rows = 23,
-    .floatingStandardWalls = 0,
-    .floatingBouncyWalls = 0,
-    .floatingDeathWalls = 0,
+    .randFloatingStandardWalls = 0,
+    .randFloatingBouncyWalls = 0,
+    .randFloatingDeathWalls = 0,
+    .hasSetFloatingWalls = true,
     .weaponPickups = 12,
     .defaultWeapon = STANDARD_WEAPON,
 };
@@ -216,9 +221,10 @@ const mapEntry crossBounce = {
     .layout = crossBounceLayout,
     .columns = 24,
     .rows = 24,
-    .floatingStandardWalls = 0,
-    .floatingBouncyWalls = 0,
-    .floatingDeathWalls = 0,
+    .randFloatingStandardWalls = 0,
+    .randFloatingBouncyWalls = 0,
+    .randFloatingDeathWalls = 0,
+    .hasSetFloatingWalls = true,
     .weaponPickups = 12,
     .defaultWeapon = STANDARD_WEAPON,// TODO: make this exploding weapon
 };
@@ -253,9 +259,10 @@ const mapEntry asteriskArena = {
     .layout = asteriskArenaLayout,
     .columns = 23,
     .rows = 23,
-    .floatingStandardWalls = 0,
-    .floatingBouncyWalls = 0,
-    .floatingDeathWalls = 0,
+    .randFloatingStandardWalls = 0,
+    .randFloatingBouncyWalls = 0,
+    .randFloatingDeathWalls = 0,
+    .hasSetFloatingWalls = false,
     .weaponPickups = 12,
     .defaultWeapon = STANDARD_WEAPON,
 };
@@ -287,9 +294,10 @@ const mapEntry foamPitMap = {
     .layout = foamPitLayout,
     .columns = 20,
     .rows = 20,
-    .floatingStandardWalls = 0,
-    .floatingBouncyWalls = 0,
-    .floatingDeathWalls = 0,
+    .randFloatingStandardWalls = 0,
+    .randFloatingBouncyWalls = 0,
+    .randFloatingDeathWalls = 0,
+    .hasSetFloatingWalls = true,
     .weaponPickups = 8,
     .defaultWeapon = STANDARD_WEAPON,
 };
@@ -311,11 +319,88 @@ const mapEntry *maps[] = {
 };
 #endif
 
-void createMap(env *e, const int mapIdx) {
+void resetMap(const env *e) {
+    // if sudden death walls were placed, remove them
+    if (e->suddenDeathWallsPlaced) {
+        DEBUG_LOG("removing sudden death walls");
+        // remove walls from the end of the array, sudden death walls
+        // are added last
+        for (uint16_t i = cc_array_size(e->walls) - 1; i >= 0; i--) {
+            wallEntity *wall = safe_array_get_at(e->walls, i);
+            if (!wall->isSuddenDeath) {
+                // if we reached the first non sudden death wall, we're done
+                break;
+            }
+            cc_array_remove_last(e->walls, NULL);
+            destroyWall(e, wall, true);
+        }
+    }
+
+    // place floating walls with a set position if there are any
+    const mapEntry *map = maps[e->mapIdx];
+    if (!map->hasSetFloatingWalls) {
+        return;
+    }
+    DEBUG_LOG("placing set floating walls");
+
+    const uint8_t columns = map->columns;
+    const uint8_t rows = map->rows;
+    const char *layout = map->layout;
+    uint16_t cellIdx = 0;
+
+    for (int row = 0; row < rows; row++) {
+        for (int col = 0; col < columns; col++) {
+            char cellType = layout[col + (row * columns)];
+
+            enum entityType wallType;
+            switch (cellType) {
+            case 'w':
+                wallType = STANDARD_WALL_ENTITY;
+                break;
+            case 'b':
+                wallType = BOUNCY_WALL_ENTITY;
+                break;
+            case 'd':
+                wallType = DEATH_WALL_ENTITY;
+                break;
+            default:
+                cellIdx++;
+                continue;
+            }
+
+            const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
+            createWall(e, cell->pos.x, cell->pos.y, FLOATING_WALL_THICKNESS, FLOATING_WALL_THICKNESS, cellIdx, wallType, true);
+            cellIdx++;
+        }
+    }
+}
+
+void setupMap(env *e, const uint8_t mapIdx) {
+    // reset the map if we're switching to the same map, otherwise
+    // clear the map
+    if (e->mapIdx == mapIdx) {
+        resetMap(e);
+        return;
+    } else {
+        for (size_t i = 0; i < cc_array_size(e->walls); i++) {
+            wallEntity *wall = safe_array_get_at(e->walls, i);
+            destroyWall(e, wall, false);
+        }
+
+        for (size_t i = 0; i < cc_array_size(e->cells); i++) {
+            mapCell *cell = safe_array_get_at(e->cells, i);
+            fastFree(cell);
+        }
+
+        cc_array_remove_all(e->walls);
+        cc_array_remove_all(e->cells);
+    }
+
     const uint8_t columns = maps[mapIdx]->columns;
     const uint8_t rows = maps[mapIdx]->rows;
     const char *layout = maps[mapIdx]->layout;
 
+    e->mapIdx = mapIdx;
     e->columns = columns;
     e->rows = rows;
     e->defaultWeapon = weaponInfos[maps[mapIdx]->defaultWeapon];
@@ -382,13 +467,13 @@ void placeRandFloatingWall(env *e, const enum entityType wallType) {
 }
 
 void placeRandFloatingWalls(env *e, const int mapIdx) {
-    for (int i = 0; i < maps[mapIdx]->floatingStandardWalls; i++) {
+    for (int i = 0; i < maps[mapIdx]->randFloatingStandardWalls; i++) {
         placeRandFloatingWall(e, STANDARD_WALL_ENTITY);
     }
-    for (int i = 0; i < maps[mapIdx]->floatingBouncyWalls; i++) {
+    for (int i = 0; i < maps[mapIdx]->randFloatingBouncyWalls; i++) {
         placeRandFloatingWall(e, BOUNCY_WALL_ENTITY);
     }
-    for (int i = 0; i < maps[mapIdx]->floatingDeathWalls; i++) {
+    for (int i = 0; i < maps[mapIdx]->randFloatingDeathWalls; i++) {
         placeRandFloatingWall(e, DEATH_WALL_ENTITY);
     }
 }

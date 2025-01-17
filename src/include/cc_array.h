@@ -1111,6 +1111,9 @@ enum cc_stat cc_array_iter_remove(CC_ArrayIter *iter, void **out) {
         if (status == CC_OK) {
             iter->last_removed = true;
         }
+        if (iter->index > 0) {
+            iter->index--;
+        }
     }
     return status;
 }
