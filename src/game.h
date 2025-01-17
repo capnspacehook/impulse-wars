@@ -160,8 +160,6 @@ entity *createWall(env *e, const float posX, const float posY, const float width
         cc_array_add(e->floatingWalls, wall);
     } else {
         cc_array_add(e->walls, wall);
-        // DEBUG_LOGF("adding wall at (%f, %f) to KD tree", pos.x, pos.y);
-        kd_insert(e->wallTree, pos.x, pos.y, wall);
     }
 
     return ent;

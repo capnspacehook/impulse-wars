@@ -5,7 +5,6 @@
 
 #include "include/cc_array.h"
 #include "include/cc_slist.h"
-#include "include/kdtree.h"
 
 #include "settings.h"
 
@@ -260,7 +259,6 @@ typedef struct env {
     weaponInformation *defaultWeapon;
     CC_Array *cells;
     CC_Array *walls;
-    kdtree *wallTree;
     CC_Array *floatingWalls;
     CC_Array *drones;
     CC_Array *pickups;

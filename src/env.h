@@ -100,8 +100,8 @@ uint16_t findNearestCell(const env *e, const b2Vec2 pos, const uint16_t cellIdx)
 
     uint16_t closestCell = cellIdx;
     float minDistance = FLT_MAX;
-    const uint8_t cellRow = cellIdx / e->columns;
-    const uint8_t cellCol = cellIdx % e->columns;
+    const uint8_t cellRow = cellIdx % e->columns;
+    const uint8_t cellCol = cellIdx / e->columns;
     for (uint8_t i = 0; i < 8; i++) {
         const uint16_t newCellIdx = ((cellRow + cellOffsets[i][0]) * e->columns) + (cellCol + cellOffsets[i][1]);
         const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
@@ -252,6 +252,203 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
     }
 }
 
+typedef struct nearEntity {
+    void *entity;
+    float distance;
+} nearEntity;
+
+const uint8_t searchDirections[8][2] = {
+    {0, -1},
+    {1, -1},
+    {1, 0},
+    {1, 1},
+    {0, 1},
+    {-1, 1},
+    {-1, 0},
+    {-1, -1},
+};
+
+void insertionSort(nearEntity arr[], uint8_t size) {
+    for (int i = 1; i < size; i++) {
+        nearEntity key = arr[i];
+        int j = i - 1;
+
+        while (j >= 0 && arr[j].distance > key.distance) {
+            arr[j + 1] = arr[j];
+            j = j - 1;
+        }
+
+        arr[j + 1] = key;
+    }
+}
+
+#ifndef AUTOPXD
+void computeNearMapObs(env *e, const droneEntity *drone, float *scalarObs) {
+    const b2Vec2 dronePos = drone->pos.pos;
+    // don't need to check if the cell is valid since that was already
+    // checked in computeMapObs
+    const int16_t droneCellIdx = entityPosToCellIdx(e, dronePos);
+    int8_t droneCellRow = droneCellIdx % e->columns;
+    int8_t droneCellCol = droneCellIdx / e->columns;
+
+    // find near walls and weapon pickups
+    nearEntity nearWalls[64] = {0};
+    nearEntity nearWeaponPickups[MAX_WEAPON_PICKUPS] = {0};
+    uint8_t foundWalls = 0;
+    uint8_t foundPickups = 0;
+    int8_t xDirection = 1;
+    int8_t yDirection = 0;
+    int8_t row = droneCellRow;
+    int8_t col = droneCellCol;
+    uint8_t segmentLen = 1;
+    uint8_t segmentPassed = 0;
+    uint8_t segmentsCompleted = 0;
+
+    // search for near walls and pickups in a spiral; pickups may be
+    // scattered, so if we don't find them all here we'll just sort all
+    // pickups by distance later
+    while (segmentsCompleted % 5 != 0 || foundWalls < NUM_NEAR_WALL_OBS) {
+        row += xDirection;
+        col += yDirection;
+        const int16_t cellIdx = cellIndex(e, row, col);
+        segmentPassed++;
+
+        if (segmentPassed == segmentLen) {
+            // if we have completed a segment, change direction
+            segmentsCompleted++;
+            segmentPassed = 0;
+            uint8_t temp = xDirection;
+            xDirection = -yDirection;
+            yDirection = temp;
+            if (yDirection == 0) {
+                // increase the segment length if necessary
+                segmentLen++;
+            }
+        }
+
+        if (cellIdx < 0 || row < 0 || row >= e->rows || col < 0 || col >= e->columns) {
+            continue;
+        }
+
+        const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
+        if (cell->ent == NULL || (cell->ent->type != WEAPON_PICKUP_ENTITY && !entityTypeIsWall(cell->ent->type))) {
+            continue;
+        }
+
+        nearEntity nearEntity = {
+            .entity = cell->ent->entity,
+            .distance = b2Distance(cell->pos, dronePos),
+        };
+        if (cell->ent->type != WEAPON_PICKUP_ENTITY && foundWalls < NUM_NEAR_WALL_OBS) {
+            nearWalls[foundWalls++] = nearEntity;
+        } else if (cell->ent->type == WEAPON_PICKUP_ENTITY && foundPickups < NUM_WEAPON_PICKUP_OBS) {
+            nearWeaponPickups[foundPickups++] = nearEntity;
+        }
+    }
+
+    uint16_t offset;
+
+    // compute type and position of N nearest walls
+    ASSERTF(foundWalls >= NUM_NEAR_WALL_OBS, "foundWalls: %d", foundWalls);
+    insertionSort(nearWalls, foundWalls);
+    for (uint8_t i = 0; i < NUM_NEAR_WALL_OBS; i++) {
+        const wallEntity *wall = (wallEntity *)nearWalls[i].entity;
+
+        offset = NEAR_WALL_TYPES_OBS_OFFSET + i;
+        ASSERTF(offset <= NEAR_WALL_POS_OBS_OFFSET, "offset: %d", offset);
+        scalarObs[offset] = wall->type;
+
+        DEBUG_LOGF("wall %d cell %d", i, entityPosToCellIdx(e, wall->pos.pos));
+
+        offset = NEAR_WALL_POS_OBS_OFFSET + (i * NEAR_WALL_POS_OBS_SIZE);
+        ASSERTF(offset <= FLOATING_WALL_TYPES_OBS_OFFSET, "offset: %d", offset);
+        ASSERT(wall->pos.valid);
+        const b2Vec2 wallRelPos = b2Sub(wall->pos.pos, dronePos);
+
+        scalarObs[offset++] = scaleValue(wallRelPos.x, MAX_X_POS, false);
+        scalarObs[offset] = scaleValue(wallRelPos.y, MAX_Y_POS, false);
+    }
+
+    if (cc_array_size(e->floatingWalls) != 0) {
+        // find N nearest floating walls
+        nearEntity nearFloatingWalls[MAX_FLOATING_WALLS] = {0};
+        for (uint8_t i = 0; i < cc_array_size(e->floatingWalls); i++) {
+            wallEntity *wall = safe_array_get_at(e->floatingWalls, i);
+            const b2Vec2 wallPos = getCachedPos(wall->bodyID, &wall->pos);
+            const nearEntity nearEnt = {
+                .entity = wall,
+                .distance = b2Distance(wallPos, dronePos),
+            };
+            nearFloatingWalls[i] = nearEnt;
+        }
+        insertionSort(nearFloatingWalls, cc_array_size(e->floatingWalls));
+
+        // compute type, position, angle and velocity of N nearest floating walls
+        for (uint8_t i = 0; i < NUM_FLOATING_WALL_OBS; i++) {
+            const wallEntity *wall = (wallEntity *)nearFloatingWalls[i].entity;
+
+            const b2Transform wallTransform = b2Body_GetTransform(wall->bodyID);
+            const b2Vec2 wallRelPos = b2Sub(wallTransform.p, dronePos);
+            const float angle = b2Rot_GetAngle(wallTransform.q);
+            const b2Vec2 wallVel = b2Body_GetLinearVelocity(wall->bodyID);
+
+            offset = FLOATING_WALL_TYPES_OBS_OFFSET + i;
+            ASSERTF(offset <= FLOATING_WALL_INFO_OBS_OFFSET, "offset: %d", offset);
+            scalarObs[offset] = wall->type + 1;
+
+            DEBUG_LOGF("floating wall %d cell %d", i, entityPosToCellIdx(e, wall->pos.pos));
+
+            offset = FLOATING_WALL_INFO_OBS_OFFSET + (i * FLOATING_WALL_INFO_OBS_SIZE);
+            ASSERTF(offset <= WEAPON_PICKUP_TYPES_OBS_OFFSET, "offset: %d", offset);
+            scalarObs[offset++] = scaleValue(wallRelPos.x, MAX_X_POS, false);
+            scalarObs[offset++] = scaleValue(wallRelPos.y, MAX_Y_POS, false);
+            scalarObs[offset++] = scaleValue(angle, MAX_ANGLE, false);
+            scalarObs[offset++] = scaleValue(wallVel.x, MAX_SPEED, false);
+            scalarObs[offset] = scaleValue(wallVel.y, MAX_SPEED, false);
+        }
+    }
+
+    // compute type and location of N nearest weapon pickups
+    if (foundPickups < NUM_WEAPON_PICKUP_OBS) {
+        // if we didn't find enough pickups, add the rest of the pickups
+        // and sort them by distance
+        for (uint8_t i = 0; i < cc_array_size(e->pickups); i++) {
+            weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
+            if (i < foundPickups) {
+                const weaponPickupEntity *nearPickup = (weaponPickupEntity *)nearWeaponPickups[i].entity;
+                if (nearPickup == pickup) {
+                    continue;
+                }
+            }
+
+            nearEntity nearEntity = {
+                .entity = pickup,
+                .distance = b2Distance(pickup->pos, dronePos),
+            };
+            nearWeaponPickups[i] = nearEntity;
+        }
+        foundPickups = cc_array_size(e->pickups);
+    }
+
+    insertionSort(nearWeaponPickups, foundPickups);
+    for (uint8_t i = 0; i < NUM_WEAPON_PICKUP_OBS; i++) {
+        const weaponPickupEntity *pickup = (weaponPickupEntity *)nearWeaponPickups[i].entity;
+
+        offset = WEAPON_PICKUP_TYPES_OBS_OFFSET + i;
+        ASSERTF(offset <= WEAPON_PICKUP_POS_OBS_OFFSET, "offset: %d", offset);
+        scalarObs[offset] = pickup->weapon + 1;
+
+        DEBUG_LOGF("pickup %d cell %d", i, entityPosToCellIdx(e, pickup->pos));
+
+        offset = WEAPON_PICKUP_POS_OBS_OFFSET + (i * WEAPON_PICKUP_POS_OBS_SIZE);
+        ASSERTF(offset <= PROJECTILE_TYPES_OBS_OFFSET, "offset: %d", offset);
+        const b2Vec2 pickupRelPos = b2Sub(pickup->pos, dronePos);
+        scalarObs[offset++] = scaleValue(pickupRelPos.x, MAX_X_POS, false);
+        scalarObs[offset] = scaleValue(pickupRelPos.y, MAX_Y_POS, false);
+    }
+}
+#endif
+
 void computeObs(env *e) {
     memset(e->obs, 0x0, e->obsBytes * e->numAgents);
 
@@ -269,61 +466,7 @@ void computeObs(env *e) {
         const droneEntity *agentDrone = safe_array_get_at(e->drones, agentIdx);
         const b2Vec2 agentDronePos = agentDrone->pos.pos;
 
-        // compute type and position of N nearest walls
-        kdres *nearWalls = kd_nearest_n(e->wallTree, agentDronePos.x, agentDronePos.y, NUM_NEAR_WALL_OBS);
-        for (uint8_t i = 0; i < NUM_NEAR_WALL_OBS; i++) {
-            const wallEntity *wall = kd_res_item_data(nearWalls);
-            kd_res_next(nearWalls);
-
-            scalarObsOffset = NEAR_WALL_TYPES_OBS_OFFSET + i;
-            ASSERTF(scalarObsOffset <= NEAR_WALL_POS_OBS_OFFSET, "offset: %d", scalarObsOffset);
-            scalarObs[scalarObsOffset] = wall->type;
-
-            scalarObsOffset = NEAR_WALL_POS_OBS_OFFSET + (i * NEAR_WALL_POS_OBS_SIZE);
-            ASSERTF(scalarObsOffset <= FLOATING_WALL_TYPES_OBS_OFFSET, "offset: %d", scalarObsOffset);
-            ASSERT(wall->pos.valid);
-            const b2Vec2 wallRelPos = b2Sub(wall->pos.pos, agentDronePos);
-            scalarObs[scalarObsOffset++] = scaleValue(wallRelPos.x, MAX_X_POS, false);
-            scalarObs[scalarObsOffset] = scaleValue(wallRelPos.y, MAX_Y_POS, false);
-        }
-        kd_res_free(nearWalls);
-
-        // compute type, position, angle and velocity of floating walls
-        for (size_t i = 0; i < cc_array_size(e->floatingWalls); i++) {
-            const wallEntity *wall = safe_array_get_at(e->floatingWalls, i);
-            const b2Transform wallTransform = b2Body_GetTransform(wall->bodyID);
-            const b2Vec2 wallRelPos = b2Sub(wallTransform.p, agentDronePos);
-            const float angle = b2Rot_GetAngle(wallTransform.q);
-            const b2Vec2 wallVel = b2Body_GetLinearVelocity(wall->bodyID);
-
-            scalarObsOffset = FLOATING_WALL_TYPES_OBS_OFFSET + i;
-            ASSERTF(scalarObsOffset <= FLOATING_WALL_INFO_OBS_OFFSET, "offset: %d", scalarObsOffset);
-            scalarObs[scalarObsOffset] = wall->type + 1;
-
-            scalarObsOffset = FLOATING_WALL_INFO_OBS_OFFSET + (i * FLOATING_WALL_INFO_OBS_SIZE);
-            ASSERTF(scalarObsOffset <= WEAPON_PICKUP_TYPES_OBS_OFFSET, "offset: %d", scalarObsOffset);
-            scalarObs[scalarObsOffset++] = scaleValue(wallRelPos.x, MAX_X_POS, false);
-            scalarObs[scalarObsOffset++] = scaleValue(wallRelPos.y, MAX_Y_POS, false);
-            scalarObs[scalarObsOffset++] = scaleValue(angle, MAX_ANGLE, false);
-            scalarObs[scalarObsOffset++] = scaleValue(wallVel.x, MAX_SPEED, false);
-            scalarObs[scalarObsOffset] = scaleValue(wallVel.y, MAX_SPEED, false);
-        }
-
-        // compute type and location of N nearest weapon pickups
-        // TODO: use KD tree here
-        for (uint8_t i = 0; i < cc_array_size(e->pickups); i++) {
-            const weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
-
-            scalarObsOffset = WEAPON_PICKUP_TYPES_OBS_OFFSET + i;
-            ASSERTF(scalarObsOffset <= WEAPON_PICKUP_POS_OBS_OFFSET, "offset: %d", scalarObsOffset);
-            scalarObs[scalarObsOffset] = pickup->weapon + 1;
-
-            scalarObsOffset = WEAPON_PICKUP_POS_OBS_OFFSET + (i * WEAPON_PICKUP_POS_OBS_SIZE);
-            ASSERTF(scalarObsOffset <= PROJECTILE_TYPES_OBS_OFFSET, "offset: %d", scalarObsOffset);
-            const b2Vec2 pickupRelPos = b2Sub(pickup->pos, agentDronePos);
-            scalarObs[scalarObsOffset++] = scaleValue(pickupRelPos.x, MAX_X_POS, false);
-            scalarObs[scalarObsOffset] = scaleValue(pickupRelPos.y, MAX_Y_POS, false);
-        }
+        computeNearMapObs(e, agentDrone, scalarObs);
 
         // compute type and location of N projectiles
         uint8_t projIdx = 0;
@@ -536,7 +679,6 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
 
     cc_array_new(&e->cells);
     cc_array_new(&e->walls);
-    e->wallTree = kd_create(2);
     cc_array_new(&e->floatingWalls);
     cc_array_new(&e->drones);
     cc_array_new(&e->pickups);
@@ -602,7 +744,6 @@ void clearEnv(env *e) {
 
     cc_array_remove_all(e->cells);
     cc_array_remove_all(e->walls);
-    kd_clear(e->wallTree);
     cc_array_remove_all(e->floatingWalls);
     cc_array_remove_all(e->drones);
     cc_array_remove_all(e->pickups);
@@ -618,7 +759,6 @@ void destroyEnv(env *e) {
 
     cc_array_destroy(e->cells);
     cc_array_destroy(e->walls);
-    free(e->wallTree);
     cc_array_destroy(e->floatingWalls);
     cc_array_destroy(e->drones);
     cc_array_destroy(e->pickups);

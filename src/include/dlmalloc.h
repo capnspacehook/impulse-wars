@@ -2805,10 +2805,11 @@ static int largebin_index(unsigned int sz) {
     unsigned int x = sz >> SMALLBIN_WIDTH;
     unsigned int m; /* bit position of highest set bit of m */
 
-    if (x >= 0x10000)
+    if (x >= 0x10000) {
         return NBINS - 1;
+    }
 
-        /* On intel, use BSRL instruction to find highest bit */
+    /* On intel, use BSRL instruction to find highest bit */
 #if defined(__GNUC__) && defined(i386)
 
     __asm__("bsrl %1,%0\n\t"
@@ -3255,8 +3256,9 @@ static void do_check_free_chunk(p) mchunkptr p;
         /* ... and has minimally sane links */
         assert(p->fd->bk == p);
         assert(p->bk->fd == p);
-    } else /* markers are always of size SIZE_SZ */
+    } else { /* markers are always of size SIZE_SZ */
         assert(sz == SIZE_SZ);
+    }
 }
 
 /*
@@ -3273,8 +3275,9 @@ static void do_check_inuse_chunk(p) mchunkptr p;
     mchunkptr next;
     do_check_chunk(p);
 
-    if (chunk_is_mmapped(p))
+    if (chunk_is_mmapped(p)) {
         return; /* mmapped chunks have no next/prev */
+    }
 
     /* Check whether it claims to be in use ... */
     assert(inuse(p));
@@ -3295,8 +3298,9 @@ static void do_check_inuse_chunk(p) mchunkptr p;
     if (next == av->top) {
         assert(prev_inuse(next));
         assert(chunksize(next) >= MINSIZE);
-    } else if (!inuse(next))
+    } else if (!inuse(next)) {
         do_check_free_chunk(next);
+    }
 }
 
 /*
@@ -3382,8 +3386,9 @@ static void do_check_malloc_state(void) {
     assert((MALLOC_ALIGNMENT & (MALLOC_ALIGNMENT - 1)) == 0);
 
     /* cannot run remaining checks until fully initialized */
-    if (av->top == 0 || av->top == initial_top(av))
+    if (av->top == 0 || av->top == initial_top(av)) {
         return;
+    }
 
     /* pagesize is a power of 2 */
     assert((av->pagesize & (av->pagesize - 1)) == 0);
@@ -3399,8 +3404,9 @@ static void do_check_malloc_state(void) {
         p = av->fastbins[i];
 
         /* all bins past max_fast are empty */
-        if (i > max_fast_bin)
+        if (i > max_fast_bin) {
             assert(p == 0);
+        }
 
         while (p != 0) {
             /* each chunk claims to be inuse */
@@ -3412,10 +3418,11 @@ static void do_check_malloc_state(void) {
         }
     }
 
-    if (total != 0)
+    if (total != 0) {
         assert(have_fastchunks(av));
-    else if (!have_fastchunks(av))
+    } else if (!have_fastchunks(av)) {
         assert(total == 0);
+    }
 
     /* check normal bins */
     for (i = 1; i < NBINS; ++i) {
@@ -3425,10 +3432,11 @@ static void do_check_malloc_state(void) {
         if (i >= 2) {
             binbit = get_binmap(av, i);
             empty = last(b) == b;
-            if (!binbit)
+            if (!binbit) {
                 assert(empty);
-            else if (!empty)
+            } else if (!empty) {
                 assert(binbit);
+            }
         }
 
         for (p = last(b); p != b; p = p->bk) {
@@ -3451,8 +3459,9 @@ static void do_check_malloc_state(void) {
             for (q = next_chunk(p);
                  (q != av->top && inuse(q) &&
                   (CHUNK_SIZE_T)(chunksize(q)) >= MINSIZE);
-                 q = next_chunk(q))
+                 q = next_chunk(q)) {
                 do_check_inuse_chunk(q);
+            }
         }
     }
 
@@ -3579,15 +3588,18 @@ mstate av;
 
                 /* update statistics */
 
-                if (++av->n_mmaps > av->max_n_mmaps)
+                if (++av->n_mmaps > av->max_n_mmaps) {
                     av->max_n_mmaps = av->n_mmaps;
+                }
 
                 sum = av->mmapped_mem += size;
-                if (sum > (CHUNK_SIZE_T)(av->max_mmapped_mem))
+                if (sum > (CHUNK_SIZE_T)(av->max_mmapped_mem)) {
                     av->max_mmapped_mem = sum;
+                }
                 sum += av->sbrked_mem;
-                if (sum > (CHUNK_SIZE_T)(av->max_total_mem))
+                if (sum > (CHUNK_SIZE_T)(av->max_total_mem)) {
                     av->max_total_mem = sum;
+                }
 
                 check_chunk(p);
 
@@ -3630,8 +3642,9 @@ mstate av;
       we don't actually get contiguous space.
     */
 
-    if (contiguous(av))
+    if (contiguous(av)) {
         size -= old_size;
+    }
 
     /*
       Round to a multiple of page size.
@@ -3649,28 +3662,31 @@ mstate av;
       below even if we cannot call MORECORE.
     */
 
-    if (size > 0)
+    if (size > 0) {
         brk = (char *)(MORECORE(size));
+    }
 
-        /*
-          If have mmap, try using it as a backup when MORECORE fails or
-          cannot be used. This is worth doing on systems that have "holes" in
-          address space, so sbrk cannot extend to give contiguous space, but
-          space is available elsewhere.  Note that we ignore mmap max count
-          and threshold limits, since the space will not be used as a
-          segregated mmap region.
-        */
+    /*
+      If have mmap, try using it as a backup when MORECORE fails or
+      cannot be used. This is worth doing on systems that have "holes" in
+      address space, so sbrk cannot extend to give contiguous space, but
+      space is available elsewhere.  Note that we ignore mmap max count
+      and threshold limits, since the space will not be used as a
+      segregated mmap region.
+    */
 
 #if HAVE_MMAP
     if (brk == (char *)(MORECORE_FAILURE)) {
 
         /* Cannot merge with old top, so add its size back in */
-        if (contiguous(av))
+        if (contiguous(av)) {
             size = (size + old_size + pagemask) & ~pagemask;
+        }
 
         /* If we are relying on mmap as backup, then use larger units */
-        if ((CHUNK_SIZE_T)(size) < (CHUNK_SIZE_T)(MMAP_AS_MORECORE_SIZE))
+        if ((CHUNK_SIZE_T)(size) < (CHUNK_SIZE_T)(MMAP_AS_MORECORE_SIZE)) {
             size = MMAP_AS_MORECORE_SIZE;
+        }
 
         /* Don't try if size wraps around 0 */
         if ((CHUNK_SIZE_T)(size) > (CHUNK_SIZE_T)(nb)) {
@@ -3750,8 +3766,9 @@ mstate av;
                    to foreign calls) but treat them as part of our space for
                    stats reporting.
                 */
-                if (old_size != 0)
+                if (old_size != 0) {
                     av->sbrked_mem += brk - old_end;
+                }
 
                 /* Guarantee alignment of first new chunk made from this space */
 
@@ -3873,12 +3890,14 @@ mstate av;
 
         /* Update statistics */
         sum = av->sbrked_mem;
-        if (sum > (CHUNK_SIZE_T)(av->max_sbrked_mem))
+        if (sum > (CHUNK_SIZE_T)(av->max_sbrked_mem)) {
             av->max_sbrked_mem = sum;
+        }
 
         sum += av->mmapped_mem;
-        if (sum > (CHUNK_SIZE_T)(av->max_total_mem))
+        if (sum > (CHUNK_SIZE_T)(av->max_total_mem)) {
             av->max_total_mem = sum;
+        }
 
         check_malloc_state();
 
@@ -4019,8 +4038,9 @@ size_t bytes;
       Bypass search if no frees yet
      */
     if (!have_anychunks(av)) {
-        if (av->max_fast == 0) /* initialization check */
+        if (av->max_fast == 0) { /* initialization check */
             malloc_consolidate(av);
+        }
         goto use_top;
     }
 
@@ -4073,8 +4093,9 @@ size_t bytes;
 
     else {
         idx = largebin_index(nb);
-        if (have_fastchunks(av))
+        if (have_fastchunks(av)) {
             malloc_consolidate(av);
+        }
     }
 
     /*
@@ -4150,8 +4171,9 @@ size_t bytes;
 
                     /* maintain large bins in sorted order */
                     size |= PREV_INUSE; /* Or with inuse bit to speed comparisons */
-                    while ((CHUNK_SIZE_T)(size) < (CHUNK_SIZE_T)(fwd->size))
+                    while ((CHUNK_SIZE_T)(size) < (CHUNK_SIZE_T)(fwd->size)) {
                         fwd = fwd->fd;
+                    }
                     bck = fwd->bk;
                 }
             }
@@ -4224,8 +4246,9 @@ size_t bytes;
         /* Skip rest of block if there are no more set bits in this block.  */
         if (bit > map || bit == 0) {
             do {
-                if (++block >= BINMAPSIZE) /* out of bins */
+                if (++block >= BINMAPSIZE) { /* out of bins */
                     goto use_top;
+                }
             } while ((map = av->binmap[block]) == 0);
 
             bin = bin_at(av, (block << BINMAPSHIFT));
@@ -4276,8 +4299,9 @@ size_t bytes;
                 unsorted_chunks(av)->bk = unsorted_chunks(av)->fd = remainder;
                 remainder->bk = remainder->fd = unsorted_chunks(av);
                 /* advertise as last remainder */
-                if (in_smallbin_range(nb))
+                if (in_smallbin_range(nb)) {
                     av->last_remainder = remainder;
+                }
 
                 set_head(victim, nb | PREV_INUSE);
                 set_head(remainder, remainder_size | PREV_INUSE);
@@ -4449,13 +4473,15 @@ void fREe(mem) Void_t *mem;
             */
 
             if ((CHUNK_SIZE_T)(size) >= FASTBIN_CONSOLIDATION_THRESHOLD) {
-                if (have_fastchunks(av))
+                if (have_fastchunks(av)) {
                     malloc_consolidate(av);
+                }
 
 #ifndef MORECORE_CANNOT_TRIM
                 if ((CHUNK_SIZE_T)(chunksize(av->top)) >=
-                    (CHUNK_SIZE_T)(av->trim_threshold))
+                    (CHUNK_SIZE_T)(av->trim_threshold)) {
                     sYSTRIm(av->top_pad, av);
+                }
 #endif
             }
         }
@@ -4632,8 +4658,9 @@ size_t bytes;
 #endif
 
     /* realloc of null is supposed to be same as malloc */
-    if (oldmem == 0)
+    if (oldmem == 0) {
         return mALLOc(bytes);
+    }
 
     checked_request2size(bytes, nb);
 
@@ -4675,8 +4702,9 @@ size_t bytes;
             /* allocate, copy, free */
             else {
                 newmem = mALLOc(nb - MALLOC_ALIGN_MASK);
-                if (newmem == 0)
+                if (newmem == 0) {
                     return 0; /* propagate failure */
+                }
 
                 newp = mem2chunk(newmem);
                 newsize = chunksize(newp);
@@ -4700,8 +4728,9 @@ size_t bytes;
                     ncopies = copysize / sizeof(INTERNAL_SIZE_T);
                     assert(ncopies >= 3);
 
-                    if (ncopies > 9)
+                    if (ncopies > 9) {
                         MALLOC_COPY(d, s, copysize);
+                    }
 
                     else {
                         *(d + 0) = *(s + 0);
@@ -4767,8 +4796,9 @@ size_t bytes;
         newsize = (nb + offset + SIZE_SZ + pagemask) & ~pagemask;
 
         /* don't need to remap if still within same page */
-        if (oldsize == newsize - offset)
+        if (oldsize == newsize - offset) {
             return oldmem;
+        }
 
         cp = (char *)mremap((char *)oldp - offset, oldsize + offset, newsize, 1);
 
@@ -4782,20 +4812,22 @@ size_t bytes;
 
             /* update statistics */
             sum = av->mmapped_mem += newsize - oldsize;
-            if (sum > (CHUNK_SIZE_T)(av->max_mmapped_mem))
+            if (sum > (CHUNK_SIZE_T)(av->max_mmapped_mem)) {
                 av->max_mmapped_mem = sum;
+            }
             sum += av->sbrked_mem;
-            if (sum > (CHUNK_SIZE_T)(av->max_total_mem))
+            if (sum > (CHUNK_SIZE_T)(av->max_total_mem)) {
                 av->max_total_mem = sum;
+            }
 
             return chunk2mem(newp);
         }
 #endif
 
         /* Note the extra SIZE_SZ overhead. */
-        if ((CHUNK_SIZE_T)(oldsize) >= (CHUNK_SIZE_T)(nb + SIZE_SZ))
+        if ((CHUNK_SIZE_T)(oldsize) >= (CHUNK_SIZE_T)(nb + SIZE_SZ)) {
             newmem = oldmem; /* do nothing */
-        else {
+        } else {
             /* Must alloc, copy, free. */
             newmem = mALLOc(nb - MALLOC_ALIGN_MASK);
             if (newmem != 0) {
@@ -4839,19 +4871,22 @@ size_t bytes;
 
     /* If need less alignment than we give anyway, just relay to malloc */
 
-    if (alignment <= MALLOC_ALIGNMENT)
+    if (alignment <= MALLOC_ALIGNMENT) {
         return mALLOc(bytes);
+    }
 
     /* Otherwise, ensure that it is at least a minimum chunk size */
 
-    if (alignment < MINSIZE)
+    if (alignment < MINSIZE) {
         alignment = MINSIZE;
+    }
 
     /* Make sure alignment is power of 2 (in case MINSIZE is not).  */
     if ((alignment & (alignment - 1)) != 0) {
         size_t a = MALLOC_ALIGNMENT * 2;
-        while ((CHUNK_SIZE_T)a < (CHUNK_SIZE_T)alignment)
+        while ((CHUNK_SIZE_T)a < (CHUNK_SIZE_T)alignment) {
             a <<= 1;
+        }
         alignment = a;
     }
 
@@ -4866,8 +4901,9 @@ size_t bytes;
 
     m = (char *)(mALLOc(nb + alignment + MINSIZE));
 
-    if (m == 0)
+    if (m == 0) {
         return 0; /* propagate failure */
+    }
 
     p = mem2chunk(m);
 
@@ -4883,8 +4919,9 @@ size_t bytes;
 
         brk = (char *)mem2chunk((PTR_UINT)(((PTR_UINT)(m + alignment - 1)) &
                                            -((signed long)alignment)));
-        if ((CHUNK_SIZE_T)(brk - (char *)(p)) < MINSIZE)
+        if ((CHUNK_SIZE_T)(brk - (char *)(p)) < MINSIZE) {
             brk += alignment;
+        }
 
         newp = (mchunkptr)brk;
         leadsize = brk - (char *)(p);
@@ -4958,8 +4995,9 @@ size_t elem_size;
             nclears = clearsize / sizeof(INTERNAL_SIZE_T);
             assert(nclears >= 3);
 
-            if (nclears > 9)
+            if (nclears > 9) {
                 MALLOC_ZERO(d, clearsize);
+            }
 
             else {
                 *(d + 0) = 0;
@@ -5077,19 +5115,22 @@ Void_t *chunks[];
     size_t i;
 
     /* Ensure initialization */
-    if (av->max_fast == 0)
+    if (av->max_fast == 0) {
         malloc_consolidate(av);
+    }
 
     /* compute array length, if needed */
     if (chunks != 0) {
-        if (n_elements == 0)
+        if (n_elements == 0) {
             return chunks; /* nothing to do */
+        }
         marray = chunks;
         array_size = 0;
     } else {
         /* if empty req, must still return chunk representing empty array */
-        if (n_elements == 0)
+        if (n_elements == 0) {
             return (Void_t **)mALLOc(0);
+        }
         marray = 0;
         array_size = request2size(n_elements * (sizeof(Void_t *)));
     }
@@ -5101,8 +5142,9 @@ Void_t *chunks[];
     } else { /* add up all the sizes */
         element_size = 0;
         contents_size = 0;
-        for (i = 0; i != n_elements; ++i)
+        for (i = 0; i != n_elements; ++i) {
             contents_size += request2size(sizes[i]);
+        }
     }
 
     /* subtract out alignment bytes from total to minimize overallocation */
@@ -5118,8 +5160,9 @@ Void_t *chunks[];
     av->n_mmaps_max = 0;
     mem = mALLOc(size);
     av->n_mmaps_max = mmx; /* reset mmap */
-    if (mem == 0)
+    if (mem == 0) {
         return 0;
+    }
 
     p = mem2chunk(mem);
     assert(!chunk_is_mmapped(p));
@@ -5141,10 +5184,11 @@ Void_t *chunks[];
     for (i = 0;; ++i) {
         marray[i] = chunk2mem(p);
         if (i != n_elements - 1) {
-            if (element_size != 0)
+            if (element_size != 0) {
                 size = element_size;
-            else
+            } else {
                 size = request2size(sizes[i]);
+            }
             remainder_size -= size;
             set_head(p, size | PREV_INUSE);
             p = chunk_at_offset(p, size);
@@ -5157,15 +5201,17 @@ Void_t *chunks[];
 #if DL_DEBUG
     if (marray != chunks) {
         /* final element must have exactly exhausted chunk */
-        if (element_size != 0)
+        if (element_size != 0) {
             assert(remainder_size == element_size);
-        else
+        } else {
             assert(remainder_size == request2size(sizes[i]));
+        }
         check_inuse_chunk(mem2chunk(marray));
     }
 
-    for (i = 0; i != n_elements; ++i)
+    for (i = 0; i != n_elements; ++i) {
         check_inuse_chunk(mem2chunk(marray[i]));
+    }
 #endif
 
     return marray;
@@ -5184,8 +5230,9 @@ size_t bytes;
 {
     /* Ensure initialization */
     mstate av = get_malloc_state();
-    if (av->max_fast == 0)
+    if (av->max_fast == 0) {
         malloc_consolidate(av);
+    }
     return mEMALIGn(av->pagesize, bytes);
 }
 
@@ -5204,8 +5251,9 @@ size_t bytes;
     size_t pagesz;
 
     /* Ensure initialization */
-    if (av->max_fast == 0)
+    if (av->max_fast == 0) {
         malloc_consolidate(av);
+    }
     pagesz = av->pagesize;
     return mEMALIGn(pagesz, (bytes + pagesz - 1) & ~(pagesz - 1));
 }
@@ -5246,10 +5294,11 @@ Void_t *mem;
     mchunkptr p;
     if (mem != 0) {
         p = mem2chunk(mem);
-        if (chunk_is_mmapped(p))
+        if (chunk_is_mmapped(p)) {
             return chunksize(p) - 2 * SIZE_SZ;
-        else if (inuse(p))
+        } else if (inuse(p)) {
             return chunksize(p) - SIZE_SZ;
+        }
     }
     return 0;
 }
@@ -5270,8 +5319,9 @@ struct mallinfo mALLINFo() {
     int nfastblocks;
 
     /* Ensure initialization */
-    if (av->top == 0)
+    if (av->top == 0) {
         malloc_consolidate(av);
+    }
 
     check_malloc_state();
 
@@ -5375,8 +5425,9 @@ int value;
         if (value >= 0 && value <= MAX_FAST_SIZE) {
             set_max_fast(av, value);
             return 1;
-        } else
+        } else {
             return 0;
+        }
 
     case M_TRIM_THRESHOLD:
         av->trim_threshold = value;
@@ -5392,8 +5443,9 @@ int value;
 
     case M_MMAP_MAX:
 #if !HAVE_MMAP
-        if (value != 0)
+        if (value != 0) {
             return 0;
+        }
 #endif
         av->n_mmaps_max = value;
         return 1;
@@ -5566,8 +5618,9 @@ int value;
 
 /* Wait for spin lock */
 static int slwait(int *sl) {
-    while (InterlockedCompareExchange((void **)sl, (void *)1, (void *)0) != 0)
+    while (InterlockedCompareExchange((void **)sl, (void *)1, (void *)0) != 0) {
         Sleep(0);
+    }
     return 0;
 }
 
@@ -5616,8 +5669,9 @@ typedef struct _region_list_entry {
 /* Allocate and link a region entry in the region list */
 static int region_list_append(region_list_entry **last, void *base_reserved, long reserve_size) {
     region_list_entry *next = HeapAlloc(GetProcessHeap(), 0, sizeof(region_list_entry));
-    if (!next)
+    if (!next) {
         return FALSE;
+    }
     next->top_allocated = (char *)base_reserved;
     next->top_committed = (char *)base_reserved;
     next->top_reserved = (char *)base_reserved + reserve_size;
@@ -5629,8 +5683,9 @@ static int region_list_append(region_list_entry **last, void *base_reserved, lon
 /* Free and unlink the last region entry from the region list */
 static int region_list_remove(region_list_entry **last) {
     region_list_entry *previous = (*last)->previous;
-    if (!HeapFree(GetProcessHeap(), sizeof(region_list_entry), *last))
+    if (!HeapFree(GetProcessHeap(), sizeof(region_list_entry), *last)) {
         return FALSE;
+    }
     *last = previous;
     return TRUE;
 }
@@ -5666,8 +5721,9 @@ static void *sbrk(long size) {
         g_my_regionsize = g_regionsize << SBRK_SCALE;
     }
     if (!g_last) {
-        if (!region_list_append(&g_last, 0, 0))
+        if (!region_list_append(&g_last, 0, 0)) {
             goto sbrk_exit;
+        }
     }
     /* Assert invariants */
     assert(g_last);
@@ -5703,8 +5759,9 @@ static void *sbrk(long size) {
                         void *base_committed = VirtualAlloc(g_last->top_committed, remaining_commit_size,
                                                             MEM_COMMIT, PAGE_READWRITE);
                         /* Check returned pointer for consistency */
-                        if (base_committed != g_last->top_committed)
+                        if (base_committed != g_last->top_committed) {
                             goto sbrk_exit;
+                        }
                         /* Assert postconditions */
                         assert((unsigned)base_committed % g_pagesize == 0);
 #ifdef TRACE
@@ -5755,8 +5812,9 @@ static void *sbrk(long size) {
                             assert(0 < reserve_size && reserve_size % g_regionsize == 0);
                         }
                         /* Search failed? */
-                        if (!found)
+                        if (!found) {
                             goto sbrk_exit;
+                        }
                         /* Assert preconditions */
                         assert((unsigned)memory_info.BaseAddress % g_regionsize == 0);
                         assert(0 < reserve_size && reserve_size % g_regionsize == 0);
@@ -5765,15 +5823,17 @@ static void *sbrk(long size) {
                                                      MEM_RESERVE, PAGE_NOACCESS);
                         if (!base_reserved) {
                             int rc = GetLastError();
-                            if (rc != ERROR_INVALID_ADDRESS)
+                            if (rc != ERROR_INVALID_ADDRESS) {
                                 goto sbrk_exit;
+                            }
                         }
                         /* A null pointer signals (hopefully) a race condition with another thread. */
                         /* In this case, we try again. */
                     } while (!base_reserved);
                     /* Check returned pointer for consistency */
-                    if (memory_info.BaseAddress && base_reserved != memory_info.BaseAddress)
+                    if (memory_info.BaseAddress && base_reserved != memory_info.BaseAddress) {
                         goto sbrk_exit;
+                    }
                     /* Assert postconditions */
                     assert((unsigned)base_reserved % g_regionsize == 0);
 #ifdef TRACE
@@ -5792,8 +5852,9 @@ static void *sbrk(long size) {
                         commit_size = CEIL(to_commit, g_my_pagesize);
                     }
                     /* Append the new region to the list */
-                    if (!region_list_append(&g_last, base_reserved, reserve_size))
+                    if (!region_list_append(&g_last, base_reserved, reserve_size)) {
                         goto sbrk_exit;
+                    }
                     /* Didn't we get contiguous memory? */
                     if (!contiguous) {
                         /* Recompute the size to commit */
@@ -5811,8 +5872,9 @@ static void *sbrk(long size) {
                 void *base_committed = VirtualAlloc(g_last->top_committed, commit_size,
                                                     MEM_COMMIT, PAGE_READWRITE);
                 /* Check returned pointer for consistency */
-                if (base_committed != g_last->top_committed)
+                if (base_committed != g_last->top_committed) {
                     goto sbrk_exit;
+                }
                 /* Assert postconditions */
                 assert((unsigned)base_committed % g_pagesize == 0);
 #ifdef TRACE
@@ -5842,8 +5904,9 @@ static void *sbrk(long size) {
                 int rc = VirtualFree(base_reserved, 0,
                                      MEM_RELEASE);
                 /* Check returned code for consistency */
-                if (!rc)
+                if (!rc) {
                     goto sbrk_exit;
+                }
 #ifdef TRACE
                 printf("Release %p %d\n", base_reserved, release_size);
 #endif
@@ -5851,8 +5914,9 @@ static void *sbrk(long size) {
             /* Adjust deallocation size */
             deallocate_size -= (char *)g_last->top_allocated - (char *)base_reserved;
             /* Remove the old region from the list */
-            if (!region_list_remove(&g_last))
+            if (!region_list_remove(&g_last)) {
                 goto sbrk_exit;
+            }
         }
         {
             /* Compute the size to decommit */
@@ -5870,8 +5934,9 @@ static void *sbrk(long size) {
                     int rc = VirtualFree((char *)base_committed, decommit_size,
                                          MEM_DECOMMIT);
                     /* Check returned code for consistency */
-                    if (!rc)
+                    if (!rc) {
                         goto sbrk_exit;
+                    }
 #ifdef TRACE
                     printf("Decommit %p %d\n", base_committed, decommit_size);
 #endif
@@ -5923,10 +5988,12 @@ static void *mmap(void *ptr, long size, long prot, long type, long handle, long 
     slwait(&g_sl);
 #endif
     /* First time initialization */
-    if (!g_pagesize)
+    if (!g_pagesize) {
         g_pagesize = getpagesize();
-    if (!g_regionsize)
+    }
+    if (!g_regionsize) {
         g_regionsize = getregionsize();
+    }
     /* Assert preconditions */
     assert((unsigned)ptr % g_regionsize == 0);
     assert(size % g_pagesize == 0);
@@ -5963,17 +6030,20 @@ static long munmap(void *ptr, long size) {
     slwait(&g_sl);
 #endif
     /* First time initialization */
-    if (!g_pagesize)
+    if (!g_pagesize) {
         g_pagesize = getpagesize();
-    if (!g_regionsize)
+    }
+    if (!g_regionsize) {
         g_regionsize = getregionsize();
+    }
     /* Assert preconditions */
     assert((unsigned)ptr % g_regionsize == 0);
     assert(size % g_pagesize == 0);
     /* Free this */
     if (!VirtualFree(ptr, 0,
-                     MEM_RELEASE))
+                     MEM_RELEASE)) {
         goto munmap_exit;
+    }
     rc = 0;
 #ifdef TRACE
     printf("Release %p %d\n", ptr, size);
