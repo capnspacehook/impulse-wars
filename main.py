@@ -121,7 +121,8 @@ def eval_policy(env: pufferlib.PufferEnv, policy, device, data=None, bestEval: f
                 actions, _ = policy(ob)
 
             # TODO: only if discrete actions
-            actions = th.tensor([th.argmax(e) for e in actions])
+            actions = tuple(e.argmax(dim=-1) for e in actions)
+            actions = th.stack(actions, dim=-1)
 
             action = actions.cpu().numpy().reshape(env.action_space.shape)
 

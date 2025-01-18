@@ -339,9 +339,9 @@ void computeNearMapObs(env *e, const droneEntity *drone, float *scalarObs) {
             .entity = cell->ent->entity,
             .distance = b2Distance(cell->pos, dronePos),
         };
-        if (cell->ent->type != WEAPON_PICKUP_ENTITY && foundWalls < NUM_NEAR_WALL_OBS) {
+        if (cell->ent->type != WEAPON_PICKUP_ENTITY) {
             nearWalls[foundWalls++] = nearEntity;
-        } else if (cell->ent->type == WEAPON_PICKUP_ENTITY && foundPickups < NUM_WEAPON_PICKUP_OBS) {
+        } else if (cell->ent->type == WEAPON_PICKUP_ENTITY) {
             nearWeaponPickups[foundPickups++] = nearEntity;
         }
     }
@@ -434,7 +434,10 @@ void computeNearMapObs(env *e, const droneEntity *drone, float *scalarObs) {
     }
 
     insertionSort(nearWeaponPickups, foundPickups);
-    for (uint8_t i = 0; i < NUM_WEAPON_PICKUP_OBS; i++) {
+    for (uint8_t i = 0; i < cc_array_size(e->pickups); i++) {
+        if (i == NUM_WEAPON_PICKUP_OBS) {
+            break;
+        }
         const weaponPickupEntity *pickup = (weaponPickupEntity *)nearWeaponPickups[i].entity;
 
         offset = WEAPON_PICKUP_TYPES_OBS_OFFSET + i;
