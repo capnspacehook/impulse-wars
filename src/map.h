@@ -319,9 +319,10 @@ const mapEntry *maps[] = {
 };
 #endif
 
-void resetMap(const env *e) {
+void resetMap(env *e) {
     // if sudden death walls were placed, remove them
     if (e->suddenDeathWallsPlaced) {
+        e->suddenDeathWallsPlaced = false;
         DEBUG_LOG("removing sudden death walls");
         // remove walls from the end of the array, sudden death walls
         // are added last
@@ -376,25 +377,26 @@ void resetMap(const env *e) {
 }
 
 void setupMap(env *e, const uint8_t mapIdx) {
-    // reset the map if we're switching to the same map, otherwise
-    // clear the map
+    // reset the map if we're switching to the same map
     if (e->mapIdx == mapIdx) {
         resetMap(e);
         return;
-    } else {
-        for (size_t i = 0; i < cc_array_size(e->walls); i++) {
-            wallEntity *wall = safe_array_get_at(e->walls, i);
-            destroyWall(e, wall, false);
-        }
-
-        for (size_t i = 0; i < cc_array_size(e->cells); i++) {
-            mapCell *cell = safe_array_get_at(e->cells, i);
-            fastFree(cell);
-        }
-
-        cc_array_remove_all(e->walls);
-        cc_array_remove_all(e->cells);
     }
+
+    // clear the old map
+    for (size_t i = 0; i < cc_array_size(e->walls); i++) {
+        wallEntity *wall = safe_array_get_at(e->walls, i);
+        destroyWall(e, wall, false);
+    }
+
+    for (size_t i = 0; i < cc_array_size(e->cells); i++) {
+        mapCell *cell = safe_array_get_at(e->cells, i);
+        fastFree(cell);
+    }
+
+    cc_array_remove_all(e->walls);
+    cc_array_remove_all(e->cells);
+    e->suddenDeathWallsPlaced = false;
 
     const uint8_t columns = maps[mapIdx]->columns;
     const uint8_t rows = maps[mapIdx]->rows;
@@ -417,7 +419,7 @@ void setupMap(env *e, const uint8_t mapIdx) {
             float y = ((rows / 2.0f) - (rows - row) + 0.5f) * WALL_THICKNESS;
 
             b2Vec2 pos = {.x = x, .y = y};
-            mapCell *cell = (mapCell *)fastMalloc(sizeof(mapCell));
+            mapCell *cell = (mapCell *)fastCalloc(1, sizeof(mapCell));
             cell->ent = NULL;
             cell->pos = pos;
             cc_array_add(e->cells, cell);

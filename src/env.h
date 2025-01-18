@@ -603,10 +603,9 @@ void setupEnv(env *e) {
     if (!e->isTraining) {
         firstMap = 1;
     }
-    int mapIdx = randInt(&e->randState, firstMap, NUM_MAPS - 1);
+    const int mapIdx = randInt(&e->randState, firstMap, NUM_MAPS - 1);
     DEBUG_LOGF("setting up map %d", e->mapIdx);
     setupMap(e, mapIdx);
-    e->suddenDeathWallsPlaced = false;
 
     mapBounds bounds = {.min = {.x = FLT_MAX, .y = FLT_MAX}, .max = {.x = FLT_MIN, .y = FLT_MIN}};
     for (size_t i = 0; i < cc_array_size(e->walls); i++) {

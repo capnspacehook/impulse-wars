@@ -139,7 +139,7 @@ entity *createWall(const env *e, const float posX, const float posY, const float
         wallShapeDef.enableContactEvents = true;
     }
 
-    wallEntity *wall = (wallEntity *)fastMalloc(sizeof(wallEntity));
+    wallEntity *wall = (wallEntity *)fastCalloc(1, sizeof(wallEntity));
     wall->bodyID = wallBodyID;
     wall->pos = (cachedPos){.pos = pos, .valid = true};
     wall->extent = extent;
@@ -148,7 +148,7 @@ entity *createWall(const env *e, const float posX, const float posY, const float
     wall->type = type;
     wall->isSuddenDeath = e->suddenDeathWallsPlaced;
 
-    entity *ent = (entity *)fastMalloc(sizeof(entity));
+    entity *ent = (entity *)fastCalloc(1, sizeof(entity));
     ent->type = type;
     ent->entity = wall;
 
@@ -272,14 +272,14 @@ void createWeaponPickup(env *e) {
     pickupShapeDef.filter.maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | WEAPON_PICKUP_SHAPE | DRONE_SHAPE;
     pickupShapeDef.isSensor = true;
 
-    weaponPickupEntity *pickup = (weaponPickupEntity *)fastMalloc(sizeof(weaponPickupEntity));
+    weaponPickupEntity *pickup = (weaponPickupEntity *)fastCalloc(1, sizeof(weaponPickupEntity));
     pickup->bodyID = pickupBodyID;
     pickup->weapon = randWeaponPickupType(e);
     pickup->respawnWait = 0.0f;
     pickup->floatingWallsTouching = 0;
     pickup->pos = pos;
 
-    entity *ent = (entity *)fastMalloc(sizeof(entity));
+    entity *ent = (entity *)fastCalloc(1, sizeof(entity));
     ent->type = WEAPON_PICKUP_ENTITY;
     ent->entity = pickup;
 
@@ -330,7 +330,7 @@ void createDrone(env *e, const uint8_t idx) {
     droneShapeDef.enableSensorEvents = true;
     const b2Circle droneCircle = {.center = b2Vec2_zero, .radius = DRONE_RADIUS};
 
-    droneEntity *drone = (droneEntity *)fastMalloc(sizeof(droneEntity));
+    droneEntity *drone = (droneEntity *)fastCalloc(1, sizeof(droneEntity));
     drone->bodyID = droneBodyID;
     drone->weaponInfo = e->defaultWeapon;
     drone->ammo = weaponAmmo(e->defaultWeapon->type, drone->weaponInfo->type);
@@ -357,7 +357,7 @@ void createDrone(env *e, const uint8_t idx) {
     memset(&drone->stepInfo, 0x0, sizeof(droneStepInfo));
     memset(&drone->inLineOfSight, 0x0, sizeof(drone->inLineOfSight));
 
-    entity *ent = (entity *)fastMalloc(sizeof(entity));
+    entity *ent = (entity *)fastCalloc(1, sizeof(entity));
     ent->type = DRONE_ENTITY;
     ent->entity = drone;
 
@@ -407,7 +407,7 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     b2Vec2 fire = b2MulAdd(lateralVel, weaponFire(&e->randState, drone->weaponInfo->type), aim);
     b2Body_ApplyLinearImpulseToCenter(projectileBodyID, fire, true);
 
-    projectileEntity *projectile = (projectileEntity *)fastMalloc(sizeof(projectileEntity));
+    projectileEntity *projectile = (projectileEntity *)fastCalloc(1, sizeof(projectileEntity));
     projectile->droneIdx = drone->idx;
     projectile->bodyID = projectileBodyID;
     projectile->shapeID = projectileShapeID;
@@ -417,7 +417,7 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     projectile->bounces = 0;
     cc_slist_add(e->projectiles, projectile);
 
-    entity *ent = (entity *)fastMalloc(sizeof(entity));
+    entity *ent = (entity *)fastCalloc(1, sizeof(entity));
     ent->type = PROJECTILE_ENTITY;
     ent->entity = projectile;
 
@@ -461,7 +461,7 @@ void destroyProjectile(env *e, projectileEntity *projectile, const bool full) {
         b2World_Explode(e->worldID, &explosion);
 
         if (e->client != NULL) {
-            explosionInfo *explInfo = fastMalloc(sizeof(explosionInfo));
+            explosionInfo *explInfo = fastCalloc(1, sizeof(explosionInfo));
             explInfo->def = explosion;
             explInfo->renderSteps = UINT16_MAX;
             cc_array_add(e->explosions, explInfo);
@@ -591,7 +591,7 @@ void handleSuddenDeath(env *e) {
         }
     }
 
-        // detroy all projectiles that are now overlapping with a newly placed wall
+    // detroy all projectiles that are now overlapping with a newly placed wall
     CC_SListIter projectileIter;
     cc_slist_iter_init(&projectileIter, e->projectiles);
     projectileEntity *projectile;
@@ -719,7 +719,7 @@ void droneBrake(env *e, droneEntity *drone, const bool lightBrake, const bool he
     }
 
     if (e->client != NULL) {
-        brakeTrailPoint *trailPoint = fastMalloc(sizeof(brakeTrailPoint));
+        brakeTrailPoint *trailPoint = fastCalloc(1, sizeof(brakeTrailPoint));
         trailPoint->pos = drone->pos.pos;
         trailPoint->heavyBrake = heavyBrake;
         trailPoint->lifetime = UINT16_MAX;
@@ -875,7 +875,7 @@ void droneBurst(env *e, droneEntity *drone) {
     e->stats[drone->idx].totalBursts++;
 
     if (e->client != NULL) {
-        explosionInfo *explInfo = fastMalloc(sizeof(explosionInfo));
+        explosionInfo *explInfo = fastCalloc(1, sizeof(explosionInfo));
         explInfo->def = explosion;
         explInfo->renderSteps = UINT16_MAX;
         cc_array_add(e->explosions, explInfo);
