@@ -1111,6 +1111,11 @@ bool handleProjectileBeginContact(env *e, const entity *proj, const entity *ent)
                 e->stats[hitDrone->idx].ownShotsTaken[projectile->weaponInfo->type]++;
                 DEBUG_LOGF("drone %d hit by own weapon %d", hitDrone->idx, projectile->weaponInfo->type);
             }
+
+            if (projectile->weaponInfo->destroyedOnDroneHit) {
+                destroyProjectile(e, projectile, true);
+                return true;
+            }
         }
     }
     const uint8_t maxBounces = projectile->weaponInfo->maxBounces;
@@ -1133,6 +1138,12 @@ void handleProjectileEndContact(const entity *proj, const entity *ent) {
             projectile->lastSpeed = b2Length(b2Body_GetLinearVelocity(projectile->bodyID));
             return;
         }
+    }
+
+    float speed = projectile->lastSpeed;
+    if (projectile->weaponInfo->type == ACCELERATOR_WEAPON) {
+        speed = projectile->lastSpeed * ACCELERATOR_BOUNCE_SPEED_COEF;
+        projectile->lastSpeed = speed;
     }
 
     const b2Vec2 velocity = b2Body_GetLinearVelocity(projectile->bodyID);

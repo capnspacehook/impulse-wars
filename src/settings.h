@@ -219,6 +219,19 @@ const float discAimToContAimMap[2][16] = {
 #define IMPLODER_INV_MASS INV_MASS(IMPLODER_DENSITY, IMPLODER_RADIUS)
 #define IMPLODER_BOUNCE 0
 
+#define ACCELERATOR_AMMO 1
+#define ACCELERATOR_PROJECTILES 1
+#define ACCELERATOR_RECOIL_MAGNITUDE 100.0f
+#define ACCELERATOR_FIRE_MAGNITUDE 35.0f
+#define ACCELERATOR_CHARGE 0.0f
+#define ACCELERATOR_COOL_DOWN 0.0f
+#define ACCELERATOR_MAX_DISTANCE INFINITE
+#define ACCELERATOR_RADIUS 0.5f
+#define ACCELERATOR_DENSITY 2.0f
+#define ACCELERATOR_INV_MASS INV_MASS(ACCELERATOR_DENSITY, ACCELERATOR_RADIUS)
+#define ACCELERATOR_BOUNCE 100
+#define ACCELERATOR_BOUNCE_SPEED_COEF 1.05f
+
 const weaponInformation standard = {
     .type = STANDARD_WEAPON,
     .isPhysicsBullet = true,
@@ -232,6 +245,7 @@ const weaponInformation standard = {
     .density = STANDARD_DENSITY,
     .invMass = STANDARD_INV_MASS,
     .maxBounces = STANDARD_BOUNCE + 1,
+    .destroyedOnDroneHit = false,
     .energyRefill = (STANDARD_FIRE_MAGNITUDE * STANDARD_INV_MASS) / PROJECTILE_ENERGY_REFILL_DENOM,
 };
 
@@ -248,6 +262,7 @@ const weaponInformation machineGun = {
     .density = MACHINEGUN_DENSITY,
     .invMass = MACHINEGUN_INV_MASS,
     .maxBounces = MACHINEGUN_BOUNCE + 1,
+    .destroyedOnDroneHit = false,
     .energyRefill = ((MACHINEGUN_FIRE_MAGNITUDE * MACHINEGUN_INV_MASS) / PROJECTILE_ENERGY_REFILL_DENOM) * MACHINEGUN_ENERGY_REFILL_COEF,
 };
 
@@ -264,6 +279,7 @@ const weaponInformation sniper = {
     .density = SNIPER_DENSITY,
     .invMass = SNIPER_INV_MASS,
     .maxBounces = SNIPER_BOUNCE + 1,
+    .destroyedOnDroneHit = true,
     .energyRefill = ((SNIPER_FIRE_MAGNITUDE * SNIPER_INV_MASS) / PROJECTILE_ENERGY_REFILL_DENOM) * SNIPER_ENERGY_REFILL_COEF,
 };
 
@@ -280,6 +296,7 @@ const weaponInformation shotgun = {
     .density = SHOTGUN_DENSITY,
     .invMass = SHOTGUN_INV_MASS,
     .maxBounces = SHOTGUN_BOUNCE + 1,
+    .destroyedOnDroneHit = false,
     .energyRefill = ((SHOTGUN_FIRE_MAGNITUDE * SHOTGUN_INV_MASS) / PROJECTILE_ENERGY_REFILL_DENOM) * SHOTGUN_ENERGY_REFILL_COEF,
 };
 
@@ -296,7 +313,25 @@ const weaponInformation imploder = {
     .density = IMPLODER_DENSITY,
     .invMass = IMPLODER_INV_MASS,
     .maxBounces = IMPLODER_BOUNCE + 1,
+    .destroyedOnDroneHit = true,
     .energyRefill = (IMPLODER_FIRE_MAGNITUDE * IMPLODER_INV_MASS) / PROJECTILE_ENERGY_REFILL_DENOM,
+};
+
+const weaponInformation accelerator = {
+    .type = ACCELERATOR_WEAPON,
+    .isPhysicsBullet = true,
+    .numProjectiles = ACCELERATOR_PROJECTILES,
+    .fireMagnitude = ACCELERATOR_FIRE_MAGNITUDE,
+    .recoilMagnitude = ACCELERATOR_RECOIL_MAGNITUDE,
+    .charge = ACCELERATOR_CHARGE,
+    .coolDown = ACCELERATOR_COOL_DOWN,
+    .maxDistance = ACCELERATOR_MAX_DISTANCE,
+    .radius = ACCELERATOR_RADIUS,
+    .density = ACCELERATOR_DENSITY,
+    .invMass = ACCELERATOR_INV_MASS,
+    .maxBounces = ACCELERATOR_BOUNCE + 1,
+    .destroyedOnDroneHit = true,
+    .energyRefill = ((ACCELERATOR_FIRE_MAGNITUDE * ACCELERATOR_INV_MASS) / PROJECTILE_ENERGY_REFILL_DENOM) * ACCELERATOR_BOUNCE_SPEED_COEF,
 };
 
 #ifndef AUTOPXD
@@ -306,6 +341,7 @@ weaponInformation *weaponInfos[] = {
     (weaponInformation *)&sniper,
     (weaponInformation *)&shotgun,
     (weaponInformation *)&imploder,
+    (weaponInformation *)&accelerator,
 };
 #endif
 
@@ -325,6 +361,8 @@ int8_t weaponAmmo(const enum weaponType defaultWep, const enum weaponType type) 
         return SHOTGUN_AMMO;
     case IMPLODER_WEAPON:
         return IMPLODER_AMMO;
+    case ACCELERATOR_WEAPON:
+        return ACCELERATOR_AMMO;
     default:
         ERRORF("unknown weapon type %d", type);
     }
@@ -346,6 +384,8 @@ float weaponFire(uint64_t *seed, const enum weaponType type) {
     }
     case IMPLODER_WEAPON:
         return IMPLODER_FIRE_MAGNITUDE;
+    case ACCELERATOR_WEAPON:
+        return ACCELERATOR_FIRE_MAGNITUDE;
     default:
         ERRORF("unknown weapon type %d", type);
         return 0;
@@ -354,8 +394,6 @@ float weaponFire(uint64_t *seed, const enum weaponType type) {
 
 b2Vec2 weaponAdjustAim(uint64_t *seed, const enum weaponType type, const uint16_t heat, const b2Vec2 normAim) {
     switch (type) {
-    case STANDARD_WEAPON:
-        return normAim;
     case MACHINEGUN_WEAPON: {
         const float swayCoef = logBasef((heat / 5.0f) + 1, 180);
         const float maxSway = 0.11f;
@@ -364,8 +402,6 @@ b2Vec2 weaponAdjustAim(uint64_t *seed, const enum weaponType type, const uint16_
         b2Vec2 machinegunAim = {.x = normAim.x + swayX, .y = normAim.y + swayY};
         return b2Normalize(machinegunAim);
     }
-    case SNIPER_WEAPON:
-        return normAim;
     case SHOTGUN_WEAPON: {
         const float maxOffset = 0.1f;
         const float offsetX = randFloat(seed, -maxOffset, maxOffset);
@@ -373,10 +409,8 @@ b2Vec2 weaponAdjustAim(uint64_t *seed, const enum weaponType type, const uint16_
         b2Vec2 shotgunAim = {.x = normAim.x + offsetX, .y = normAim.y + offsetY};
         return b2Normalize(shotgunAim);
     }
-    case IMPLODER_WEAPON:
-        return normAim;
     default:
-        ERRORF("unknown weapon type %d", type);
+        return normAim;
     }
 }
 

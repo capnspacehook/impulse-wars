@@ -243,6 +243,9 @@ void renderWeaponPickup(const env *e, const weaponPickupEntity *pickup) {
     case IMPLODER_WEAPON:
         name = "IMPL";
         break;
+    case ACCELERATOR_WEAPON:
+        name = "ACCL";
+        break;
     default:
         ERRORF("unknown weapon pickup type %d", pickup->weapon);
     }
@@ -333,6 +336,9 @@ void renderDroneGuides(const env *e, droneEntity *drone, const int droneIdx) {
         aimGuideWidth = 3.0f;
         break;
     case IMPLODER_WEAPON:
+        aimGuideWidth = 5.0f;
+        break;
+    case ACCELERATOR_WEAPON:
         aimGuideWidth = 5.0f;
         break;
     default:

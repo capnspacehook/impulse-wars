@@ -37,7 +37,7 @@ typedef struct entity {
     void *entity;
 } entity;
 
-#define _NUM_WEAPONS 5
+#define _NUM_WEAPONS 6
 const uint8_t NUM_WEAPONS = _NUM_WEAPONS;
 
 enum weaponType {
@@ -46,6 +46,7 @@ enum weaponType {
     SNIPER_WEAPON,
     SHOTGUN_WEAPON,
     IMPLODER_WEAPON,
+    ACCELERATOR_WEAPON,
 };
 
 typedef struct mapEntry {
@@ -100,6 +101,7 @@ typedef struct weaponInformation {
     const float density;
     const float invMass;
     const uint8_t maxBounces;
+    const bool destroyedOnDroneHit;
     const float energyRefill;
 } weaponInformation;
 
