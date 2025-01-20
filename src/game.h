@@ -87,7 +87,11 @@ bool findOpenPos(env *e, const enum shapeCategory type, b2Vec2 *emptyPos) {
         }
 
         // ensure drones don't spawn too close to walls or other drones
-        if (type == DRONE_SHAPE) {
+        if (type == WEAPON_PICKUP_SHAPE) {
+            if (isOverlapping(e, cell->pos, PICKUP_SPAWN_DISTANCE, WEAPON_PICKUP_SHAPE, WEAPON_PICKUP_SHAPE)) {
+                continue;
+            }
+        } else if (type == DRONE_SHAPE) {
             if (isOverlapping(e, cell->pos, DRONE_WALL_SPAWN_DISTANCE, DRONE_SHAPE, WALL_SHAPE | DRONE_SHAPE)) {
                 continue;
             }
@@ -123,7 +127,7 @@ entity *createWall(const env *e, const float posX, const float posY, const float
     b2Vec2 extent = {.x = width / 2.0f, .y = height / 2.0f};
     b2ShapeDef wallShapeDef = b2DefaultShapeDef();
     wallShapeDef.density = WALL_DENSITY;
-    wallShapeDef.restitution = 0.1f;
+    wallShapeDef.restitution = STANDARD_WALL_RESTITUTION;
     wallShapeDef.filter.categoryBits = WALL_SHAPE;
     wallShapeDef.filter.maskBits = FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | WEAPON_PICKUP_SHAPE | DRONE_SHAPE;
     if (floating) {
@@ -336,15 +340,16 @@ void createDrone(env *e, const uint8_t idx) {
     drone->ammo = weaponAmmo(e->defaultWeapon->type, drone->weaponInfo->type);
     drone->weaponCooldown = 0.0f;
     drone->heat = 0;
-    drone->charge = 0;
+    drone->weaponCharge = 0.0f;
     drone->energyLeft = DRONE_ENERGY_MAX;
     drone->lightBraking = false;
     drone->heavyBraking = false;
     drone->chargingBurst = false;
     drone->burstCharge = 0.0f;
+    drone->burstCooldown = 0.0f;
     drone->energyFullyDepleted = false;
     drone->energyFullyDepletedThisStep = false;
-    drone->energyRefillWait = 0;
+    drone->energyRefillWait = 0.0f;
     drone->shotThisStep = false;
     drone->idx = idx;
     drone->initalPos = droneBodyDef.position;
@@ -413,6 +418,7 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     projectile->shapeID = projectileShapeID;
     projectile->weaponInfo = drone->weaponInfo;
     projectile->lastPos = projectileBodyDef.position;
+    projectile->lastSpeed = b2Length(b2Body_GetLinearVelocity(projectileBodyID));
     projectile->distance = 0.0f;
     projectile->bounces = 0;
     cc_slist_add(e->projectiles, projectile);
@@ -625,7 +631,7 @@ void droneChangeWeapon(const env *e, droneEntity *drone, const enum weaponType n
     // only top up ammo if the weapon is the same
     if (drone->weaponInfo->type != newWeapon) {
         drone->weaponCooldown = 0.0f;
-        drone->charge = 0;
+        drone->weaponCharge = 0.0f;
         drone->heat = 0;
     }
     drone->weaponInfo = weaponInfos[newWeapon];
@@ -642,8 +648,8 @@ void droneShoot(env *e, droneEntity *drone, const b2Vec2 aim) {
     if (drone->weaponCooldown != 0.0f) {
         return;
     }
-    drone->charge++;
-    if (drone->charge < weaponCharge(e, drone->weaponInfo->type)) {
+    drone->weaponCharge += e->deltaTime;
+    if (drone->weaponCharge < drone->weaponInfo->charge) {
         return;
     }
 
@@ -651,7 +657,7 @@ void droneShoot(env *e, droneEntity *drone, const b2Vec2 aim) {
         drone->ammo--;
     }
     drone->weaponCooldown = drone->weaponInfo->coolDown;
-    drone->charge = 0.0f;
+    drone->weaponCharge = 0.0f;
 
     b2Vec2 normAim = drone->lastAim;
     if (!b2VecEqual(aim, b2Vec2_zero)) {
@@ -684,7 +690,7 @@ void droneBrake(env *e, droneEntity *drone, const bool lightBrake, const bool he
             drone->heavyBraking = false;
             b2Body_SetLinearDamping(drone->bodyID, DRONE_LINEAR_DAMPING);
             if (drone->energyRefillWait == 0.0f && !drone->chargingBurst) {
-                drone->energyRefillWait = DRONE_ENERGY_REFILL_WAIT * e->frameRate;
+                drone->energyRefillWait = DRONE_ENERGY_REFILL_WAIT;
             }
         }
         return;
@@ -713,7 +719,7 @@ void droneBrake(env *e, droneEntity *drone, const bool lightBrake, const bool he
     if (drone->energyLeft == 0.0f && !drone->chargingBurst) {
         drone->energyFullyDepleted = true;
         drone->energyFullyDepletedThisStep = true;
-        drone->energyRefillWait = DRONE_ENERGY_REFILL_EMPTY_WAIT * (float)e->frameRate;
+        drone->energyRefillWait = DRONE_ENERGY_REFILL_EMPTY_WAIT;
         e->stats[drone->idx].energyEmptied++;
     }
 
@@ -727,7 +733,7 @@ void droneBrake(env *e, droneEntity *drone, const bool lightBrake, const bool he
 }
 
 void droneChargeBurst(env *e, droneEntity *drone) {
-    if (drone->energyFullyDepleted) {
+    if (drone->energyFullyDepleted || drone->burstCooldown != 0.0f || (!drone->chargingBurst && drone->energyLeft < DRONE_BURST_BASE_COST)) {
         return;
     }
 
@@ -891,11 +897,12 @@ void droneBurst(env *e, droneEntity *drone) {
 
     drone->chargingBurst = false;
     drone->burstCharge = 0.0f;
+    drone->burstCooldown = DRONE_BURST_COOLDOWN;
     if (drone->energyLeft == 0.0f) {
         drone->energyFullyDepletedThisStep = true;
-        drone->energyRefillWait = DRONE_ENERGY_REFILL_EMPTY_WAIT * (float)e->frameRate;
+        drone->energyRefillWait = DRONE_ENERGY_REFILL_EMPTY_WAIT;
     } else {
-        drone->energyRefillWait = DRONE_ENERGY_REFILL_WAIT * (float)e->frameRate;
+        drone->energyRefillWait = DRONE_ENERGY_REFILL_WAIT;
     }
     e->stats[drone->idx].totalBursts++;
 
@@ -922,7 +929,7 @@ void droneDiscardWeapon(env *e, droneEntity *drone) {
     }
 
     droneChangeWeapon(e, drone, e->defaultWeapon->type);
-    droneAddEnergy(drone, -WEAPON_PICKUP_ENERGY_REFILL * 2.0f);
+    droneAddEnergy(drone, -WEAPON_DISCARD_COST);
     if (drone->chargingBurst) {
         return;
     }
@@ -930,29 +937,34 @@ void droneDiscardWeapon(env *e, droneEntity *drone) {
     if (drone->energyLeft == 0.0f) {
         drone->energyFullyDepleted = true;
         drone->energyFullyDepletedThisStep = true;
-        drone->energyRefillWait = DRONE_ENERGY_REFILL_EMPTY_WAIT * (float)e->frameRate;
+        drone->energyRefillWait = DRONE_ENERGY_REFILL_EMPTY_WAIT;
         e->stats[drone->idx].energyEmptied++;
     } else {
-        drone->energyRefillWait = DRONE_ENERGY_REFILL_WAIT * (float)e->frameRate;
+        drone->energyRefillWait = DRONE_ENERGY_REFILL_WAIT;
     }
 }
 
 void droneStep(env *e, droneEntity *drone) {
     // manage weapon charge and heat
-    drone->weaponCooldown = fmaxf(drone->weaponCooldown - e->deltaTime, 0.0f);
+    if (drone->weaponCooldown != 0.0f) {
+        drone->weaponCooldown = fmaxf(drone->weaponCooldown - e->deltaTime, 0.0f);
+    }
     if (!drone->shotThisStep) {
-        drone->charge = fmaxf(drone->charge - 1, 0);
+        drone->weaponCharge = fmaxf(drone->weaponCharge - e->deltaTime, 0);
         drone->heat = fmaxf(drone->heat - 1, 0);
     } else {
         drone->shotThisStep = false;
     }
     ASSERT(!drone->shotThisStep);
 
-    // manage drone brake
+    // manage drone energy
+    if (drone->burstCooldown != 0.0f) {
+        drone->burstCooldown = fmaxf(drone->burstCooldown - e->deltaTime, 0.0f);
+    }
     if (drone->energyFullyDepletedThisStep) {
         drone->energyFullyDepletedThisStep = false;
     } else if (drone->energyRefillWait != 0.0f) {
-        drone->energyRefillWait = fmaxf(drone->energyRefillWait - 1, 0.0f);
+        drone->energyRefillWait = fmaxf(drone->energyRefillWait - e->deltaTime, 0.0f);
     } else if (drone->energyLeft != DRONE_ENERGY_MAX && !drone->chargingBurst) {
         // don't start recharging energy until the burst charge is used
         drone->energyLeft = fminf(drone->energyLeft + (DRONE_ENERGY_REFILL_RATE * e->deltaTime), DRONE_ENERGY_MAX);
@@ -1101,6 +1113,24 @@ bool handleProjectileBeginContact(env *e, const entity *proj, const entity *ent)
     return false;
 }
 
+void handleProjectileEndContact(const entity *proj, const entity *ent) {
+    // ensure the projectile's speed doesn't change after bouncing off
+    // something
+    projectileEntity *projectile = (projectileEntity *)proj->entity;
+    if (ent != NULL && ent->type == PROJECTILE_ENTITY) {
+        const projectileEntity *projectile2 = (projectileEntity *)ent->entity;
+        // if the projectiles are from the different weapons, don't change the speed
+        if (projectile->weaponInfo->type != projectile2->weaponInfo->type) {
+            projectile->lastSpeed = b2Length(b2Body_GetLinearVelocity(projectile->bodyID));
+            return;
+        }
+    }
+
+    const b2Vec2 velocity = b2Body_GetLinearVelocity(projectile->bodyID);
+    const b2Vec2 newVel = b2MulSV(projectile->lastSpeed, b2Normalize(velocity));
+    b2Body_SetLinearVelocity(projectile->bodyID, newVel);
+}
+
 void handleContactEvents(env *e) {
     b2ContactEvents events = b2World_GetContactEvents(e->worldID);
     for (int i = 0; i < events.beginCount; ++i) {
@@ -1136,6 +1166,26 @@ void handleContactEvents(env *e) {
             }
         }
     }
+
+    for (int i = 0; i < events.endCount; ++i) {
+        const b2ContactEndTouchEvent *event = events.endEvents + i;
+        entity *e1 = NULL;
+        entity *e2 = NULL;
+        if (b2Shape_IsValid(event->shapeIdA)) {
+            e1 = (entity *)b2Shape_GetUserData(event->shapeIdA);
+            ASSERT(e1 != NULL);
+        }
+        if (b2Shape_IsValid(event->shapeIdB)) {
+            e2 = (entity *)b2Shape_GetUserData(event->shapeIdB);
+            ASSERT(e2 != NULL);
+        }
+        if (e1 != NULL && e1->type == PROJECTILE_ENTITY) {
+            handleProjectileEndContact(e1, e2);
+        }
+        if (e2 != NULL && e2->type == PROJECTILE_ENTITY) {
+            handleProjectileEndContact(e2, e1);
+        }
+    }
 }
 
 // set pickup to respawn somewhere else randomly if a drone touched it,
@@ -1157,8 +1207,6 @@ void handleWeaponPickupBeginTouch(env *e, const entity *sensor, entity *visitor)
         drone->stepInfo.pickedUpWeapon = true;
         drone->stepInfo.prevWeapon = drone->weaponInfo->type;
         droneChangeWeapon(e, drone, pickup->weapon);
-
-        droneAddEnergy(drone, WEAPON_PICKUP_ENERGY_REFILL);
 
         e->stats[drone->idx].weaponsPickedUp[pickup->weapon]++;
         DEBUG_LOGF("drone %d picked up weapon %d", drone->idx, pickup->weapon);

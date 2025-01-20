@@ -20,8 +20,6 @@
 #define MAX_FLOATING_WALLS 12
 #define MAX_WEAPON_PICKUPS 12
 
-#define MIN_SPAWN_DISTANCE 6.0f
-
 #define ROUND_STEPS 30
 #define SUDDEN_DEATH_STEPS 5
 
@@ -113,15 +111,19 @@ const float discAimToContAimMap[2][16] = {
     {0.0f, 0.382683f, 0.707107f, 0.92388f, 1.0f, 0.92388f, 0.707107f, 0.382683f, 0.0f, -0.382683f, -0.707107f, -0.92388f, -1.0f, -0.92388f, -0.707107f, -0.382683f},
 };
 
+#define MIN_SPAWN_DISTANCE 6.0f
+
 // wall settings
 #define WALL_THICKNESS 4.0f
 #define FLOATING_WALL_THICKNESS 3.0f
 #define FLOATING_WALL_DAMPING 0.75f
+#define STANDARD_WALL_RESTITUTION 0.01f
 #define BOUNCY_WALL_RESTITUTION 1.0f
 #define WALL_DENSITY 4.0f
 
 // weapon pickup settings
 #define PICKUP_THICKNESS 3.0f
+#define PICKUP_SPAWN_DISTANCE 10.0f
 #define PICKUP_RESPAWN_WAIT 3.0f
 
 // drone settings
@@ -138,7 +140,7 @@ const float discAimToContAimMap[2][16] = {
 #define DRONE_HEAVY_BRAKE_COEF 5.0f
 #define DRONE_LIGHT_BRAKE_DRAIN_RATE 0.4f
 #define DRONE_HEAVY_BRAKE_DRAIN_RATE 0.7f
-#define DRONE_ENERGY_REFILL_WAIT 0.5f
+#define DRONE_ENERGY_REFILL_WAIT 1.0f
 #define DRONE_ENERGY_REFILL_EMPTY_WAIT 3.0f
 #define DRONE_ENERGY_REFILL_RATE 0.03f
 
@@ -148,9 +150,10 @@ const float discAimToContAimMap[2][16] = {
 #define DRONE_BURST_RADIUS_MIN 3.0f
 #define DRONE_BURST_IMPACT_BASE 125.0f
 #define DRONE_BURST_IMPACT_MIN 25.0f
+#define DRONE_BURST_COOLDOWN 0.5f
 
-#define PROJECTILE_ENERGY_REFILL_DENOM 600.0f
-#define WEAPON_PICKUP_ENERGY_REFILL 0.1f
+#define PROJECTILE_ENERGY_REFILL_DENOM 800.0f
+#define WEAPON_DISCARD_COST 0.2f
 
 // weapon projectile settings
 #define STANDARD_AMMO INFINITE
@@ -193,7 +196,7 @@ const float discAimToContAimMap[2][16] = {
 
 #define SHOTGUN_AMMO 8
 #define SHOTGUN_PROJECTILES 8
-#define SHOTGUN_RECOIL_MAGNITUDE 120.0f
+#define SHOTGUN_RECOIL_MAGNITUDE 100.0f
 #define SHOTGUN_FIRE_MAGNITUDE 22.5f
 #define SHOTGUN_CHARGE 0.0f
 #define SHOTGUN_COOL_DOWN 1.0f
@@ -222,6 +225,7 @@ const weaponInformation standard = {
     .numProjectiles = STANDARD_PROJECTILES,
     .fireMagnitude = STANDARD_FIRE_MAGNITUDE,
     .recoilMagnitude = STANDARD_RECOIL_MAGNITUDE,
+    .charge = STANDARD_CHARGE,
     .coolDown = STANDARD_COOL_DOWN,
     .maxDistance = STANDARD_MAX_DISTANCE,
     .radius = STANDARD_RADIUS,
@@ -237,6 +241,7 @@ const weaponInformation machineGun = {
     .numProjectiles = MACHINEGUN_PROJECTILES,
     .fireMagnitude = MACHINEGUN_FIRE_MAGNITUDE,
     .recoilMagnitude = MACHINEGUN_RECOIL_MAGNITUDE,
+    .charge = MACHINEGUN_CHARGE,
     .coolDown = MACHINEGUN_COOL_DOWN,
     .maxDistance = MACHINEGUN_MAX_DISTANCE,
     .radius = MACHINEGUN_RADIUS,
@@ -252,6 +257,7 @@ const weaponInformation sniper = {
     .numProjectiles = SNIPER_PROJECTILES,
     .fireMagnitude = SNIPER_FIRE_MAGNITUDE,
     .recoilMagnitude = SNIPER_RECOIL_MAGNITUDE,
+    .charge = SNIPER_CHARGE,
     .coolDown = SNIPER_COOL_DOWN,
     .maxDistance = SNIPER_MAX_DISTANCE,
     .radius = SNIPER_RADIUS,
@@ -267,6 +273,7 @@ const weaponInformation shotgun = {
     .numProjectiles = SHOTGUN_PROJECTILES,
     .fireMagnitude = SHOTGUN_FIRE_MAGNITUDE,
     .recoilMagnitude = SHOTGUN_RECOIL_MAGNITUDE,
+    .charge = SHOTGUN_CHARGE,
     .coolDown = SHOTGUN_COOL_DOWN,
     .maxDistance = SHOTGUN_MAX_DISTANCE,
     .radius = SHOTGUN_RADIUS,
@@ -282,6 +289,7 @@ const weaponInformation imploder = {
     .numProjectiles = IMPLODER_PROJECTILES,
     .fireMagnitude = IMPLODER_FIRE_MAGNITUDE,
     .recoilMagnitude = IMPLODER_RECOIL_MAGNITUDE,
+    .charge = IMPLODER_CHARGE,
     .coolDown = IMPLODER_COOL_DOWN,
     .maxDistance = IMPLODER_MAX_DISTANCE,
     .radius = IMPLODER_RADIUS,
@@ -342,32 +350,6 @@ float weaponFire(uint64_t *seed, const enum weaponType type) {
         ERRORF("unknown weapon type %d", type);
         return 0;
     }
-}
-
-// how many steps the weapon needs to be charged for before it can be fired
-uint16_t weaponCharge(const env *e, const enum weaponType type) {
-    float charge = 0.0f;
-    switch (type) {
-    case STANDARD_WEAPON:
-        charge = STANDARD_CHARGE;
-        break;
-    case MACHINEGUN_WEAPON:
-        charge = MACHINEGUN_CHARGE;
-        break;
-    case SNIPER_WEAPON:
-        charge = SNIPER_CHARGE;
-        break;
-    case SHOTGUN_WEAPON:
-        charge = SHOTGUN_CHARGE;
-        break;
-    case IMPLODER_WEAPON:
-        charge = IMPLODER_CHARGE;
-        break;
-    default:
-        ERRORF("unknown weapon type %d", type);
-    }
-
-    return (uint16_t)(charge * e->frameRate);
 }
 
 b2Vec2 weaponAdjustAim(uint64_t *seed, const enum weaponType type, const uint16_t heat, const b2Vec2 normAim) {

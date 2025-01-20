@@ -369,7 +369,7 @@ void renderDroneUI(const env *e, const droneEntity *drone) {
     Color energyMeterColor = RAYWHITE;
     if (drone->energyFullyDepleted && drone->energyRefillWait != 0.0f) {
         energyMeterColor = bambooBrown;
-        energyMeterEndAngle = 360.0f * (1.0f - (drone->energyRefillWait / (DRONE_ENERGY_REFILL_EMPTY_WAIT * e->frameRate)));
+        energyMeterEndAngle = 360.0f * (1.0f - (drone->energyRefillWait / (DRONE_ENERGY_REFILL_EMPTY_WAIT)));
     } else if (drone->energyFullyDepleted) {
         energyMeterColor = GRAY;
     }
@@ -394,8 +394,8 @@ void renderDroneUI(const env *e, const droneEntity *drone) {
     }
     DrawText(ammoStr, b2XToRayX(e, posX), b2YToRayY(e, pos.y + 1.5f), e->renderScale, WHITE);
 
-    const float maxCharge = weaponCharge(e, drone->weaponInfo->type);
-    if (maxCharge == 0.0f) {
+    const float maxCharge = drone->weaponInfo->charge;
+    if (maxCharge == 0) {
         return;
     }
 
@@ -410,7 +410,7 @@ void renderDroneUI(const env *e, const droneEntity *drone) {
     };
     DrawRectangleLinesEx(outlineRec, e->renderScale / 20.0f, RAYWHITE);
 
-    const float fillRecWidth = (drone->charge / maxCharge) * chargeMeterWidth;
+    const float fillRecWidth = (drone->weaponCharge / maxCharge) * chargeMeterWidth;
     Rectangle fillRec = {
         .x = b2XToRayX(e, pos.x - 1.0f),
         .y = b2YToRayY(e, pos.y - (chargeMeterHeight / 2.0f) + 3.0f),

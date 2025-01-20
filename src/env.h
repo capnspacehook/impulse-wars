@@ -546,7 +546,7 @@ void computeObs(env *e) {
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAimAngle, PI, false);
             scalarObs[scalarObsOffset++] = scaleAmmo(e, enemyDrone);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->weaponCooldown, enemyDrone->weaponInfo->coolDown, true);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->charge, weaponCharge(e, enemyDrone->weaponInfo->type), true);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->weaponCharge, enemyDrone->weaponInfo->charge, true);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->energyLeft, DRONE_ENERGY_MAX, true);
             scalarObs[scalarObsOffset++] = (float)enemyDrone->energyFullyDepleted;
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneBraking, 2.0f, true);
@@ -579,7 +579,7 @@ void computeObs(env *e) {
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->lastAim.y, 1.0f, false);
         scalarObs[scalarObsOffset++] = scaleAmmo(e, agentDrone);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->weaponCooldown, agentDrone->weaponInfo->coolDown, true);
-        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->charge, weaponCharge(e, agentDrone->weaponInfo->type), true);
+        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->weaponCharge, agentDrone->weaponInfo->charge, true);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->energyLeft, DRONE_ENERGY_MAX, true);
         scalarObs[scalarObsOffset++] = (float)agentDrone->energyFullyDepleted;
         scalarObs[scalarObsOffset++] = scaleValue(agentDroneBraking, 2.0f, true);

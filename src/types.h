@@ -93,6 +93,7 @@ typedef struct weaponInformation {
     const uint8_t numProjectiles;
     const float fireMagnitude;
     const float recoilMagnitude;
+    const float charge;
     const float coolDown;
     const float maxDistance;
     const float radius;
@@ -122,6 +123,7 @@ typedef struct projectileEntity {
     weaponInformation *weaponInfo;
     cachedPos pos;
     b2Vec2 lastPos;
+    float lastSpeed;
     float distance;
     uint8_t bounces;
 } projectileEntity;
@@ -161,15 +163,16 @@ typedef struct droneEntity {
     int8_t ammo;
     float weaponCooldown;
     uint16_t heat;
-    uint16_t charge;
+    float weaponCharge;
     float energyLeft;
     bool lightBraking;
     bool heavyBraking;
     bool chargingBurst;
     float burstCharge;
+    float burstCooldown;
     bool energyFullyDepleted;
     bool energyFullyDepletedThisStep;
-    uint16_t energyRefillWait;
+    float energyRefillWait;
     bool shotThisStep;
 
     uint8_t idx;
