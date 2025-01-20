@@ -16,7 +16,6 @@ from cy_impulse_wars import obsConstants
 
 cnnChannels = 64
 weaponTypeEmbeddingDims = 2
-floatingWallOutputSize = 64
 encoderOutputSize = 256
 lstmOutputSize = 256
 
@@ -82,19 +81,13 @@ class Policy(nn.Module):
         )
         cnnOutputSize = self._computeCNNShape()
 
-        self.floatingWallEncoder = nn.Sequential(
-            layer_init(
-                nn.Linear(
-                    self.obsInfo.wallTypes + 1 + self.obsInfo.floatingWallInfoObsSize, floatingWallOutputSize
-                )
-            ),
-            nn.ReLU(),
-        )
-
         featuresSize = (
             cnnOutputSize
             + (self.obsInfo.numNearWallObs * (self.obsInfo.wallTypes + self.obsInfo.nearWallPosObsSize))
-            + floatingWallOutputSize
+            + (
+                self.obsInfo.numFloatingWallObs
+                * (self.obsInfo.wallTypes + 1 + self.obsInfo.floatingWallInfoObsSize)
+            )
             + (
                 self.obsInfo.numWeaponPickupObs
                 * (weaponTypeEmbeddingDims + self.obsInfo.weaponPickupPosObsSize)
@@ -189,9 +182,8 @@ class Policy(nn.Module):
         floatingWallInfoObs = floatingWallInfoObs.view(
             batchSize, self.obsInfo.numFloatingWallObs, self.obsInfo.floatingWallInfoObsSize
         )
-        floatingWallObs = th.cat((floatingWallTypes, floatingWallInfoObs), dim=-1)
-        floatingWalls = self.floatingWallEncoder(floatingWallObs)
-        floatingWalls = th.max(floatingWalls, dim=1).values
+        floatingWalls = th.cat((floatingWallTypes, floatingWallInfoObs), dim=-1)
+        floatingWalls = th.flatten(floatingWalls, start_dim=1, end_dim=-1)
 
         # process weapon pickup types and positions
         pickupTypeObs = scalarObs[
