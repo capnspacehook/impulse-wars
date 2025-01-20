@@ -565,7 +565,6 @@ void handleSuddenDeath(env *e) {
         return;
     }
 
-    // TODO: not all floating walls are destroyed correctly
     // make floating walls static bodies if they are now overlapping with
     // a newly placed wall, but destroy them if they are fully inside a wall
     CC_ArrayIter floatingWallIter;
@@ -733,9 +732,14 @@ void droneChargeBurst(env *e, droneEntity *drone) {
     }
 
     // take energy and put it into burst charge
-    drone->burstCharge = fminf(drone->burstCharge + (DRONE_BURST_CHARGE_RATE * e->deltaTime), DRONE_ENERGY_MAX);
-    drone->energyLeft = fmaxf(drone->energyLeft - (DRONE_BURST_CHARGE_RATE * e->deltaTime), 0.0f);
-    drone->chargingBurst = true;
+    if (drone->chargingBurst) {
+        drone->burstCharge = fminf(drone->burstCharge + (DRONE_BURST_CHARGE_RATE * e->deltaTime), DRONE_ENERGY_MAX);
+        drone->energyLeft = fmaxf(drone->energyLeft - (DRONE_BURST_CHARGE_RATE * e->deltaTime), 0.0f);
+    } else {
+        drone->burstCharge = fminf(drone->burstCharge + DRONE_BURST_BASE_COST, DRONE_ENERGY_MAX);
+        drone->energyLeft = fmaxf(drone->energyLeft - DRONE_BURST_BASE_COST, 0.0f);
+        drone->chargingBurst = true;
+    }
 
     if (drone->energyLeft == 0.0f) {
         drone->energyFullyDepleted = true;
@@ -780,6 +784,7 @@ bool burstExplodeCallback(b2ShapeId shapeID, void *context) {
 
     const burstExplosionCtx *ctx = (burstExplosionCtx *)context;
     const entity *entity = b2Shape_GetUserData(shapeID);
+    DEBUG_LOGF("exploding entity type %d", entity->type);
     // the explosion shouldn't affect the parent drone
     if (entity->type == DRONE_ENTITY) {
         droneEntity *drone = (droneEntity *)entity->entity;
@@ -791,6 +796,13 @@ bool burstExplodeCallback(b2ShapeId shapeID, void *context) {
         DEBUG_LOGF("drone %d hit drone %d with burst", ctx->parentDrone->idx, drone->idx);
         drone->stepInfo.shotTaken[ctx->parentDrone->idx] = true;
         DEBUG_LOGF("drone %d hit burst from drone %d", drone->idx, ctx->parentDrone->idx);
+    }
+    bool isStaticWall = false;
+    bool isFloatingWall = false;
+    if (entityTypeIsWall(entity->type)) {
+        const wallEntity *wall = (wallEntity *)entity->entity;
+        isStaticWall = !wall->isFloating;
+        isFloatingWall = wall->isFloating;
     }
 
     b2BodyId bodyID = b2Shape_GetBody(shapeID);
@@ -807,12 +819,17 @@ bool burstExplodeCallback(b2ShapeId shapeID, void *context) {
 
     b2SimplexCache cache = {0};
     const b2DistanceOutput output = b2ShapeDistance(&cache, &input, NULL, 0);
-    if (output.distance > ctx->def->radius + ctx->def->falloff) {
+    if (output.distance > ctx->def->radius + ctx->def->falloff || (isStaticWall && output.distance > ctx->def->radius)) {
         return true;
     }
 
     const b2Vec2 closestPoint = output.pointA;
-    const b2Vec2 direction = b2Normalize(b2Sub(closestPoint, ctx->def->position));
+    b2Vec2 direction;
+    if (isStaticWall) {
+        direction = b2Normalize(b2Sub(ctx->def->position, closestPoint));
+    } else {
+        direction = b2Normalize(b2Sub(closestPoint, ctx->def->position));
+    }
 
     b2Vec2 localLine = b2InvRotateVector(transform.q, b2LeftPerp(direction));
     float perimeter = getShapeProjectedPerimeter(shapeID, localLine);
@@ -821,11 +838,18 @@ bool burstExplodeCallback(b2ShapeId shapeID, void *context) {
         scale = clamp((ctx->def->radius + ctx->def->falloff - output.distance) / ctx->def->falloff);
     }
 
-    const float magnitude = (ctx->def->impulsePerLength + b2Length(ctx->parentDrone->lastVelocity)) * perimeter * scale;
+    float magnitude = (ctx->def->impulsePerLength + b2Length(ctx->parentDrone->lastVelocity)) * perimeter * scale;
+    if (isStaticWall) {
+        magnitude = log2f(magnitude) * 7.5f;
+    }
     const b2Vec2 impulse = b2MulSV(magnitude, direction);
 
-    b2Body_ApplyLinearImpulseToCenter(bodyID, impulse, true);
-    if (entityTypeIsWall(entity->type)) {
+    if (isStaticWall) {
+        b2Body_ApplyLinearImpulseToCenter(ctx->parentDrone->bodyID, impulse, true);
+    } else {
+        b2Body_ApplyLinearImpulseToCenter(bodyID, impulse, true);
+    }
+    if (isFloatingWall) {
         b2Body_ApplyAngularImpulse(bodyID, magnitude, true);
     }
 
@@ -842,6 +866,7 @@ void burstExplode(env *e, droneEntity *drone, const b2ExplosionDef *def) {
     };
 
     b2QueryFilter filter = b2DefaultQueryFilter();
+    filter.categoryBits = PROJECTILE_SHAPE;
     filter.maskBits = def->maskBits;
 
     burstExplosionCtx ctx = {.e = e, .parentDrone = drone, .def = def};
@@ -860,7 +885,7 @@ void droneBurst(env *e, droneEntity *drone) {
         .radius = radius,
         .impulsePerLength = (DRONE_BURST_IMPACT_BASE * drone->burstCharge) + DRONE_BURST_IMPACT_MIN,
         .falloff = radius / 2.0f,
-        .maskBits = FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE,
+        .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE,
     };
     burstExplode(e, drone, &explosion);
 
@@ -1076,14 +1101,6 @@ bool handleProjectileBeginContact(env *e, const entity *proj, const entity *ent)
     return false;
 }
 
-void handleProjectileEndContact(env *e, const entity *p) {
-    // ensure the projectile's speed doesn't change after bouncing off of something
-    projectileEntity *projectile = (projectileEntity *)p->entity;
-    b2Vec2 velocity = b2Body_GetLinearVelocity(projectile->bodyID);
-    b2Vec2 newVel = b2MulSV(weaponFire(&e->randState, projectile->weaponInfo->type) * projectile->weaponInfo->invMass, b2Normalize(velocity));
-    b2Body_SetLinearVelocity(projectile->bodyID, newVel);
-}
-
 void handleContactEvents(env *e) {
     b2ContactEvents events = b2World_GetContactEvents(e->worldID);
     for (int i = 0; i < events.beginCount; ++i) {
@@ -1117,28 +1134,6 @@ void handleContactEvents(env *e) {
                 droneEntity *drone = (droneEntity *)e1->entity;
                 drone->dead = true;
             }
-        }
-    }
-
-    for (int i = 0; i < events.endCount; ++i) {
-        const b2ContactEndTouchEvent *event = events.endEvents + i;
-        entity *e1 = NULL;
-        entity *e2 = NULL;
-
-        if (b2Shape_IsValid(event->shapeIdA)) {
-            e1 = (entity *)b2Shape_GetUserData(event->shapeIdA);
-            ASSERT(e1 != NULL);
-        }
-        if (b2Shape_IsValid(event->shapeIdB)) {
-            e2 = (entity *)b2Shape_GetUserData(event->shapeIdB);
-            ASSERT(e2 != NULL);
-        }
-
-        if (e1 != NULL && e1->type == PROJECTILE_ENTITY) {
-            handleProjectileEndContact(e, e1);
-        }
-        if (e2 != NULL && e2->type == PROJECTILE_ENTITY) {
-            handleProjectileEndContact(e, e2);
         }
     }
 }

@@ -187,7 +187,7 @@ if __name__ == "__main__":
     parser.add_argument("--train.max-grad-norm", type=float, default=0.5)
     parser.add_argument("--train.minibatch-size", type=int, default=32_768)
     parser.add_argument("--train.norm-adv", action="store_false")
-    parser.add_argument("--train.update-epochs", type=int, default=3)
+    parser.add_argument("--train.update-epochs", type=int, default=1)
     parser.add_argument("--train.vf-clip-coef", type=float, default=0.1)
     parser.add_argument("--train.vf-coef", type=float, default=0.5)
     parser.add_argument("--train.target-kl", type=float, default=0.2)
