@@ -825,6 +825,8 @@ bool burstExplodeCallback(b2ShapeId shapeID, void *context) {
 
     b2SimplexCache cache = {0};
     const b2DistanceOutput output = b2ShapeDistance(&cache, &input, NULL, 0);
+    // don't consider for static walls so burst pushback isn't as
+    // surprising to players
     if (output.distance > ctx->def->radius + ctx->def->falloff || (isStaticWall && output.distance > ctx->def->radius)) {
         return true;
     }
@@ -840,12 +842,14 @@ bool burstExplodeCallback(b2ShapeId shapeID, void *context) {
     b2Vec2 localLine = b2InvRotateVector(transform.q, b2LeftPerp(direction));
     float perimeter = getShapeProjectedPerimeter(shapeID, localLine);
     float scale = 1.0f;
-    if (output.distance > ctx->def->radius) {
+    // ignore falloff for projectiles to avoid slowing them down to a crawl
+    if (output.distance > ctx->def->radius && entity->type != PROJECTILE_ENTITY) {
         scale = clamp((ctx->def->radius + ctx->def->falloff - output.distance) / ctx->def->falloff);
     }
 
     float magnitude = (ctx->def->impulsePerLength + b2Length(ctx->parentDrone->lastVelocity)) * perimeter * scale;
     if (isStaticWall) {
+        // reduce the magnitude when pushing a drone away from a wall
         magnitude = log2f(magnitude) * 7.5f;
     }
     const b2Vec2 impulse = b2MulSV(magnitude, direction);
@@ -854,8 +858,13 @@ bool burstExplodeCallback(b2ShapeId shapeID, void *context) {
         b2Body_ApplyLinearImpulseToCenter(ctx->parentDrone->bodyID, impulse, true);
     } else {
         b2Body_ApplyLinearImpulseToCenter(bodyID, impulse, true);
+        if (entity->type == PROJECTILE_ENTITY) {
+            projectileEntity *projectile = (projectileEntity *)entity->entity;
+            projectile->lastSpeed = b2Length(b2Body_GetLinearVelocity(projectile->bodyID));
+        }
     }
     if (isFloatingWall) {
+        // floating walls are the only bodies that can rotate
         b2Body_ApplyAngularImpulse(bodyID, magnitude, true);
     }
 
