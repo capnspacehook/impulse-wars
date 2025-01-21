@@ -351,6 +351,7 @@ void createDrone(env *e, const uint8_t idx) {
     drone->energyFullyDepletedThisStep = false;
     drone->energyRefillWait = 0.0f;
     drone->shotThisStep = false;
+    drone->diedThisStep = false;
     drone->idx = idx;
     drone->initalPos = droneBodyDef.position;
     drone->pos = (cachedPos){.pos = droneBodyDef.position, .valid = true};
@@ -378,6 +379,21 @@ void destroyDrone(droneEntity *drone) {
 
     b2DestroyBody(drone->bodyID);
     fastFree(drone);
+}
+
+void killDrone(env *e, droneEntity *drone) {
+    drone->dead = true;
+    drone->diedThisStep = true;
+    if (e->numDrones == 2) {
+        return;
+    }
+
+    b2Body_Disable(drone->bodyID);
+    drone->lightBraking = false;
+    drone->heavyBraking = false;
+    drone->chargingBurst = false;
+    drone->energyFullyDepleted = false;
+    drone->shotThisStep = false;
 }
 
 void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
@@ -563,7 +579,7 @@ void handleSuddenDeath(env *e) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
         const b2Vec2 pos = getCachedPos(drone->bodyID, &drone->pos);
         if (isOverlapping(e, pos, DRONE_RADIUS, DRONE_SHAPE, WALL_SHAPE)) {
-            drone->dead = true;
+            killDrone(e, drone);
             droneDead = true;
         }
     }
@@ -786,7 +802,9 @@ typedef struct burstExplosionCtx {
 // so we have to do it manually
 // mostly copied from box2d/src/world.c
 bool burstExplodeCallback(b2ShapeId shapeID, void *context) {
-    ASSERT(b2Shape_IsValid(shapeID));
+    if (!b2Shape_IsValid(shapeID)) {
+        return true;
+    }
 
     const burstExplosionCtx *ctx = (burstExplosionCtx *)context;
     const entity *entity = b2Shape_GetUserData(shapeID);
@@ -1174,7 +1192,7 @@ void handleContactEvents(env *e) {
                 }
             } else if (e1->type == DEATH_WALL_ENTITY && e2 != NULL && e2->type == DRONE_ENTITY) {
                 droneEntity *drone = (droneEntity *)e2->entity;
-                drone->dead = true;
+                killDrone(e, drone);
             }
         }
         if (e2 != NULL) {
@@ -1182,7 +1200,7 @@ void handleContactEvents(env *e) {
                 handleProjectileBeginContact(e, e2, e1);
             } else if (e2->type == DEATH_WALL_ENTITY && e1 != NULL && e1->type == DRONE_ENTITY) {
                 droneEntity *drone = (droneEntity *)e1->entity;
-                drone->dead = true;
+                killDrone(e, drone);
             }
         }
     }

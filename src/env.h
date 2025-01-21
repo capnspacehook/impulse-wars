@@ -128,7 +128,7 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
     const int16_t droneCellIdx = entityPosToCellIdx(e, dronePos);
     if (droneCellIdx == -1) {
         DEBUG_LOGF("agent drone is out of bounds at %f %f", dronePos.x, dronePos.y);
-        memset(e->truncations, 0x0, e->numAgents * sizeof(uint8_t));
+        memset(e->truncations, 1, e->numAgents * sizeof(uint8_t));
         e->needsReset = true;
         return;
     }
@@ -183,7 +183,7 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
         int16_t cellIdx = entityPosToCellIdx(e, pos);
         if (cellIdx == -1) {
             DEBUG_LOGF("floating wall %zu out of bounds at position %f %f", i, pos.x, pos.y);
-            memset(e->truncations, 0x0, e->numAgents * sizeof(uint8_t));
+            memset(e->truncations, 1, e->numAgents * sizeof(uint8_t));
             e->needsReset = true;
             return;
         }
@@ -207,18 +207,18 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
     uint16_t droneCells[e->numDrones];
     memset(droneCells, 0x0, sizeof(droneCells));
     for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
-        b2Vec2 pos = dronePos;
-        int16_t cellIdx = droneCellIdx;
-        if (i != agentIdx) {
-            droneEntity *otherDrone = safe_array_get_at(e->drones, i);
-            pos = otherDrone->pos.pos;
-            cellIdx = entityPosToCellIdx(e, pos);
-            if (cellIdx == -1) {
-                DEBUG_LOGF("drone %d out of bounds at position %f %f", i, pos.x, pos.y);
-                memset(e->truncations, 0x0, e->numAgents * sizeof(uint8_t));
-                e->needsReset = true;
-                return;
-            }
+        if (i == agentIdx) {
+            continue;
+        }
+
+        const droneEntity *otherDrone = safe_array_get_at(e->drones, i);
+        const b2Vec2 pos = otherDrone->pos.pos;
+        int16_t cellIdx = entityPosToCellIdx(e, pos);
+        if (cellIdx == -1) {
+            DEBUG_LOGF("drone %d out of bounds at position %f %f", i, pos.x, pos.y);
+            memset(e->truncations, 1, e->numAgents * sizeof(uint8_t));
+            e->needsReset = true;
+            return;
         }
 
         // ensure drones do not share cells in the observation
@@ -240,15 +240,9 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
         }
         droneCells[i] = cellIdx;
 
-        // set the agent's drone to be drone 0
-        uint8_t droneIdx = 0;
-        if (i != agentIdx) {
-            droneIdx = newDroneIdx++;
-        }
-
         offset = startOffset + (cellRow - startRow + ((cellCol - startCol) * MAP_OBS_COLUMNS));
         ASSERTF(offset <= startOffset + MAP_OBS_SIZE, "offset: %d", offset);
-        e->obs[offset] |= ((droneIdx + 1) & THREE_BIT_MASK);
+        e->obs[offset] |= (newDroneIdx++ & THREE_BIT_MASK);
     }
 }
 
@@ -514,6 +508,11 @@ void computeObs(env *e) {
             }
 
             const droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
+            if (enemyDrone->dead) {
+                processedDrones++;
+                continue;
+            }
+
             const b2Vec2 enemyDroneRelPos = b2Sub(enemyDrone->pos.pos, agentDronePos);
             const float enemyDroneDistance = b2Distance(enemyDrone->pos.pos, agentDronePos);
             const b2Vec2 enemyDroneVel = b2Body_GetLinearVelocity(enemyDrone->bodyID);
@@ -550,16 +549,21 @@ void computeObs(env *e) {
             scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->energyLeft, DRONE_ENERGY_MAX, true);
             scalarObs[scalarObsOffset++] = (float)enemyDrone->energyFullyDepleted;
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneBraking, 2.0f, true);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->burstCooldown, DRONE_BURST_COOLDOWN, true);
             scalarObs[scalarObsOffset++] = (float)enemyDrone->chargingBurst;
             scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->burstCharge, DRONE_ENERGY_MAX, true);
+            scalarObs[scalarObsOffset++] = 1; // is drone alive
 
             processedDrones++;
             ASSERTF(scalarObsOffset == ENEMY_DRONE_OBS_OFFSET + (e->numDrones - 1) + (processedDrones * (ENEMY_DRONE_OBS_SIZE - 1)), "offset: %d", scalarObsOffset);
         }
 
         // compute active drone observations
-        ASSERTF(scalarObsOffset == ENEMY_DRONE_OBS_OFFSET + ((e->numDrones - 1) * ENEMY_DRONE_OBS_SIZE), "offset: %d", scalarObsOffset);
-        const b2Vec2 agentDroneVel = b2Body_GetLinearVelocity(agentDrone->bodyID);
+        scalarObsOffset = ENEMY_DRONE_OBS_OFFSET + ((e->numDrones - 1) * ENEMY_DRONE_OBS_SIZE);
+        b2Vec2 agentDroneVel = b2Vec2_zero;
+        if (!agentDrone->dead) {
+            agentDroneVel = b2Body_GetLinearVelocity(agentDrone->bodyID);
+        }
         const b2Vec2 agentDroneAccel = b2Sub(agentDroneVel, agentDrone->lastVelocity);
         float agentDroneBraking = 0.0f;
         if (agentDrone->lightBraking) {
@@ -583,6 +587,7 @@ void computeObs(env *e) {
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->energyLeft, DRONE_ENERGY_MAX, true);
         scalarObs[scalarObsOffset++] = (float)agentDrone->energyFullyDepleted;
         scalarObs[scalarObsOffset++] = scaleValue(agentDroneBraking, 2.0f, true);
+        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->burstCooldown, DRONE_BURST_COOLDOWN, true);
         scalarObs[scalarObsOffset++] = (float)agentDrone->chargingBurst;
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->burstCharge, DRONE_ENERGY_MAX, true);
         scalarObs[scalarObsOffset++] = hitShot;
@@ -779,18 +784,16 @@ float computeExplosionReward(env *e, const uint8_t enemyIdx) {
     return scaleValue(fabsf(curEnemySpeed - prevEnemySpeed), MAX_SPEED, true) * EXPLOSION_HIT_REWARD_COEF;
 }
 
-// TODO: add death punishment when there are more than 2 drones
 float computeReward(env *e, droneEntity *drone) {
     float reward = 0.0f;
 
-    // TODO: try death punishment again
+    if (drone->diedThisStep) {
+        reward += DEATH_PUNISHMENT;
+        drone->diedThisStep = false;
+    }
 
-    for (uint8_t i = 0; i < e->numDrones; i++) {
-        if (i == drone->idx) {
-            continue;
-        }
-
-        if (drone->energyFullyDepleted && drone->energyRefillWait == DRONE_ENERGY_REFILL_EMPTY_WAIT * e->frameRate) {
+    if (!drone->dead) {
+        if (drone->energyFullyDepleted && drone->energyRefillWait == DRONE_ENERGY_REFILL_EMPTY_WAIT) {
             reward += ENERGY_EMPTY_PUNISHMENT;
         }
 
@@ -801,6 +804,13 @@ float computeReward(env *e, droneEntity *drone) {
         if (drone->stepInfo.pickedUpWeapon && drone->stepInfo.prevWeapon == STANDARD_WEAPON) {
             reward += WEAPON_PICKUP_REWARD;
         }
+    }
+
+    for (uint8_t i = 0; i < e->numDrones; i++) {
+        if (i == drone->idx) {
+            continue;
+        }
+
         if (drone->stepInfo.shotHit[i] != 0) {
             // subtract 1 from the weapon type because 1 is added so we
             // can use 0 as no shot was hit
@@ -843,8 +853,7 @@ void computeRewards(env *e, const bool roundOver, const int8_t winner) {
         rewards[i] += computeReward(e, drone);
     }
 
-    // don't zero sum rewards if there's only one agent and the enemy drone
-    // is a sitting duck
+    // don't zero sum rewards if there's only one agent
     if (e->numAgents != e->numDrones) {
         for (uint8_t i = 0; i < e->numDrones; i++) {
             e->rewards[i] += rewards[i];
@@ -1059,6 +1068,10 @@ void stepEnv(env *e) {
     // preprocess actions for the next N steps
     for (uint8_t i = 0; i < e->numDrones; i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
+        if (drone->dead) {
+            continue;
+        }
+
         if (i < e->numAgents) {
             stepActions[i] = computeActions(e, drone, NULL);
         } else {
@@ -1080,11 +1093,17 @@ void stepEnv(env *e) {
 
         for (uint8_t i = 0; i < e->numDrones; i++) {
             droneEntity *drone = safe_array_get_at(e->drones, i);
+            if (drone->dead) {
+                continue;
+            }
             drone->lastVelocity = b2Body_GetLinearVelocity(drone->bodyID);
         }
 
         for (uint8_t i = 0; i < e->numDrones; i++) {
             droneEntity *drone = safe_array_get_at(e->drones, i);
+            if (drone->dead) {
+                continue;
+            }
             memset(&drone->stepInfo, 0x0, sizeof(droneStepInfo));
             memset(&drone->inLineOfSight, 0x0, sizeof(drone->inLineOfSight));
 
@@ -1148,14 +1167,14 @@ void stepEnv(env *e) {
         uint8_t deadDrones = 0;
         for (uint8_t i = 0; i < e->numDrones; i++) {
             droneEntity *drone = safe_array_get_at(e->drones, i);
-            droneStep(e, drone);
-            if (drone->dead) {
+            if (!drone->dead) {
+                droneStep(e, drone);
+                lastAlive = i;
+            } else {
                 deadDrones++;
                 if (i < e->numAgents) {
                     e->terminals[i] = 1;
                 }
-            } else {
-                lastAlive = i;
             }
         }
 

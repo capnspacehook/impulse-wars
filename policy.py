@@ -64,7 +64,7 @@ class Policy(nn.Module):
         )
         self.register_buffer("unpackShift", th.tensor([5, 4, 3, 0], dtype=th.uint8), persistent=False)
 
-        self.mapObsInputChannels = (self.obsInfo.wallTypes + 1) + 1 + 1 + (numDrones + 1)
+        self.mapObsInputChannels = (self.obsInfo.wallTypes + 1) + 1 + 1 + numDrones
         self.mapCNN = nn.Sequential(
             layer_init(
                 nn.Conv2d(
@@ -148,7 +148,7 @@ class Policy(nn.Module):
 
         # one hot drone indexes
         droneIndexObs = mapObs[:, 3, :, :].long()
-        droneIndexes = one_hot(droneIndexObs, self.numDrones + 1).permute(0, 3, 1, 2).float()
+        droneIndexes = one_hot(droneIndexObs, self.numDrones).permute(0, 3, 1, 2).float()
 
         # combine all map observations and feed through CNN
         mapObs = th.cat((wallTypes, floatingWallObs, mapPickupObs, droneIndexes), dim=1)

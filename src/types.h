@@ -176,6 +176,7 @@ typedef struct droneEntity {
     bool energyFullyDepletedThisStep;
     float energyRefillWait;
     bool shotThisStep;
+    bool diedThisStep;
 
     uint8_t idx;
     b2Vec2 initalPos;

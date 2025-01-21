@@ -132,7 +132,7 @@ def eval_policy(env: pufferlib.PufferEnv, policy, device, data=None, bestEval: f
             print(f"Reward: {reward}")
         steps += 1
 
-        if done.any() or trunc.any():
+        if done.all() or trunc.all():
             break
 
     print(f"Totals: Steps: {steps}, Reward: {totalReward}")

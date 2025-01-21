@@ -72,7 +72,10 @@ FetchContent_Declare(
 	box2d
 	URL https://github.com/capnspacehook/box2d/archive/refs/heads/main.zip
 )
+set(BOX2D_ENABLE_SIMD ON CACHE BOOL "Enable SIMD math (faster)" FORCE)
+set(BOX2D_AVX2 ON CACHE BOOL "Enable AVX2 (faster)" FORCE)
 FetchContent_MakeAvailable(box2d)
+target_compile_options(box2d PRIVATE "-ffp-contract=fast")
 
 function(configure_target target_name)
 	target_include_directories(
