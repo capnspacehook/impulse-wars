@@ -454,6 +454,11 @@ void computeObs(env *e) {
     memset(e->obs, 0x0, e->obsBytes * e->numAgents);
 
     for (uint8_t agentIdx = 0; agentIdx < e->numAgents; agentIdx++) {
+        const droneEntity *agentDrone = safe_array_get_at(e->drones, agentIdx);
+        if (agentDrone->dead && !agentDrone->diedThisStep) {
+            continue;
+        }
+
         // compute discrete map observations
         uint16_t mapObsOffset = e->obsBytes * agentIdx;
         const uint16_t mapObsStart = mapObsOffset;
@@ -464,9 +469,7 @@ void computeObs(env *e) {
         const uint16_t scalarObsStart = mapObsStart + e->mapObsBytes;
         float *scalarObs = (float *)(e->obs + scalarObsStart);
 
-        const droneEntity *agentDrone = safe_array_get_at(e->drones, agentIdx);
         const b2Vec2 agentDronePos = agentDrone->pos.pos;
-
         computeNearMapObs(e, agentDrone, scalarObs);
 
         // compute type and location of N projectiles
@@ -477,6 +480,7 @@ void computeObs(env *e) {
                 break;
             }
             const projectileEntity *projectile = (projectileEntity *)cur->data;
+            const b2Vec2 projectileVel = b2Body_GetLinearVelocity(projectile->bodyID);
 
             scalarObsOffset = PROJECTILE_TYPES_OBS_OFFSET + projIdx;
             ASSERTF(scalarObsOffset <= PROJECTILE_POS_OBS_OFFSET, "offset: %d", scalarObsOffset);
@@ -487,7 +491,9 @@ void computeObs(env *e) {
             const b2Vec2 projectileRelPos = b2Sub(projectile->lastPos, agentDronePos);
             scalarObs[scalarObsOffset++] = projectile->droneIdx + 1;
             scalarObs[scalarObsOffset++] = scaleValue(projectileRelPos.x, MAX_X_POS, false);
-            scalarObs[scalarObsOffset] = scaleValue(projectileRelPos.y, MAX_Y_POS, false);
+            scalarObs[scalarObsOffset++] = scaleValue(projectileRelPos.y, MAX_Y_POS, false);
+            scalarObs[scalarObsOffset++] = scaleValue(projectileVel.x, MAX_SPEED, false);
+            scalarObs[scalarObsOffset] = scaleValue(projectileVel.y, MAX_SPEED, false);
 
             projIdx++;
         }
@@ -776,18 +782,22 @@ void resetEnv(env *e) {
     setupEnv(e);
 }
 
-float computeShotReward(const weaponInformation *weaponInfo) {
-    const float weaponForce = weaponInfo->fireMagnitude * weaponInfo->invMass;
-    return ((weaponForce * (0.5f * weaponForce)) * SHOT_HIT_REWARD_COEF) + 0.25f;
+float computePushReward(const droneEntity *drone) {
+    // compute reward based off of how much the projectile(s) or explosion(s)
+    // caused the drone to change velocity
+    const float prevSpeed = b2Length(drone->lastVelocity);
+    const float curSpeed = b2Length(b2Body_GetLinearVelocity(drone->bodyID));
+    return scaleValue(fabsf(curSpeed - prevSpeed), MAX_SPEED, true);
 }
 
-float computeExplosionReward(env *e, const uint8_t enemyIdx) {
-    // compute reward based off of how much the projectile(s) or explosion(s)
-    // caused the enemy drone to change velocity
-    const droneEntity *enemyDrone = safe_array_get_at(e->drones, enemyIdx);
-    const float prevEnemySpeed = b2Length(enemyDrone->lastVelocity);
-    const float curEnemySpeed = b2Length(b2Body_GetLinearVelocity(enemyDrone->bodyID));
-    return scaleValue(fabsf(curEnemySpeed - prevEnemySpeed), MAX_SPEED, true) * EXPLOSION_HIT_REWARD_COEF;
+float computeShotReward(const droneEntity *drone, const weaponInformation *weaponInfo) {
+    const float weaponForce = weaponInfo->fireMagnitude * weaponInfo->invMass;
+    const float scaledForce = (weaponForce * (weaponForce / SHOT_HIT_REWARD_DENOM)) + 0.25f;
+    return scaledForce + computePushReward(drone);
+}
+
+float computeExplosionReward(const droneEntity *drone) {
+    return computePushReward(drone) * EXPLOSION_HIT_REWARD_COEF;
 }
 
 float computeReward(env *e, droneEntity *drone) {
@@ -809,25 +819,25 @@ float computeReward(env *e, droneEntity *drone) {
         if (i == drone->idx) {
             continue;
         }
+        const droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
 
         if (drone->stepInfo.shotHit[i] != 0) {
             // subtract 1 from the weapon type because 1 is added so we
             // can use 0 as no shot was hit
             const weaponInformation *weaponInfo = weaponInfos[drone->stepInfo.shotHit[i] - 1];
-            reward += computeShotReward(weaponInfo);
+            reward += computeShotReward(enemyDrone, weaponInfo);
         }
         if (drone->stepInfo.shotTaken[i] != 0) {
             const weaponInformation *weaponInfo = weaponInfos[drone->stepInfo.shotTaken[i] - 1];
-            reward -= computeShotReward(weaponInfo);
+            reward -= computeShotReward(drone, weaponInfo) * 0.5f;
         }
         if (drone->stepInfo.explosionHit[i]) {
-            reward += computeExplosionReward(e, i);
+            reward += computeExplosionReward(enemyDrone);
         }
         if (drone->stepInfo.explosionTaken[i]) {
-            reward -= computeExplosionReward(e, drone->idx);
+            reward -= computeExplosionReward(drone) * 0.5f;
         }
 
-        const droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
         if (enemyDrone->dead) {
             if (enemyDrone->diedThisStep) {
                 reward += KILL_REWARD;
@@ -864,7 +874,6 @@ void computeRewards(env *e, const bool roundOver, const int8_t winner) {
             reward = computeReward(e, drone);
         } else if (drone->diedThisStep) {
             reward = DEATH_PUNISHMENT;
-            drone->diedThisStep = false;
         }
         e->rewards[i] += reward;
         e->stats[i].reward += reward;
@@ -1090,6 +1099,7 @@ void stepEnv(env *e) {
             memset(&drone->stepInfo, 0x0, sizeof(droneStepInfo));
             memset(&drone->inLineOfSight, 0x0, sizeof(drone->inLineOfSight));
             if (drone->dead) {
+                drone->diedThisStep = false;
                 continue;
             }
             drone->lastVelocity = b2Body_GetLinearVelocity(drone->bodyID);
