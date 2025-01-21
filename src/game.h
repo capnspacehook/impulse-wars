@@ -382,6 +382,11 @@ void destroyDrone(droneEntity *drone) {
 }
 
 void killDrone(env *e, droneEntity *drone) {
+    if (drone->dead) {
+        return;
+    }
+    DEBUG_LOGF("drone %d died", drone->idx);
+
     drone->dead = true;
     drone->diedThisStep = true;
     if (e->numDrones == 2) {
@@ -466,7 +471,7 @@ bool explosionOverlapCallback(b2ShapeId shapeId, void *context) {
     ctx->drone->stepInfo.explosionHit[hitDrone->idx] = true;
     ctx->e->stats[ctx->drone->idx].shotsHit[ctx->weaponType]++;
     DEBUG_LOGF("drone %d hit drone %d with explosion from weapon %d", ctx->drone->idx, hitDrone->idx, ctx->weaponType);
-    hitDrone->stepInfo.shotTaken[ctx->drone->idx] = true;
+    hitDrone->stepInfo.explosionTaken[ctx->drone->idx] = true;
     ctx->e->stats[hitDrone->idx].shotsTaken[ctx->weaponType]++;
     DEBUG_LOGF("drone %d hit by explosion from drone %d with weapon %d", hitDrone->idx, ctx->drone->idx, ctx->weaponType);
 
@@ -818,7 +823,7 @@ bool burstExplodeCallback(b2ShapeId shapeID, void *context) {
         ctx->parentDrone->stepInfo.explosionHit[drone->idx] = true;
         ctx->e->stats[ctx->parentDrone->idx].burstsHit++;
         DEBUG_LOGF("drone %d hit drone %d with burst", ctx->parentDrone->idx, drone->idx);
-        drone->stepInfo.shotTaken[ctx->parentDrone->idx] = true;
+        drone->stepInfo.explosionTaken[ctx->parentDrone->idx] = true;
         DEBUG_LOGF("drone %d hit burst from drone %d", drone->idx, ctx->parentDrone->idx);
     }
     bool isStaticWall = false;
@@ -1121,7 +1126,7 @@ bool handleProjectileBeginContact(env *e, const entity *proj, const entity *ent)
                 shooterDrone->stepInfo.shotHit[hitDrone->idx] = projectile->weaponInfo->type + 1;
                 e->stats[shooterDrone->idx].shotsHit[projectile->weaponInfo->type]++;
                 DEBUG_LOGF("drone %d hit drone %d with weapon %d", shooterDrone->idx, hitDrone->idx, projectile->weaponInfo->type);
-                hitDrone->stepInfo.shotTaken[shooterDrone->idx] = true;
+                hitDrone->stepInfo.shotTaken[shooterDrone->idx] = projectile->weaponInfo->type + 1;
                 e->stats[hitDrone->idx].shotsTaken[projectile->weaponInfo->type]++;
                 DEBUG_LOGF("drone %d hit by drone %d with weapon %d", hitDrone->idx, shooterDrone->idx, projectile->weaponInfo->type);
             } else {

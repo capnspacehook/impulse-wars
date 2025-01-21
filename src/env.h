@@ -262,6 +262,7 @@ const uint8_t searchDirections[8][2] = {
     {-1, -1},
 };
 
+// insertion sort should be faster than quicksort for small arrays
 void insertionSort(nearEntity arr[], uint8_t size) {
     for (int i = 1; i < size; i++) {
         nearEntity key = arr[i];
@@ -775,6 +776,11 @@ void resetEnv(env *e) {
     setupEnv(e);
 }
 
+float computeShotReward(const weaponInformation *weaponInfo) {
+    const float weaponForce = weaponInfo->fireMagnitude * weaponInfo->invMass;
+    return ((weaponForce * (0.5f * weaponForce)) * SHOT_HIT_REWARD_COEF) + 0.25f;
+}
+
 float computeExplosionReward(env *e, const uint8_t enemyIdx) {
     // compute reward based off of how much the projectile(s) or explosion(s)
     // caused the enemy drone to change velocity
@@ -787,23 +793,16 @@ float computeExplosionReward(env *e, const uint8_t enemyIdx) {
 float computeReward(env *e, droneEntity *drone) {
     float reward = 0.0f;
 
-    if (drone->diedThisStep) {
-        reward += DEATH_PUNISHMENT;
-        drone->diedThisStep = false;
+    if (drone->energyFullyDepleted && drone->energyRefillWait == DRONE_ENERGY_REFILL_EMPTY_WAIT) {
+        reward += ENERGY_EMPTY_PUNISHMENT;
     }
 
-    if (!drone->dead) {
-        if (drone->energyFullyDepleted && drone->energyRefillWait == DRONE_ENERGY_REFILL_EMPTY_WAIT) {
-            reward += ENERGY_EMPTY_PUNISHMENT;
-        }
-
-        // only reward picking up a weapon if the standard weapon was
-        // previously held; every weapon is better than the standard
-        // weapon, but other weapons are situational better so don't
-        // reward switching a non-standard weapon
-        if (drone->stepInfo.pickedUpWeapon && drone->stepInfo.prevWeapon == STANDARD_WEAPON) {
-            reward += WEAPON_PICKUP_REWARD;
-        }
+    // only reward picking up a weapon if the standard weapon was
+    // previously held; every weapon is better than the standard
+    // weapon, but other weapons are situational better so don't
+    // reward switching a non-standard weapon
+    if (drone->stepInfo.pickedUpWeapon && drone->stepInfo.prevWeapon == STANDARD_WEAPON) {
+        reward += WEAPON_PICKUP_REWARD;
     }
 
     for (uint8_t i = 0; i < e->numDrones; i++) {
@@ -815,14 +814,27 @@ float computeReward(env *e, droneEntity *drone) {
             // subtract 1 from the weapon type because 1 is added so we
             // can use 0 as no shot was hit
             const weaponInformation *weaponInfo = weaponInfos[drone->stepInfo.shotHit[i] - 1];
-            const float weaponForce = weaponInfo->fireMagnitude * weaponInfo->invMass;
-            reward += ((weaponForce * (0.5f * weaponForce)) * SHOT_HIT_REWARD_COEF) + 0.25f;
+            reward += computeShotReward(weaponInfo);
+        }
+        if (drone->stepInfo.shotTaken[i] != 0) {
+            const weaponInformation *weaponInfo = weaponInfos[drone->stepInfo.shotTaken[i] - 1];
+            reward -= computeShotReward(weaponInfo);
         }
         if (drone->stepInfo.explosionHit[i]) {
             reward += computeExplosionReward(e, i);
         }
+        if (drone->stepInfo.explosionTaken[i]) {
+            reward -= computeExplosionReward(e, drone->idx);
+        }
 
         const droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
+        if (enemyDrone->dead) {
+            if (enemyDrone->diedThisStep) {
+                reward += KILL_REWARD;
+            }
+            continue;
+        }
+
         const b2Vec2 enemyDirection = b2Normalize(b2Sub(enemyDrone->pos.pos, drone->pos.pos));
         const float velocityToEnemy = b2Dot(drone->lastVelocity, enemyDirection);
         const float enemyDistance = b2Distance(enemyDrone->pos.pos, drone->pos.pos);
@@ -841,39 +853,21 @@ float computeReward(env *e, droneEntity *drone) {
 const float REWARD_EPS = 1.0e-6f;
 
 void computeRewards(env *e, const bool roundOver, const int8_t winner) {
-    float rewards[e->numDrones];
-    memset(rewards, 0.0f, e->numDrones * sizeof(float));
-
     if (roundOver && winner != -1) {
-        rewards[winner] += WIN_REWARD;
+        e->rewards[winner] += WIN_REWARD;
     }
 
     for (uint8_t i = 0; i < e->numDrones; i++) {
+        float reward = 0.0f;
         droneEntity *drone = safe_array_get_at(e->drones, i);
-        rewards[i] += computeReward(e, drone);
-    }
-
-    // don't zero sum rewards if there's only one agent
-    if (e->numAgents != e->numDrones) {
-        for (uint8_t i = 0; i < e->numDrones; i++) {
-            e->rewards[i] += rewards[i];
-            e->stats[i].reward += rewards[i];
+        if (!drone->dead) {
+            reward = computeReward(e, drone);
+        } else if (drone->diedThisStep) {
+            reward = DEATH_PUNISHMENT;
+            drone->diedThisStep = false;
         }
-        return;
-    }
-
-    float totalReward = 0.0f;
-    for (uint8_t i = 0; i < e->numDrones; i++) {
-        totalReward += rewards[i];
-    }
-    totalReward /= e->numDrones;
-
-    for (uint8_t i = 0; i < e->numDrones; i++) {
-        rewards[i] -= totalReward;
-        e->stats[i].reward += rewards[i];
-        if (i < e->numAgents) {
-            e->rewards[i] += rewards[i];
-        }
+        e->rewards[i] += reward;
+        e->stats[i].reward += reward;
     }
 }
 
@@ -1093,6 +1087,8 @@ void stepEnv(env *e) {
 
         for (uint8_t i = 0; i < e->numDrones; i++) {
             droneEntity *drone = safe_array_get_at(e->drones, i);
+            memset(&drone->stepInfo, 0x0, sizeof(droneStepInfo));
+            memset(&drone->inLineOfSight, 0x0, sizeof(drone->inLineOfSight));
             if (drone->dead) {
                 continue;
             }
@@ -1104,8 +1100,6 @@ void stepEnv(env *e) {
             if (drone->dead) {
                 continue;
             }
-            memset(&drone->stepInfo, 0x0, sizeof(droneStepInfo));
-            memset(&drone->inLineOfSight, 0x0, sizeof(drone->inLineOfSight));
 
             agentActions actions;
             // take inputs from humans every frame
@@ -1227,12 +1221,26 @@ void stepEnv(env *e) {
         }
     }
 
-    for (uint8_t i = 0; i < e->numAgents; i++) {
-        const float reward = e->rewards[i];
-        if (reward > REWARD_EPS || reward < -REWARD_EPS) {
-            DEBUG_LOGF("step: %d drone: %d reward: %f", e->totalSteps - e->stepsLeft, i, reward);
+#ifndef NDEBUG
+    bool gotReward = false;
+    for (uint8_t i = 0; i < e->numDrones; i++) {
+        if (e->rewards[i] > REWARD_EPS || e->rewards[i] < -REWARD_EPS) {
+            gotReward = true;
+            break;
         }
     }
+    if (gotReward) {
+        DEBUG_RAW_LOG("rewards: [");
+        for (uint8_t i = 0; i < e->numDrones; i++) {
+            const float reward = e->rewards[i];
+            DEBUG_RAW_LOGF("%f", reward);
+            if (i < e->numDrones - 1) {
+                DEBUG_RAW_LOG(", ");
+            }
+        }
+        DEBUG_RAW_LOGF("] step %d\n", e->totalSteps - e->stepsLeft);
+    }
+#endif
 
     computeObs(e);
 }

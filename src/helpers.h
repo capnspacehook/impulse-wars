@@ -16,6 +16,16 @@
     time_t _t = time(NULL);   \
     struct tm *_timeinfo;     \
     _timeinfo = localtime(&_t)
+#define DEBUG_RAW_LOG(msg) \
+    do {                   \
+        printf(msg);       \
+        fflush(stdout);    \
+    } while (0)
+#define DEBUG_RAW_LOGF(fmt, args...) \
+    do {                             \
+        printf(fmt, args);           \
+        fflush(stdout);              \
+    } while (0)
 #define DEBUG_LOGF(fmt, args...)                                                                                             \
     do {                                                                                                                     \
         _DEBUG_GET_TIMEINFO();                                                                                               \
@@ -47,6 +57,8 @@
     } while (0)
 #else
 #define ON_ERROR abort()
+#define DEBUG_RAW_LOG(msg)
+#define DEBUG_RAW_LOGF(fmt, args...)
 #define DEBUG_LOGF(fmt, args...)
 #define DEBUG_LOG(msg)
 #define ASSERT(condition)
