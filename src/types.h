@@ -202,6 +202,11 @@ typedef struct logBuffer {
     uint16_t capacity;
 } logBuffer;
 
+typedef struct nearEntity {
+    void *entity;
+    float distance;
+} nearEntity;
+
 typedef struct rayClient {
     float scale;
     uint16_t width;
@@ -231,6 +236,11 @@ typedef struct agentActions {
     bool burst;
     bool discardWeapon;
 } agentActions;
+
+typedef struct pathingInfo {
+    uint8_t *paths;
+    int8_t *pathBuffer;
+} pathingInfo;
 
 typedef struct env {
     uint8_t numDrones;
@@ -273,6 +283,8 @@ typedef struct env {
     CC_Array *pickups;
     CC_SList *projectiles;
 
+    pathingInfo *mapPathing;
+
     uint16_t totalSteps;
     uint16_t totalSuddenDeathSteps;
     // steps left until sudden death
@@ -288,6 +300,7 @@ typedef struct env {
     CC_Array *brakeTrailPoints;
     // used for rendering explosions
     CC_Array *explosions;
+    b2Vec2 debugPoint;
     bool humanInput;
     uint8_t humanDroneInput;
 } env;

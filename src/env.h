@@ -123,8 +123,8 @@ static inline float scaleAmmo(const env *e, const droneEntity *drone) {
 }
 
 void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
-    const droneEntity *drone = safe_array_get_at(e->drones, agentIdx);
-    const b2Vec2 dronePos = drone->pos.pos;
+    droneEntity *drone = safe_array_get_at(e->drones, agentIdx);
+    const b2Vec2 dronePos = getCachedPos(drone->bodyID, &drone->pos);
     const int16_t droneCellIdx = entityPosToCellIdx(e, dronePos);
     if (droneCellIdx == -1) {
         DEBUG_LOGF("agent drone is out of bounds at %f %f", dronePos.x, dronePos.y);
@@ -211,8 +211,8 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
             continue;
         }
 
-        const droneEntity *otherDrone = safe_array_get_at(e->drones, i);
-        const b2Vec2 pos = otherDrone->pos.pos;
+        droneEntity *otherDrone = safe_array_get_at(e->drones, i);
+        const b2Vec2 pos = getCachedPos(otherDrone->bodyID, &otherDrone->pos);
         int16_t cellIdx = entityPosToCellIdx(e, pos);
         if (cellIdx == -1) {
             DEBUG_LOGF("drone %d out of bounds at position %f %f", i, pos.x, pos.y);
@@ -246,106 +246,16 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
     }
 }
 
-typedef struct nearEntity {
-    void *entity;
-    float distance;
-} nearEntity;
-
-const uint8_t searchDirections[8][2] = {
-    {0, -1},
-    {1, -1},
-    {1, 0},
-    {1, 1},
-    {0, 1},
-    {-1, 1},
-    {-1, 0},
-    {-1, -1},
-};
-
-// insertion sort should be faster than quicksort for small arrays
-void insertionSort(nearEntity arr[], uint8_t size) {
-    for (int i = 1; i < size; i++) {
-        nearEntity key = arr[i];
-        int j = i - 1;
-
-        while (j >= 0 && arr[j].distance > key.distance) {
-            arr[j + 1] = arr[j];
-            j = j - 1;
-        }
-
-        arr[j + 1] = key;
-    }
-}
-
 #ifndef AUTOPXD
-void computeNearMapObs(env *e, const droneEntity *drone, float *scalarObs) {
-    const b2Vec2 dronePos = drone->pos.pos;
-    // don't need to check if the cell is valid since that was already
-    // checked in computeMapObs
-    const int16_t droneCellIdx = entityPosToCellIdx(e, dronePos);
-    int8_t droneCellRow = droneCellIdx % e->columns;
-    int8_t droneCellCol = droneCellIdx / e->columns;
-
-    // find near walls and weapon pickups
-    nearEntity nearWalls[64] = {0};
-    nearEntity nearWeaponPickups[MAX_WEAPON_PICKUPS] = {0};
-    uint8_t foundWalls = 0;
-    uint8_t foundPickups = 0;
-    int8_t xDirection = 1;
-    int8_t yDirection = 0;
-    int8_t row = droneCellRow;
-    int8_t col = droneCellCol;
-    uint8_t segmentLen = 1;
-    uint8_t segmentPassed = 0;
-    uint8_t segmentsCompleted = 0;
-
-    // search for near walls and pickups in a spiral; pickups may be
-    // scattered, so if we don't find them all here we'll just sort all
-    // pickups by distance later
-    while (segmentsCompleted % 5 != 0 || foundWalls < NUM_NEAR_WALL_OBS) {
-        row += xDirection;
-        col += yDirection;
-        const int16_t cellIdx = cellIndex(e, row, col);
-        segmentPassed++;
-
-        if (segmentPassed == segmentLen) {
-            // if we have completed a segment, change direction
-            segmentsCompleted++;
-            segmentPassed = 0;
-            uint8_t temp = xDirection;
-            xDirection = -yDirection;
-            yDirection = temp;
-            if (yDirection == 0) {
-                // increase the segment length if necessary
-                segmentLen++;
-            }
-        }
-
-        if (cellIdx < 0 || row < 0 || row >= e->rows || col < 0 || col >= e->columns) {
-            continue;
-        }
-
-        const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
-        if (cell->ent == NULL || (cell->ent->type != WEAPON_PICKUP_ENTITY && !entityTypeIsWall(cell->ent->type))) {
-            continue;
-        }
-
-        nearEntity nearEntity = {
-            .entity = cell->ent->entity,
-            .distance = b2Distance(cell->pos, dronePos),
-        };
-        if (cell->ent->type != WEAPON_PICKUP_ENTITY) {
-            nearWalls[foundWalls++] = nearEntity;
-        } else if (cell->ent->type == WEAPON_PICKUP_ENTITY) {
-            nearWeaponPickups[foundPickups++] = nearEntity;
-        }
-    }
+void computeNearMapObs(env *e, droneEntity *drone, float *scalarObs) {
+    nearEntity nearWalls[MAX_NEAR_WALLS] = {0};
+    nearEntity nearPickups[MAX_WEAPON_PICKUPS] = {0};
+    findNearWallsAndPickups(e, drone, nearWalls, NUM_NEAR_WALL_OBS, nearPickups, NUM_WEAPON_PICKUP_OBS);
 
     uint16_t offset;
+    const b2Vec2 dronePos = getCachedPos(drone->bodyID, &drone->pos);
 
     // compute type and position of N nearest walls
-    ASSERTF(foundWalls >= NUM_NEAR_WALL_OBS, "foundWalls: %d", foundWalls);
-    insertionSort(nearWalls, foundWalls);
     for (uint8_t i = 0; i < NUM_NEAR_WALL_OBS; i++) {
         const wallEntity *wall = (wallEntity *)nearWalls[i].entity;
 
@@ -407,33 +317,11 @@ void computeNearMapObs(env *e, const droneEntity *drone, float *scalarObs) {
     }
 
     // compute type and location of N nearest weapon pickups
-    if (foundPickups < NUM_WEAPON_PICKUP_OBS) {
-        // if we didn't find enough pickups, add the rest of the pickups
-        // and sort them by distance
-        for (uint8_t i = 0; i < cc_array_size(e->pickups); i++) {
-            weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
-            if (i < foundPickups) {
-                const weaponPickupEntity *nearPickup = (weaponPickupEntity *)nearWeaponPickups[i].entity;
-                if (nearPickup == pickup) {
-                    continue;
-                }
-            }
-
-            nearEntity nearEntity = {
-                .entity = pickup,
-                .distance = b2Distance(pickup->pos, dronePos),
-            };
-            nearWeaponPickups[i] = nearEntity;
-        }
-        foundPickups = cc_array_size(e->pickups);
-    }
-
-    insertionSort(nearWeaponPickups, foundPickups);
     for (uint8_t i = 0; i < cc_array_size(e->pickups); i++) {
         if (i == NUM_WEAPON_PICKUP_OBS) {
             break;
         }
-        const weaponPickupEntity *pickup = (weaponPickupEntity *)nearWeaponPickups[i].entity;
+        const weaponPickupEntity *pickup = (weaponPickupEntity *)nearPickups[i].entity;
 
         offset = WEAPON_PICKUP_TYPES_OBS_OFFSET + i;
         ASSERTF(offset <= WEAPON_PICKUP_POS_OBS_OFFSET, "offset: %d", offset);
@@ -454,7 +342,7 @@ void computeObs(env *e) {
     memset(e->obs, 0x0, e->obsBytes * e->numAgents);
 
     for (uint8_t agentIdx = 0; agentIdx < e->numAgents; agentIdx++) {
-        const droneEntity *agentDrone = safe_array_get_at(e->drones, agentIdx);
+        droneEntity *agentDrone = safe_array_get_at(e->drones, agentIdx);
         if (agentDrone->dead && !agentDrone->diedThisStep) {
             continue;
         }
@@ -469,7 +357,7 @@ void computeObs(env *e) {
         const uint16_t scalarObsStart = mapObsStart + e->mapObsBytes;
         float *scalarObs = (float *)(e->obs + scalarObsStart);
 
-        const b2Vec2 agentDronePos = agentDrone->pos.pos;
+        const b2Vec2 agentDronePos = getCachedPos(agentDrone->bodyID, &agentDrone->pos);
         computeNearMapObs(e, agentDrone, scalarObs);
 
         // compute type and location of N projectiles
@@ -514,17 +402,18 @@ void computeObs(env *e) {
                 tookShot = true;
             }
 
-            const droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
+            droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
             if (enemyDrone->dead) {
                 processedDrones++;
                 continue;
             }
 
-            const b2Vec2 enemyDroneRelPos = b2Sub(enemyDrone->pos.pos, agentDronePos);
-            const float enemyDroneDistance = b2Distance(enemyDrone->pos.pos, agentDronePos);
+            const b2Vec2 enemyDronePos = getCachedPos(enemyDrone->bodyID, &enemyDrone->pos);
+            const b2Vec2 enemyDroneRelPos = b2Sub(enemyDronePos, agentDronePos);
+            const float enemyDroneDistance = b2Distance(enemyDronePos, agentDronePos);
             const b2Vec2 enemyDroneVel = b2Body_GetLinearVelocity(enemyDrone->bodyID);
             const b2Vec2 enemyDroneAccel = b2Sub(enemyDroneVel, enemyDrone->lastVelocity);
-            const b2Vec2 enemyDroneRelNormPos = b2Normalize(b2Sub(enemyDrone->pos.pos, agentDronePos));
+            const b2Vec2 enemyDroneRelNormPos = b2Normalize(b2Sub(enemyDronePos, agentDronePos));
             const float enemyDroneAimAngle = atan2f(enemyDrone->lastAim.y, enemyDrone->lastAim.x);
             float enemyDroneBraking = 0.0f;
             if (enemyDrone->lightBraking) {
@@ -675,6 +564,7 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
     e->discretizeActions = discretizeActions;
     e->contActions = contActions;
     e->discActions = discActions;
+
     e->rewards = rewards;
     e->terminals = terminals;
     e->truncations = truncations;
@@ -704,6 +594,15 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
     cc_slist_new(&e->projectiles);
     cc_array_new(&e->brakeTrailPoints);
     cc_array_new(&e->explosions);
+
+    e->mapPathing = fastCalloc(NUM_MAPS, sizeof(pathingInfo));
+    for (uint8_t i = 0; i < NUM_MAPS; i++) {
+        const mapEntry *map = maps[i];
+        pathingInfo *info = &e->mapPathing[i];
+        info->paths = fastMalloc(map->rows * map->columns * map->rows * map->columns * sizeof(uint8_t));
+        memset(info->paths, UINT8_MAX, map->rows * map->columns * map->rows * map->columns * sizeof(uint8_t));
+        info->pathBuffer = fastCalloc(3 * 8 * map->rows * map->columns, sizeof(int8_t));
+    }
 
     e->humanInput = false;
     e->humanDroneInput = 0;
@@ -765,7 +664,22 @@ void clearEnv(env *e) {
 void destroyEnv(env *e) {
     clearEnv(e);
 
-    b2DestroyWorld(e->worldID);
+    for (uint8_t i = 0; i < NUM_MAPS; i++) {
+        pathingInfo *info = &e->mapPathing[i];
+        fastFree(info->paths);
+        fastFree(info->pathBuffer);
+    }
+    fastFree(e->mapPathing);
+
+    for (size_t i = 0; i < cc_array_size(e->walls); i++) {
+        wallEntity *wall = safe_array_get_at(e->walls, i);
+        destroyWall(e, wall, false);
+    }
+
+    for (size_t i = 0; i < cc_array_size(e->cells); i++) {
+        mapCell *cell = safe_array_get_at(e->cells, i);
+        fastFree(cell);
+    }
 
     cc_array_destroy(e->cells);
     cc_array_destroy(e->walls);
@@ -775,6 +689,8 @@ void destroyEnv(env *e) {
     cc_slist_destroy(e->projectiles);
     cc_array_destroy(e->brakeTrailPoints);
     cc_array_destroy(e->explosions);
+
+    b2DestroyWorld(e->worldID);
 }
 
 void resetEnv(env *e) {
@@ -815,11 +731,12 @@ float computeReward(env *e, droneEntity *drone) {
         reward += WEAPON_PICKUP_REWARD;
     }
 
+    const b2Vec2 dronePos = getCachedPos(drone->bodyID, &drone->pos);
     for (uint8_t i = 0; i < e->numDrones; i++) {
         if (i == drone->idx) {
             continue;
         }
-        const droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
+        droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
 
         if (drone->stepInfo.shotHit[i] != 0) {
             // subtract 1 from the weapon type because 1 is added so we
@@ -827,15 +744,18 @@ float computeReward(env *e, droneEntity *drone) {
             const weaponInformation *weaponInfo = weaponInfos[drone->stepInfo.shotHit[i] - 1];
             reward += computeShotReward(enemyDrone, weaponInfo);
         }
-        if (drone->stepInfo.shotTaken[i] != 0) {
-            const weaponInformation *weaponInfo = weaponInfos[drone->stepInfo.shotTaken[i] - 1];
-            reward -= computeShotReward(drone, weaponInfo) * 0.5f;
-        }
         if (drone->stepInfo.explosionHit[i]) {
             reward += computeExplosionReward(enemyDrone);
         }
-        if (drone->stepInfo.explosionTaken[i]) {
-            reward -= computeExplosionReward(drone) * 0.5f;
+
+        if (e->numAgents > 1) {
+            if (drone->stepInfo.shotTaken[i] != 0) {
+                const weaponInformation *weaponInfo = weaponInfos[drone->stepInfo.shotTaken[i] - 1];
+                reward -= computeShotReward(drone, weaponInfo) * 0.5f;
+            }
+            if (drone->stepInfo.explosionTaken[i]) {
+                reward -= computeExplosionReward(drone) * 0.5f;
+            }
         }
 
         if (enemyDrone->dead) {
@@ -845,9 +765,10 @@ float computeReward(env *e, droneEntity *drone) {
             continue;
         }
 
-        const b2Vec2 enemyDirection = b2Normalize(b2Sub(enemyDrone->pos.pos, drone->pos.pos));
+        const b2Vec2 enemyPos = getCachedPos(enemyDrone->bodyID, &enemyDrone->pos);
+        const b2Vec2 enemyDirection = b2Normalize(b2Sub(enemyPos, dronePos));
         const float velocityToEnemy = b2Dot(drone->lastVelocity, enemyDirection);
-        const float enemyDistance = b2Distance(enemyDrone->pos.pos, drone->pos.pos);
+        const float enemyDistance = b2Distance(enemyPos, dronePos);
         // stop rewarding approaching an enemy if they're very close
         // to avoid constant clashing; always reward approaching when
         // the current weapon is the shotgun, it greatly benefits from
@@ -863,7 +784,7 @@ float computeReward(env *e, droneEntity *drone) {
 const float REWARD_EPS = 1.0e-6f;
 
 void computeRewards(env *e, const bool roundOver, const int8_t winner) {
-    if (roundOver && winner != -1) {
+    if (roundOver && winner != -1 && winner < e->numAgents) {
         e->rewards[winner] += WIN_REWARD;
     }
 
@@ -875,7 +796,9 @@ void computeRewards(env *e, const bool roundOver, const int8_t winner) {
         } else if (drone->diedThisStep) {
             reward = DEATH_PUNISHMENT;
         }
-        e->rewards[i] += reward;
+        if (i < e->numAgents) {
+            e->rewards[i] += reward;
+        }
         e->stats[i].reward += reward;
     }
 }

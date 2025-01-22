@@ -495,6 +495,10 @@ void renderEnv(env *e) {
     //     }
     // }
 
+    if (!b2VecEqual(e->debugPoint, b2Vec2_zero)) {
+        DrawCircleV(b2VecToRayVec(e, e->debugPoint), DRONE_RADIUS * 0.5f * e->renderScale, WHITE);
+    }
+
     EndDrawing();
 }
 

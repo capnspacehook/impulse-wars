@@ -219,41 +219,6 @@ void createSuddenDeathWalls(env *e, const b2Vec2 startPos, const b2Vec2 size) {
     }
 }
 
-b2ShapeProxy makeDistanceProxy(const entity *ent, bool *isCircle) {
-    b2ShapeProxy proxy = {0};
-    switch (ent->type) {
-    case PROJECTILE_ENTITY:
-        *isCircle = true;
-        const projectileEntity *proj = (projectileEntity *)ent->entity;
-        proxy.radius = proj->weaponInfo->radius;
-        break;
-    case DRONE_ENTITY:
-        *isCircle = true;
-        proxy.radius = DRONE_RADIUS;
-        break;
-    case WEAPON_PICKUP_ENTITY:
-        proxy.count = 4;
-        proxy.points[0] = (b2Vec2){.x = -PICKUP_THICKNESS / 2.0f, .y = -PICKUP_THICKNESS / 2.0f};
-        proxy.points[1] = (b2Vec2){.x = -PICKUP_THICKNESS / 2.0f, .y = +PICKUP_THICKNESS / 2.0f};
-        proxy.points[2] = (b2Vec2){.x = +PICKUP_THICKNESS / 2.0f, .y = -PICKUP_THICKNESS / 2.0f};
-        proxy.points[3] = (b2Vec2){.x = +PICKUP_THICKNESS / 2.0f, .y = +PICKUP_THICKNESS / 2.0f};
-        break;
-    case STANDARD_WALL_ENTITY:
-    case BOUNCY_WALL_ENTITY:
-    case DEATH_WALL_ENTITY:
-        proxy.count = 4;
-        proxy.points[0] = (b2Vec2){.x = -FLOATING_WALL_THICKNESS / 2.0f, .y = -FLOATING_WALL_THICKNESS / 2.0f};
-        proxy.points[1] = (b2Vec2){.x = -FLOATING_WALL_THICKNESS / 2.0f, .y = +FLOATING_WALL_THICKNESS / 2.0f};
-        proxy.points[2] = (b2Vec2){.x = +FLOATING_WALL_THICKNESS / 2.0f, .y = -FLOATING_WALL_THICKNESS / 2.0f};
-        proxy.points[3] = (b2Vec2){.x = +FLOATING_WALL_THICKNESS / 2.0f, .y = +FLOATING_WALL_THICKNESS / 2.0f};
-        break;
-    default:
-        ERRORF("unknown entity type for shape distance: %d", ent->type);
-    }
-
-    return proxy;
-}
-
 enum weaponType randWeaponPickupType(env *e) {
     while (true) {
         const enum weaponType type = (enum weaponType)randInt(&e->randState, STANDARD_WEAPON + 1, NUM_WEAPONS - 1);
@@ -774,6 +739,47 @@ void droneChargeBurst(env *e, droneEntity *drone) {
     }
 }
 
+b2ShapeProxy makeDistanceProxyFromType(const enum entityType type, bool *isCircle) {
+    b2ShapeProxy proxy = {0};
+    switch (type) {
+    case DRONE_ENTITY:
+        *isCircle = true;
+        proxy.radius = DRONE_RADIUS;
+        break;
+    case WEAPON_PICKUP_ENTITY:
+        proxy.count = 4;
+        proxy.points[0] = (b2Vec2){.x = -PICKUP_THICKNESS / 2.0f, .y = -PICKUP_THICKNESS / 2.0f};
+        proxy.points[1] = (b2Vec2){.x = -PICKUP_THICKNESS / 2.0f, .y = +PICKUP_THICKNESS / 2.0f};
+        proxy.points[2] = (b2Vec2){.x = +PICKUP_THICKNESS / 2.0f, .y = -PICKUP_THICKNESS / 2.0f};
+        proxy.points[3] = (b2Vec2){.x = +PICKUP_THICKNESS / 2.0f, .y = +PICKUP_THICKNESS / 2.0f};
+        break;
+    case STANDARD_WALL_ENTITY:
+    case BOUNCY_WALL_ENTITY:
+    case DEATH_WALL_ENTITY:
+        proxy.count = 4;
+        proxy.points[0] = (b2Vec2){.x = -FLOATING_WALL_THICKNESS / 2.0f, .y = -FLOATING_WALL_THICKNESS / 2.0f};
+        proxy.points[1] = (b2Vec2){.x = -FLOATING_WALL_THICKNESS / 2.0f, .y = +FLOATING_WALL_THICKNESS / 2.0f};
+        proxy.points[2] = (b2Vec2){.x = +FLOATING_WALL_THICKNESS / 2.0f, .y = -FLOATING_WALL_THICKNESS / 2.0f};
+        proxy.points[3] = (b2Vec2){.x = +FLOATING_WALL_THICKNESS / 2.0f, .y = +FLOATING_WALL_THICKNESS / 2.0f};
+        break;
+    default:
+        ERRORF("unknown entity type for shape distance: %d", type);
+    }
+
+    return proxy;
+}
+
+b2ShapeProxy makeDistanceProxy(const entity *ent, bool *isCircle) {
+    if (ent->type == PROJECTILE_ENTITY) {
+        b2ShapeProxy proxy = {0};
+        const projectileEntity *proj = (projectileEntity *)ent->entity;
+        proxy.radius = proj->weaponInfo->radius;
+        return proxy;
+    }
+
+    return makeDistanceProxyFromType(ent->type, isCircle);
+}
+
 // simplified and copied from box2d/src/shape.c
 float getShapeProjectedPerimeter(const b2ShapeId shapeID, const b2Vec2 line) {
     if (b2Shape_GetType(shapeID) == b2_circleShape) {
@@ -976,6 +982,27 @@ void droneDiscardWeapon(env *e, droneEntity *drone) {
     }
 }
 
+typedef struct castCircleCtx {
+    bool hit;
+    b2ShapeId shapeID;
+} castCircleCtx;
+
+float castCircleCallback(b2ShapeId shapeId, b2Vec2 point, b2Vec2 normal, float fraction, void *context) {
+    // these parameters are required by the callback signature
+    MAYBE_UNUSED(point);
+    MAYBE_UNUSED(normal);
+    if (!b2Shape_IsValid(shapeId)) {
+        // skip this shape if it isn't valid
+        return -1.0f;
+    }
+
+    castCircleCtx *ctx = (castCircleCtx *)context;
+    ctx->hit = true;
+    ctx->shapeID = shapeId;
+
+    return fraction;
+}
+
 void droneStep(env *e, droneEntity *drone) {
     // manage weapon charge and heat
     if (drone->weaponCooldown != 0.0f) {
@@ -1017,19 +1044,22 @@ void droneStep(env *e, droneEntity *drone) {
         }
 
         droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
-        const b2Vec2 enemyPos = enemyDrone->pos.pos;
-        const float distance = b2Distance(enemyPos, pos);
+        const b2Vec2 enemyPos = getCachedPos(enemyDrone->bodyID, &enemyDrone->pos);
+        const float enemyDistance = b2Distance(enemyPos, pos);
         const b2Vec2 enemyDirection = b2Normalize(b2Sub(enemyPos, pos));
-        const b2Vec2 rayEnd = b2MulAdd(pos, distance, enemyDirection);
-        const b2Vec2 translation = b2Sub(rayEnd, pos);
+        const b2Vec2 castEnd = b2MulAdd(pos, enemyDistance, enemyDirection);
+        const b2Vec2 translation = b2Sub(castEnd, pos);
+        const b2Circle projCircle = {.center = b2Vec2_zero, .radius = drone->weaponInfo->radius};
+        const b2Transform projTransform = {.p = pos, .q = b2Rot_identity};
         const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | DRONE_SHAPE};
-        const b2RayResult rayRes = b2World_CastRayClosest(e->worldID, pos, translation, filter);
 
-        if (!rayRes.hit) {
+        castCircleCtx ctx = {0};
+        b2World_CastCircle(e->worldID, &projCircle, projTransform, translation, filter, castCircleCallback, &ctx);
+        if (!ctx.hit) {
             continue;
         }
-        ASSERT(b2Shape_IsValid(rayRes.shapeId));
-        const entity *ent = b2Shape_GetUserData(rayRes.shapeId);
+        ASSERT(b2Shape_IsValid(ctx.shapeID));
+        const entity *ent = b2Shape_GetUserData(ctx.shapeID);
         if (ent != NULL && ent->type == DRONE_ENTITY) {
             // get the drone entity in case another drone is between the
             // current drone and the enemy drone
@@ -1327,5 +1357,117 @@ void handleSensorEvents(env *e) {
         handleWeaponPickupEndTouch(s, v);
     }
 }
+
+const uint8_t searchDirections[8][2] = {
+    {0, -1},
+    {1, -1},
+    {1, 0},
+    {1, 1},
+    {0, 1},
+    {-1, 1},
+    {-1, 0},
+    {-1, -1},
+};
+
+// insertion sort should be faster than quicksort for small arrays
+void insertionSort(nearEntity arr[], uint8_t size) {
+    for (int i = 1; i < size; i++) {
+        nearEntity key = arr[i];
+        int j = i - 1;
+
+        while (j >= 0 && arr[j].distance > key.distance) {
+            arr[j + 1] = arr[j];
+            j = j - 1;
+        }
+
+        arr[j + 1] = key;
+    }
+}
+
+#ifndef AUTOPXD
+void findNearWallsAndPickups(const env *e, droneEntity *drone, nearEntity nearWalls[], const uint8_t nWalls, nearEntity nearPickups[], const uint8_t nPickups) {
+    const b2Vec2 dronePos = getCachedPos(drone->bodyID, &drone->pos);
+    const int16_t droneCellIdx = entityPosToCellIdx(e, dronePos);
+    int8_t droneCellRow = droneCellIdx % e->columns;
+    int8_t droneCellCol = droneCellIdx / e->columns;
+
+    uint8_t foundWalls = 0;
+    uint8_t foundPickups = 0;
+    int8_t xDirection = 1;
+    int8_t yDirection = 0;
+    int8_t row = droneCellRow;
+    int8_t col = droneCellCol;
+    uint8_t segmentLen = 1;
+    uint8_t segmentPassed = 0;
+    uint8_t segmentsCompleted = 0;
+
+    // search for near walls and pickups in a spiral; pickups may be
+    // scattered, so if we don't find them all here we'll just sort all
+    // pickups by distance later
+    while (segmentsCompleted % 5 != 0 || foundWalls < nWalls) {
+        row += xDirection;
+        col += yDirection;
+        const int16_t cellIdx = cellIndex(e, row, col);
+        segmentPassed++;
+
+        if (segmentPassed == segmentLen) {
+            // if we have completed a segment, change direction
+            segmentsCompleted++;
+            segmentPassed = 0;
+            uint8_t temp = xDirection;
+            xDirection = -yDirection;
+            yDirection = temp;
+            if (yDirection == 0) {
+                // increase the segment length if necessary
+                segmentLen++;
+            }
+        }
+
+        if (cellIdx < 0 || row < 0 || row >= e->rows || col < 0 || col >= e->columns) {
+            continue;
+        }
+
+        const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
+        if (cell->ent == NULL || (cell->ent->type != WEAPON_PICKUP_ENTITY && !entityTypeIsWall(cell->ent->type))) {
+            continue;
+        }
+
+        nearEntity nearEntity = {
+            .entity = cell->ent->entity,
+            .distance = b2Distance(cell->pos, dronePos),
+        };
+        if (cell->ent->type != WEAPON_PICKUP_ENTITY) {
+            nearWalls[foundWalls++] = nearEntity;
+        } else if (cell->ent->type == WEAPON_PICKUP_ENTITY) {
+            nearPickups[foundPickups++] = nearEntity;
+        }
+    }
+
+    ASSERTF(foundWalls >= nWalls, "foundWalls: %d", foundWalls);
+    insertionSort(nearWalls, foundWalls);
+
+    // if we didn't find enough pickups, add the rest of the pickups
+    // and sort them by distance
+    if (foundPickups < nPickups) {
+        for (uint8_t i = 0; i < cc_array_size(e->pickups); i++) {
+            weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
+            if (i < foundPickups) {
+                const weaponPickupEntity *nearPickup = (weaponPickupEntity *)nearPickups[i].entity;
+                if (nearPickup == pickup) {
+                    continue;
+                }
+            }
+
+            nearEntity nearEntity = {
+                .entity = pickup,
+                .distance = b2Distance(pickup->pos, dronePos),
+            };
+            nearPickups[i] = nearEntity;
+        }
+        foundPickups = cc_array_size(e->pickups);
+    }
+    insertionSort(nearPickups, foundPickups);
+}
+#endif
 
 #endif

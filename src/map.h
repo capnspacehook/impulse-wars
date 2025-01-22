@@ -304,8 +304,6 @@ const mapEntry foamPitMap = {
 
 // clang-format on
 
-#define NUM_MAPS 8
-
 #ifndef AUTOPXD
 const mapEntry *maps[] = {
     (mapEntry *)&boringMap,
@@ -415,8 +413,8 @@ void setupMap(env *e, const uint8_t mapIdx) {
         for (int col = 0; col < columns; col++) {
             char cellType = layout[col + (row * columns)];
             enum entityType wallType;
-            float x = (col - (columns / 2.0f) + 0.5) * WALL_THICKNESS;
-            float y = ((rows / 2.0f) - (rows - row) + 0.5f) * WALL_THICKNESS;
+            const float x = (col - (columns / 2.0f) + 0.5) * WALL_THICKNESS;
+            const float y = ((rows / 2.0f) - (rows - row) + 0.5f) * WALL_THICKNESS;
 
             b2Vec2 pos = {.x = x, .y = y};
             mapCell *cell = (mapCell *)fastCalloc(1, sizeof(mapCell));
