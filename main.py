@@ -63,7 +63,10 @@ def train(args) -> Deque[Dict[str, Any]] | None:
     if args.render:
         vecenv.reset()
 
-    policy = make_policy(vecenv.driver_env, args.env, True).to(args.train.device)
+    if args.model_path is None:
+        policy = make_policy(vecenv.driver_env, args.env, True).to(args.train.device)
+    else:
+        policy = th.load(args.model_path, map_location=args.train.device)
 
     data = clean_pufferl.create(args.train, vecenv, policy, wandb=args.wandb)
 
@@ -152,7 +155,7 @@ if __name__ == "__main__":
         choices="train eval playtest autotune sweep".split(),
     )
     parser.add_argument("--sweep-child", action="store_true")
-    parser.add_argument("--eval-model-path", type=str, default=None, help="Path to model to evaluate")
+    parser.add_argument("--model-path", type=str, default=None, help="Path to model to evaluate or resume training")
     parser.add_argument("--seed", type=int, default=-1)
     parser.add_argument("--render", action="store_true", help="Enable rendering")
     parser.add_argument("--cell-id", type=int, default=0)
@@ -264,10 +267,10 @@ if __name__ == "__main__":
             backend=pufferlib.PufferEnv,
         )
 
-        if args.eval_model_path is None:
+        if args.model_path is None:
             policy = make_policy(vecenv, args.env, False).to(args.train.device)
         else:
-            policy = th.load(args.eval_model_path, map_location=args.train.device)
+            policy = th.load(args.model_path, map_location=args.train.device)
             policy.policy.policy.isTraining = False
 
         for _ in range(10):

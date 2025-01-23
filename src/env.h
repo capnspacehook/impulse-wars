@@ -793,7 +793,7 @@ void computeRewards(env *e, const bool roundOver, const int8_t winner) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
         if (!drone->dead) {
             reward = computeReward(e, drone);
-        } else if (drone->diedThisStep) {
+        } else if (drone->diedThisStep && e->numAgents > 1) {
             reward = DEATH_PUNISHMENT;
         }
         if (i < e->numAgents) {
