@@ -12,85 +12,86 @@ const float WALL_DANGER_DISTANCE = 3.0f;
 const float WALL_DANGER_SPEED = 5.0f;
 
 static inline uint32_t pathOffset(const env *e, uint16_t srcCellIdx, uint16_t destCellIdx) {
-    const uint8_t srcRow = srcCellIdx % e->columns;
-    const uint8_t srcCol = srcCellIdx / e->columns;
-    const uint8_t destRow = destCellIdx % e->columns;
-    const uint8_t destCol = destCellIdx / e->columns;
-    return (destCol * e->rows * e->columns * e->rows) + (destRow * e->rows * e->columns) + (srcCol * e->columns) + srcRow;
+    const uint8_t srcCol = srcCellIdx % e->columns;
+    const uint8_t srcRow = srcCellIdx / e->columns;
+    const uint8_t destCol = destCellIdx % e->columns;
+    const uint8_t destRow = destCellIdx / e->columns;
+    return (destRow * e->rows * e->columns * e->rows) + (destCol * e->rows * e->columns) + (srcRow * e->columns) + srcCol;
 }
 
-void pathfindBFS(const env *e, uint8_t *flatPaths, uint16_t destCell) {
+void pathfindBFS(const env *e, uint8_t *flatPaths, uint16_t destCellIdx) {
     uint8_t(*paths)[e->columns] = (uint8_t(*)[e->columns])flatPaths;
     int8_t(*buffer)[3] = (int8_t(*)[3])e->mapPathing[e->mapIdx].pathBuffer;
 
     uint16_t start = 0;
     uint16_t end = 1;
 
-    const mapCell *cell = (mapCell *)safe_array_get_at(e->cells, destCell);
+    const mapCell *cell = (mapCell *)safe_array_get_at(e->cells, destCellIdx);
     if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
         return;
     }
-    const int8_t destRow = destCell % e->columns;
-    const int8_t destCol = destCell / e->columns;
+    const int8_t destCol = destCellIdx % e->columns;
+    const int8_t destRow = destCellIdx / e->columns;
 
     buffer[start][0] = 8;
-    buffer[start][1] = destRow;
-    buffer[start][2] = destCol;
+    buffer[start][1] = destCol;
+    buffer[start][2] = destRow;
     while (start < end) {
         const int8_t direction = buffer[start][0];
-        const int8_t startRow = buffer[start][1];
-        const int8_t startCol = buffer[start][2];
+        const int8_t startCol = buffer[start][1];
+        const int8_t startRow = buffer[start][2];
         start++;
 
-        if (startRow < 0 || startRow >= e->rows || startCol < 0 || startCol >= e->columns || paths[startCol][startRow] != UINT8_MAX) {
+        if (startCol < 0 || startCol >= e->columns || startRow < 0 || startRow >= e->rows || paths[startRow][startCol] != UINT8_MAX) {
             continue;
         }
-        int16_t cellIdx = cellIndex(e, startRow, startCol);
+        int16_t cellIdx = cellIndex(e, startCol, startRow);
         const mapCell *cell = (mapCell *)safe_array_get_at(e->cells, cellIdx);
         if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
-            paths[startCol][startRow] = 8;
+            paths[startRow][startCol] = 8;
             continue;
         }
 
-        paths[startCol][startRow] = direction;
+        paths[startRow][startCol] = direction;
 
         buffer[end][0] = 6; // up
-        buffer[end][1] = startRow;
-        buffer[end][2] = startCol + 1;
+        buffer[end][1] = startCol;
+        buffer[end][2] = startRow + 1;
         end++;
 
         buffer[end][0] = 2; // down
-        buffer[end][1] = startRow;
-        buffer[end][2] = startCol - 1;
+        buffer[end][1] = startCol;
+        buffer[end][2] = startRow - 1;
         end++;
 
-        buffer[end][1] = startRow - 1;
-        buffer[end][2] = startCol;
+        buffer[end][0] = 0; // right
+        buffer[end][1] = startCol - 1;
+        buffer[end][2] = startRow;
         end++;
 
         buffer[end][0] = 4; // left
-        buffer[end][1] = startRow + 1;
-        buffer[end][2] = startCol;
+        buffer[end][1] = startCol + 1;
+        buffer[end][2] = startRow;
         end++;
 
         buffer[end][0] = 5; // up left
-        buffer[end][1] = startRow + 1;
-        buffer[end][2] = startCol + 1;
+        buffer[end][1] = startCol + 1;
+        buffer[end][2] = startRow + 1;
         end++;
 
         buffer[end][0] = 3; // down left
-        buffer[end][1] = startRow + 1;
-        buffer[end][2] = startCol - 1;
+        buffer[end][1] = startCol + 1;
+        buffer[end][2] = startRow - 1;
         end++;
 
         buffer[end][0] = 1; // down right
-        buffer[end][1] = startRow - 1;
-        buffer[end][2] = startCol - 1;
+        buffer[end][1] = startCol - 1;
+        buffer[end][2] = startRow - 1;
         end++;
 
         buffer[end][0] = 7; // up right
-        buffer[end][1] = startRow - 1;
-        buffer[end][2] = startCol + 1;
+        buffer[end][1] = startCol - 1;
+        buffer[end][2] = startRow + 1;
         end++;
     }
 }
@@ -162,7 +163,7 @@ agentActions scriptedBotActions(env *e, droneEntity *drone) {
         return actions;
     }
 
-    // find the nearest death wall or floating wall
+        // find the nearest death wall or floating wall
     nearEntity nearWalls[MAX_NEAR_WALLS] = {0};
     nearEntity nearPickups[MAX_WEAPON_PICKUPS] = {0};
     findNearWallsAndPickups(e, drone, nearWalls, NUM_NEAR_WALLS, nearPickups, NUM_NEAR_PICKUPS);

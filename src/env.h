@@ -132,14 +132,14 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
         e->needsReset = true;
         return;
     }
-    const uint8_t droneCellRow = droneCellIdx % e->rows;
-    const uint8_t droneCellCol = droneCellIdx / e->columns;
+    const uint8_t droneCellCol = droneCellIdx % e->columns;
+    const uint8_t droneCellRow = droneCellIdx / e->rows;
 
-    const int8_t startRow = droneCellRow - (MAP_OBS_ROWS / 2);
     const int8_t startCol = droneCellCol - (MAP_OBS_COLUMNS / 2);
+    const int8_t startRow = droneCellRow - (MAP_OBS_ROWS / 2);
 
-    const int8_t endRow = droneCellRow + (MAP_OBS_ROWS / 2);
     const int8_t endCol = droneCellCol + (MAP_OBS_COLUMNS / 2);
+    const int8_t endRow = droneCellRow + (MAP_OBS_ROWS / 2);
 
     // compute map layout, and discretized positions of weapon pickups
     bool pastEndOfMap = false;
@@ -157,7 +157,7 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
                 break;
             }
 
-            const int16_t cellIdx = cellIndex(e, row, col);
+            const int16_t cellIdx = cellIndex(e, col, row);
             const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
             if (cell->ent == NULL) {
                 offset++;

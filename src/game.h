@@ -19,16 +19,16 @@ static inline b2Vec2 getCachedPos(const b2BodyId bodyID, cachedPos *pos) {
     return pos->pos;
 }
 
-static inline int16_t cellIndex(const env *e, const int8_t row, const int8_t col) {
-    return row + (col * e->columns);
+static inline int16_t cellIndex(const env *e, const int8_t col, const int8_t row) {
+    return col + (row * e->columns);
 }
 
 static inline int16_t entityPosToCellIdx(const env *e, const b2Vec2 pos) {
     const float cellX = pos.x + (((float)e->columns * WALL_THICKNESS) / 2.0f);
     const float cellY = pos.y + (((float)e->rows * WALL_THICKNESS) / 2.0f);
-    const uint8_t cellRow = cellX / WALL_THICKNESS;
-    const uint8_t cellCol = cellY / WALL_THICKNESS;
-    const int16_t cellIdx = cellIndex(e, cellRow, cellCol);
+    const uint8_t cellCol = cellX / WALL_THICKNESS;
+    const uint8_t cellRow = cellY / WALL_THICKNESS;
+    const int16_t cellIdx = cellIndex(e, cellCol, cellRow);
     // set the cell to -1 if it's out of bounds
     // TODO: this is a box2d issue, investigate more
     if (cellIdx < 0 || (uint16_t)cellIdx >= cc_array_size(e->cells)) {
@@ -1388,15 +1388,15 @@ void insertionSort(nearEntity arr[], uint8_t size) {
 void findNearWallsAndPickups(const env *e, droneEntity *drone, nearEntity nearWalls[], const uint8_t nWalls, nearEntity nearPickups[], const uint8_t nPickups) {
     const b2Vec2 dronePos = getCachedPos(drone->bodyID, &drone->pos);
     const int16_t droneCellIdx = entityPosToCellIdx(e, dronePos);
-    int8_t droneCellRow = droneCellIdx % e->columns;
-    int8_t droneCellCol = droneCellIdx / e->columns;
+    int8_t droneCellCol = droneCellIdx % e->columns;
+    int8_t droneCellRow = droneCellIdx / e->columns;
 
     uint8_t foundWalls = 0;
     uint8_t foundPickups = 0;
     int8_t xDirection = 1;
     int8_t yDirection = 0;
-    int8_t row = droneCellRow;
     int8_t col = droneCellCol;
+    int8_t row = droneCellRow;
     uint8_t segmentLen = 1;
     uint8_t segmentPassed = 0;
     uint8_t segmentsCompleted = 0;
@@ -1405,9 +1405,9 @@ void findNearWallsAndPickups(const env *e, droneEntity *drone, nearEntity nearWa
     // scattered, so if we don't find them all here we'll just sort all
     // pickups by distance later
     while (segmentsCompleted % 5 != 0 || foundWalls < nWalls) {
-        row += xDirection;
-        col += yDirection;
-        const int16_t cellIdx = cellIndex(e, row, col);
+        col += xDirection;
+        row += yDirection;
+        const int16_t cellIdx = cellIndex(e, col, row);
         segmentPassed++;
 
         if (segmentPassed == segmentLen) {
@@ -1423,7 +1423,7 @@ void findNearWallsAndPickups(const env *e, droneEntity *drone, nearEntity nearWa
             }
         }
 
-        if (cellIdx < 0 || row < 0 || row >= e->rows || col < 0 || col >= e->columns) {
+        if (cellIdx < 0 || col < 0 || col >= e->columns || row < 0 || row >= e->rows) {
             continue;
         }
 
