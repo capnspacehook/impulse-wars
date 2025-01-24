@@ -14,11 +14,11 @@
 #define EVAL_FRAME_RATE 120
 #define EVAL_BOX2D_SUBSTEPS 4
 
-#define NUM_MAPS 8
-#define _MAX_MAP_COLUMNS 24
-#define _MAX_MAP_ROWS 24
+#define NUM_MAPS 9
+#define _MAX_MAP_COLUMNS 25
+#define _MAX_MAP_ROWS 25
 #define MAX_CELLS _MAX_MAP_COLUMNS *_MAX_MAP_ROWS + 1
-#define MAX_FLOATING_WALLS 12
+#define MAX_FLOATING_WALLS 18
 #define MAX_WEAPON_PICKUPS 12
 
 #define ROUND_STEPS 30
@@ -41,9 +41,6 @@ const uint16_t LOG_BUFFER_SIZE = 1024;
 #define DISTANCE_CUTOFF 15.0f
 
 // observation constants
-const uint8_t MAX_MAP_COLUMNS = _MAX_MAP_COLUMNS;
-const uint8_t MAX_MAP_ROWS = _MAX_MAP_ROWS;
-
 const uint8_t MAP_OBS_ROWS = 11;
 const uint8_t MAP_OBS_COLUMNS = 11;
 const uint16_t MAP_OBS_SIZE = MAP_OBS_ROWS * MAP_OBS_COLUMNS;
@@ -130,7 +127,8 @@ const float discAimToContAimMap[2][16] = {
 #define PICKUP_RESPAWN_WAIT 3.0f
 
 // drone settings
-#define DRONE_WALL_SPAWN_DISTANCE 7.5f
+#define DRONE_WALL_SPAWN_DISTANCE 5.0f
+#define DRONE_DEATH_WALL_SPAWN_DISTANCE 7.5f
 #define DRONE_DRONE_SPAWN_DISTANCE 10.0f
 #define DRONE_RADIUS 1.0f
 #define DRONE_DENSITY 1.25f
@@ -142,8 +140,8 @@ const float discAimToContAimMap[2][16] = {
 #define DRONE_ENERGY_MAX 1.0f
 #define DRONE_LIGHT_BRAKE_COEF 2.5f
 #define DRONE_HEAVY_BRAKE_COEF 4.0f
-#define DRONE_LIGHT_BRAKE_DRAIN_RATE 0.4f
-#define DRONE_HEAVY_BRAKE_DRAIN_RATE 0.8f
+#define DRONE_LIGHT_BRAKE_DRAIN_RATE 0.5f
+#define DRONE_HEAVY_BRAKE_DRAIN_RATE 1.0f
 #define DRONE_ENERGY_REFILL_WAIT 1.0f
 #define DRONE_ENERGY_REFILL_EMPTY_WAIT 3.0f
 #define DRONE_ENERGY_REFILL_RATE 0.03f
@@ -156,7 +154,7 @@ const float discAimToContAimMap[2][16] = {
 #define DRONE_BURST_IMPACT_MIN 25.0f
 #define DRONE_BURST_COOLDOWN 0.5f
 
-#define PROJECTILE_ENERGY_REFILL_DENOM 800.0f
+#define PROJECTILE_ENERGY_REFILL_COEF 0.001f
 #define WEAPON_DISCARD_COST 0.2f
 
 // weapon projectile settings
@@ -250,7 +248,7 @@ const weaponInformation standard = {
     .invMass = STANDARD_INV_MASS,
     .maxBounces = STANDARD_BOUNCE + 1,
     .destroyedOnDroneHit = false,
-    .energyRefill = (STANDARD_FIRE_MAGNITUDE * STANDARD_INV_MASS) / PROJECTILE_ENERGY_REFILL_DENOM,
+    .energyRefill = (STANDARD_FIRE_MAGNITUDE * STANDARD_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF,
 };
 
 const weaponInformation machineGun = {
@@ -267,7 +265,7 @@ const weaponInformation machineGun = {
     .invMass = MACHINEGUN_INV_MASS,
     .maxBounces = MACHINEGUN_BOUNCE + 1,
     .destroyedOnDroneHit = false,
-    .energyRefill = ((MACHINEGUN_FIRE_MAGNITUDE * MACHINEGUN_INV_MASS) / PROJECTILE_ENERGY_REFILL_DENOM) * MACHINEGUN_ENERGY_REFILL_COEF,
+    .energyRefill = ((MACHINEGUN_FIRE_MAGNITUDE * MACHINEGUN_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF) * MACHINEGUN_ENERGY_REFILL_COEF,
 };
 
 const weaponInformation sniper = {
@@ -284,7 +282,7 @@ const weaponInformation sniper = {
     .invMass = SNIPER_INV_MASS,
     .maxBounces = SNIPER_BOUNCE + 1,
     .destroyedOnDroneHit = true,
-    .energyRefill = ((SNIPER_FIRE_MAGNITUDE * SNIPER_INV_MASS) / PROJECTILE_ENERGY_REFILL_DENOM) * SNIPER_ENERGY_REFILL_COEF,
+    .energyRefill = ((SNIPER_FIRE_MAGNITUDE * SNIPER_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF) * SNIPER_ENERGY_REFILL_COEF,
 };
 
 const weaponInformation shotgun = {
@@ -301,7 +299,7 @@ const weaponInformation shotgun = {
     .invMass = SHOTGUN_INV_MASS,
     .maxBounces = SHOTGUN_BOUNCE + 1,
     .destroyedOnDroneHit = false,
-    .energyRefill = ((SHOTGUN_FIRE_MAGNITUDE * SHOTGUN_INV_MASS) / PROJECTILE_ENERGY_REFILL_DENOM) * SHOTGUN_ENERGY_REFILL_COEF,
+    .energyRefill = ((SHOTGUN_FIRE_MAGNITUDE * SHOTGUN_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF) * SHOTGUN_ENERGY_REFILL_COEF,
 };
 
 const weaponInformation imploder = {
@@ -318,7 +316,7 @@ const weaponInformation imploder = {
     .invMass = IMPLODER_INV_MASS,
     .maxBounces = IMPLODER_BOUNCE + 1,
     .destroyedOnDroneHit = true,
-    .energyRefill = (IMPLODER_FIRE_MAGNITUDE * IMPLODER_INV_MASS) / PROJECTILE_ENERGY_REFILL_DENOM,
+    .energyRefill = (IMPLODER_FIRE_MAGNITUDE * IMPLODER_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF,
 };
 
 const weaponInformation accelerator = {
@@ -335,7 +333,7 @@ const weaponInformation accelerator = {
     .invMass = ACCELERATOR_INV_MASS,
     .maxBounces = ACCELERATOR_BOUNCE + 1,
     .destroyedOnDroneHit = true,
-    .energyRefill = ((ACCELERATOR_FIRE_MAGNITUDE * ACCELERATOR_INV_MASS) / PROJECTILE_ENERGY_REFILL_DENOM) * ACCELERATOR_BOUNCE_SPEED_COEF,
+    .energyRefill = ((ACCELERATOR_FIRE_MAGNITUDE * ACCELERATOR_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF) * ACCELERATOR_BOUNCE_SPEED_COEF,
 };
 
 #ifndef AUTOPXD

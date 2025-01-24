@@ -66,22 +66,8 @@ void destroyRayClient(rayClient *client) {
 }
 
 void setEnvRenderScale(env *e) {
-    float scale = e->client->scale;
-    switch (e->columns) {
-    case 20:
-        scale *= 1.05f;
-        break;
-    case 21:
-        break;
-    case 23:
-        scale *= 0.925f;
-        break;
-    case 24:
-        scale *= 0.88f;
-        break;
-    default:
-        ERRORF("unsupported number of map columns: %d", e->columns);
-    }
+    const float BASE_ROWS = 21.0f;
+    const float scale = e->client->scale * (BASE_ROWS / e->rows);
     e->renderScale = scale;
 }
 

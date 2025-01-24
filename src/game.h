@@ -38,29 +38,43 @@ static inline int16_t entityPosToCellIdx(const env *e, const b2Vec2 pos) {
     return cellIdx;
 }
 
-bool overlapCallback(b2ShapeId shapeID, void *context) {
-    // the b2ShapeId parameter is required to match the prototype of the callback function
-    MAYBE_UNUSED(shapeID);
+typedef struct overlapCtx {
+    const enum entityType *type;
+    bool overlaps;
+} overlapCtx;
 
-    bool *overlaps = (bool *)context;
-    *overlaps = true;
-    return false;
+bool overlapCallback(b2ShapeId shapeID, void *context) {
+    if (!b2Shape_IsValid(shapeID)) {
+        return true;
+    }
+
+    overlapCtx *ctx = (overlapCtx *)context;
+    if (ctx->type == NULL) {
+        ctx->overlaps = true;
+        return false;
+    }
+    const entity *ent = (entity *)b2Shape_GetUserData(shapeID);
+    if (ent->type == *ctx->type) {
+        ctx->overlaps = true;
+        return false;
+    }
+    return true;
 }
 
 // returns true if the given position overlaps with a bounding box with
 // a height and width of distance with shape categories specified in maskBits
-bool isOverlapping(env *e, const b2Vec2 pos, const float distance, const enum shapeCategory type, const uint64_t maskBits) {
+bool isOverlapping(env *e, const b2Vec2 pos, const float distance, const enum shapeCategory category, const uint64_t maskBits, const enum entityType *type) {
     b2AABB bounds = {
         .lowerBound = {.x = pos.x - distance, .y = pos.y - distance},
         .upperBound = {.x = pos.x + distance, .y = pos.y + distance},
     };
     b2QueryFilter filter = {
-        .categoryBits = type,
+        .categoryBits = category,
         .maskBits = maskBits,
     };
-    bool overlaps = false;
-    b2World_OverlapAABB(e->worldID, bounds, filter, overlapCallback, &overlaps);
-    return overlaps;
+    overlapCtx ctx = {.type = type, .overlaps = false};
+    b2World_OverlapAABB(e->worldID, bounds, filter, overlapCallback, &ctx);
+    return ctx.overlaps;
 }
 
 // returns true and sets emptyPos to the position of an empty cell
@@ -88,19 +102,23 @@ bool findOpenPos(env *e, const enum shapeCategory type, b2Vec2 *emptyPos) {
 
         // ensure drones don't spawn too close to walls or other drones
         if (type == WEAPON_PICKUP_SHAPE) {
-            if (isOverlapping(e, cell->pos, PICKUP_SPAWN_DISTANCE, WEAPON_PICKUP_SHAPE, WEAPON_PICKUP_SHAPE)) {
+            if (isOverlapping(e, cell->pos, PICKUP_SPAWN_DISTANCE, WEAPON_PICKUP_SHAPE, WEAPON_PICKUP_SHAPE, NULL)) {
                 continue;
             }
         } else if (type == DRONE_SHAPE) {
-            if (isOverlapping(e, cell->pos, DRONE_WALL_SPAWN_DISTANCE, DRONE_SHAPE, WALL_SHAPE | DRONE_SHAPE)) {
+            const enum entityType deathWallType = DEATH_WALL_ENTITY;
+            if (isOverlapping(e, cell->pos, DRONE_DEATH_WALL_SPAWN_DISTANCE, DRONE_SHAPE, WALL_SHAPE | DRONE_SHAPE, &deathWallType)) {
                 continue;
             }
-            if (isOverlapping(e, cell->pos, DRONE_DRONE_SPAWN_DISTANCE, DRONE_SHAPE, DRONE_SHAPE)) {
+            if (isOverlapping(e, cell->pos, DRONE_WALL_SPAWN_DISTANCE, DRONE_SHAPE, WALL_SHAPE | DRONE_SHAPE, NULL)) {
+                continue;
+            }
+            if (isOverlapping(e, cell->pos, DRONE_DRONE_SPAWN_DISTANCE, DRONE_SHAPE, DRONE_SHAPE, NULL)) {
                 continue;
             }
         }
 
-        if (!isOverlapping(e, cell->pos, MIN_SPAWN_DISTANCE, type, FLOATING_WALL_SHAPE | WEAPON_PICKUP_SHAPE | DRONE_SHAPE)) {
+        if (!isOverlapping(e, cell->pos, MIN_SPAWN_DISTANCE, type, FLOATING_WALL_SHAPE | WEAPON_PICKUP_SHAPE | DRONE_SHAPE, NULL)) {
             *emptyPos = cell->pos;
             return true;
         }
@@ -180,43 +198,6 @@ void destroyWall(const env *e, wallEntity *wall, const bool full) {
 
     b2DestroyBody(wall->bodyID);
     fastFree(wall);
-}
-
-void createSuddenDeathWalls(env *e, const b2Vec2 startPos, const b2Vec2 size) {
-    int16_t endIdx;
-    uint8_t indexIncrement;
-    if (size.y == WALL_THICKNESS) {
-        const b2Vec2 endPos = (b2Vec2){.x = startPos.x + size.x, .y = startPos.y};
-        endIdx = entityPosToCellIdx(e, endPos);
-        if (endIdx == -1) {
-            ERRORF("invalid position for sudden death wall: (%f, %f)", endPos.x, endPos.y);
-        }
-        indexIncrement = 1;
-    } else {
-        const b2Vec2 endPos = (b2Vec2){.x = startPos.x, .y = startPos.y + size.y};
-        endIdx = entityPosToCellIdx(e, endPos);
-        if (endIdx == -1) {
-            ERRORF("invalid position for sudden death wall: (%f, %f)", endPos.x, endPos.y);
-        }
-        indexIncrement = e->rows;
-    }
-    const int16_t startIdx = entityPosToCellIdx(e, startPos);
-    if (startIdx == -1) {
-        ERRORF("invalid position for sudden death wall: (%f, %f)", startPos.x, startPos.y);
-    }
-    for (uint16_t i = startIdx; i <= endIdx; i += indexIncrement) {
-        mapCell *cell = safe_array_get_at(e->cells, i);
-        if (cell->ent != NULL) {
-            if (cell->ent->type == WEAPON_PICKUP_ENTITY) {
-                weaponPickupEntity *pickup = (weaponPickupEntity *)cell->ent->entity;
-                pickup->respawnWait = PICKUP_RESPAWN_WAIT;
-            } else {
-                continue;
-            }
-        }
-        entity *ent = createWall(e, cell->pos.x, cell->pos.y, WALL_THICKNESS, WALL_THICKNESS, i, DEATH_WALL_ENTITY, false);
-        cell->ent = ent;
-    }
 }
 
 enum weaponType randWeaponPickupType(env *e) {
@@ -494,6 +475,43 @@ void destroyProjectile(env *e, projectileEntity *projectile, const bool full) {
     fastFree(projectile);
 }
 
+void createSuddenDeathWalls(env *e, const b2Vec2 startPos, const b2Vec2 size) {
+    int16_t endIdx;
+    uint8_t indexIncrement;
+    if (size.y == WALL_THICKNESS) {
+        const b2Vec2 endPos = (b2Vec2){.x = startPos.x + size.x, .y = startPos.y};
+        endIdx = entityPosToCellIdx(e, endPos);
+        if (endIdx == -1) {
+            ERRORF("invalid position for sudden death wall: (%f, %f)", endPos.x, endPos.y);
+        }
+        indexIncrement = 1;
+    } else {
+        const b2Vec2 endPos = (b2Vec2){.x = startPos.x, .y = startPos.y + size.y};
+        endIdx = entityPosToCellIdx(e, endPos);
+        if (endIdx == -1) {
+            ERRORF("invalid position for sudden death wall: (%f, %f)", endPos.x, endPos.y);
+        }
+        indexIncrement = e->rows;
+    }
+    const int16_t startIdx = entityPosToCellIdx(e, startPos);
+    if (startIdx == -1) {
+        ERRORF("invalid position for sudden death wall: (%f, %f)", startPos.x, startPos.y);
+    }
+    for (uint16_t i = startIdx; i <= endIdx; i += indexIncrement) {
+        mapCell *cell = safe_array_get_at(e->cells, i);
+        if (cell->ent != NULL) {
+            if (cell->ent->type == WEAPON_PICKUP_ENTITY) {
+                weaponPickupEntity *pickup = (weaponPickupEntity *)cell->ent->entity;
+                pickup->respawnWait = PICKUP_RESPAWN_WAIT;
+            } else {
+                continue;
+            }
+        }
+        entity *ent = createWall(e, cell->pos.x, cell->pos.y, WALL_THICKNESS, WALL_THICKNESS, i, DEATH_WALL_ENTITY, false);
+        cell->ent = ent;
+    }
+}
+
 void handleSuddenDeath(env *e) {
     ASSERT(e->suddenDeathSteps == 0);
 
@@ -548,7 +566,7 @@ void handleSuddenDeath(env *e) {
     for (uint8_t i = 0; i < e->numDrones; i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
         const b2Vec2 pos = getCachedPos(drone->bodyID, &drone->pos);
-        if (isOverlapping(e, pos, DRONE_RADIUS, DRONE_SHAPE, WALL_SHAPE)) {
+        if (isOverlapping(e, pos, DRONE_RADIUS, DRONE_SHAPE, WALL_SHAPE, NULL)) {
             killDrone(e, drone);
             droneDead = true;
         }
@@ -1204,6 +1222,7 @@ void handleProjectileEndContact(const entity *proj, const entity *ent) {
     b2Body_SetLinearVelocity(projectile->bodyID, newVel);
 }
 
+// TODO: handle body move events to get positions more efficiently and do away with cached positions
 void handleContactEvents(env *e) {
     b2ContactEvents events = b2World_GetContactEvents(e->worldID);
     for (int i = 0; i < events.beginCount; ++i) {

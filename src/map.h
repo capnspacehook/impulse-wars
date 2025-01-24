@@ -302,6 +302,45 @@ const mapEntry foamPitMap = {
     .defaultWeapon = STANDARD_WEAPON,
 };
 
+const char siegeLayout[] = {
+    'B','B','B','W','W','W','W','W','D','D','D','D','D','D','D','D','D','W','W','W','W','W','B','B','B',
+    'B','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','B',
+    'B','O','d','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','d','O','B',
+    'W','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','W',
+    'W','W','O','O','O','W','D','D','W','W','O','O','O','O','O','W','W','D','D','W','O','O','O','W','W',
+    'W','O','O','O','O','O','D','O','O','O','O','O','O','O','O','O','O','O','D','O','O','O','O','O','W',
+    'W','O','O','O','b','O','W','O','b','O','O','O','O','O','O','O','b','O','W','O','b','O','O','O','W',
+    'W','O','b','O','O','O','W','O','O','O','O','O','O','O','O','O','O','O','W','O','O','O','b','O','W',
+    'W','O','O','O','O','O','W','O','O','O','O','B','B','B','O','O','O','O','W','O','O','O','O','O','W',
+    'W','W','O','O','O','W','W','O','O','O','O','O','O','O','O','O','O','O','W','W','O','O','O','W','W',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','b','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'D','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','D',
+    'W','W','O','O','O','W','W','O','O','O','O','O','O','O','O','O','O','O','W','W','O','O','O','W','W',
+    'W','O','O','O','O','O','W','O','O','O','O','B','B','B','O','O','O','O','W','O','O','O','O','O','W',
+    'W','O','b','O','O','O','W','O','O','O','O','O','O','O','O','O','O','O','W','O','O','O','b','O','W',
+    'W','O','O','O','b','O','W','O','b','O','O','O','O','O','O','O','b','O','W','O','b','O','O','O','W',
+    'W','O','O','O','O','O','D','O','O','O','O','O','O','O','O','O','O','O','D','O','O','O','O','O','W',
+    'W','W','O','O','O','W','D','D','W','W','O','O','O','O','O','W','W','D','D','W','O','O','O','W','W',
+    'W','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','W',
+    'B','O','d','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','d','O','B',
+    'B','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','O','B',
+    'B','B','B','W','W','W','W','W','D','D','D','D','D','D','D','D','D','W','W','W','W','W','B','B','B',
+};
+
+const mapEntry siegeMap = {
+    .layout = siegeLayout,
+    .columns = 25,
+    .rows = 24,
+    .randFloatingStandardWalls = 0,
+    .randFloatingBouncyWalls = 0,
+    .randFloatingDeathWalls = 0,
+    .hasSetFloatingWalls = true,
+    .weaponPickups = 4,
+    .defaultWeapon = STANDARD_WEAPON,
+};
+
 // clang-format on
 
 #ifndef AUTOPXD
@@ -314,6 +353,7 @@ const mapEntry *maps[] = {
     (mapEntry *)&crossBounce,
     (mapEntry *)&asteriskArena,
     (mapEntry *)&foamPitMap,
+    (mapEntry *)&siegeMap,
 };
 #endif
 
