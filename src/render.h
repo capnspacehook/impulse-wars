@@ -11,6 +11,8 @@ const uint16_t DEFAULT_WIDTH = 1250;
 const uint16_t DEFAULT_HEIGHT = 1000;
 const uint16_t HEIGHT_LEEWAY = 75;
 
+const float START_READY_TIME = 1.0f;
+const float END_WAIT_TIME = 2.0f;
 const float EXPLOSION_TIME = 0.5f;
 
 const Color barolo = {.r = 165, .g = 37, .b = 8, .a = 255};
@@ -71,7 +73,55 @@ void setEnvRenderScale(env *e) {
     e->renderScale = scale;
 }
 
-void renderUI(const env *e) {
+Color getDroneColor(const uint8_t droneIdx) {
+    switch (droneIdx) {
+    case 0:
+        return barolo;
+    case 1:
+        return GREEN;
+    case 2:
+        return BLUE;
+    case 3:
+        return YELLOW;
+    default:
+        ERRORF("unsupported number of drones %d", droneIdx + 1);
+        return WHITE;
+    }
+}
+
+char *getWeaponAbreviation(const enum weaponType type) {
+    char *name = "";
+    switch (type) {
+    case MACHINEGUN_WEAPON:
+        name = "MCGN";
+        break;
+        // TODO: rename to railgun everywhere
+    case SNIPER_WEAPON:
+        name = "RAIL";
+        break;
+    case SHOTGUN_WEAPON:
+        name = "SHGN";
+        break;
+    case IMPLODER_WEAPON:
+        name = "IMPL";
+        break;
+    case ACCELERATOR_WEAPON:
+        name = "ACCL";
+        break;
+    default:
+        ERRORF("unknown weapon pickup type %d", type);
+    }
+    return name;
+}
+
+void renderTimer(const env *e, const char *timerStr, const Color color) {
+    int fontSize = 2 * e->client->scale;
+    int textWidth = MeasureText(timerStr, fontSize);
+    int posX = (e->client->width - textWidth) / 2;
+    DrawText(timerStr, posX, e->client->scale, fontSize, color);
+}
+
+void renderUI(const env *e, const bool starting, const bool ending, const int8_t winner) {
     // render human control message
     if (e->humanInput) {
         const char *msg = "Human input: drone %d";
@@ -82,7 +132,23 @@ void renderUI(const env *e) {
 
     // render timer
     if (e->stepsLeft == 0) {
-        DrawText("SUDDEN DEATH", (e->client->width / 2) - (8 * e->client->scale), e->client->scale, 2 * e->client->scale, WHITE);
+        renderTimer(e, "SUDDEN DEATH", WHITE);
+        return;
+    } else if (starting) {
+        renderTimer(e, "READY", WHITE);
+        return;
+    } else if (e->stepsLeft > (ROUND_STEPS - 1) * e->frameRate) {
+        renderTimer(e, "GO!", WHITE);
+        return;
+    } else if (ending) {
+        if (winner == -1) {
+            renderTimer(e, "Tie", WHITE);
+            return;
+        }
+        const int bufferSize = 16;
+        char winStr[bufferSize];
+        snprintf(winStr, bufferSize, "Player %d wins!", winner + 1);
+        renderTimer(e, winStr, getDroneColor(winner));
         return;
     }
 
@@ -93,7 +159,7 @@ void renderUI(const env *e) {
     } else {
         snprintf(timerStr, bufferSize, "0%d", (uint16_t)(e->stepsLeft / e->frameRate));
     }
-    DrawText(timerStr, (e->client->width / 2) - e->client->scale, e->client->scale, 2 * e->client->scale, WHITE);
+    renderTimer(e, timerStr, WHITE);
 }
 
 void renderBrakeTrails(const env *e) {
@@ -214,45 +280,8 @@ void renderWeaponPickup(const env *e, const weaponPickupEntity *pickup) {
     Vector2 origin = {.x = (PICKUP_THICKNESS / 2.0f) * e->renderScale, .y = (PICKUP_THICKNESS / 2.0f) * e->renderScale};
     DrawRectanglePro(rec, origin, 0.0f, LIME);
 
-    char *name = "";
-    switch (pickup->weapon) {
-    case MACHINEGUN_WEAPON:
-        name = "MCGN";
-        break;
-        // TODO: rename to railgun everywhere
-    case SNIPER_WEAPON:
-        name = "RAIL";
-        break;
-    case SHOTGUN_WEAPON:
-        name = "SHGN";
-        break;
-    case IMPLODER_WEAPON:
-        name = "IMPL";
-        break;
-    case ACCELERATOR_WEAPON:
-        name = "ACCL";
-        break;
-    default:
-        ERRORF("unknown weapon pickup type %d", pickup->weapon);
-    }
-
-    DrawText(name, rec.x - origin.x + (0.1f * e->renderScale), rec.y - origin.y + e->renderScale, e->renderScale, BLACK);
-}
-
-Color getDroneColor(const int droneIdx) {
-    switch (droneIdx) {
-    case 0:
-        return barolo;
-    case 1:
-        return GREEN;
-    case 2:
-        return BLUE;
-    case 3:
-        return YELLOW;
-    default:
-        ERRORF("unsupported number of drones %d", droneIdx + 1);
-        return WHITE;
-    }
+    const char *weaponName = getWeaponAbreviation(pickup->weapon);
+    DrawText(weaponName, rec.x - origin.x + (0.1f * e->renderScale), rec.y - origin.y + e->renderScale, e->renderScale, BLACK);
 }
 
 b2RayResult droneAimingAt(const env *e, droneEntity *drone) {
@@ -263,7 +292,7 @@ b2RayResult droneAimingAt(const env *e, droneEntity *drone) {
     return b2World_CastRayClosest(e->worldID, pos, translation, filter);
 }
 
-void renderDroneGuides(const env *e, droneEntity *drone, const int droneIdx) {
+void renderDroneGuides(const env *e, droneEntity *drone, const uint8_t droneIdx) {
     b2Vec2 pos = b2Body_GetPosition(drone->bodyID);
     const float rayX = b2XToRayX(e, pos.x);
     const float rayY = b2YToRayY(e, pos.y);
@@ -421,13 +450,13 @@ void renderProjectiles(env *e) {
     }
 }
 
-void renderEnv(env *e) {
+void _renderEnv(env *e, const bool starting, const bool ending, const int8_t winner) {
     BeginDrawing();
 
     ClearBackground(BLACK);
     DrawFPS(e->renderScale, e->renderScale);
 
-    renderUI(e);
+    renderUI(e, starting, ending, winner);
 
     renderExplosions(e);
 
@@ -486,6 +515,20 @@ void renderEnv(env *e) {
     }
 
     EndDrawing();
+}
+
+void renderEnv(env *e, const bool starting, const bool ending, const int8_t winner) {
+    if (starting) {
+        for (uint16_t i = 0; i < (uint16_t)(START_READY_TIME * e->frameRate); i++) {
+            _renderEnv(e, starting, ending, winner);
+        }
+    } else if (ending) {
+        for (uint16_t i = 0; i < (uint16_t)(END_WAIT_TIME * e->frameRate); i++) {
+            _renderEnv(e, starting, ending, winner);
+        }
+    } else {
+        _renderEnv(e, starting, ending, winner);
+    }
 }
 
 #endif

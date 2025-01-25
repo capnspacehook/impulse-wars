@@ -536,7 +536,7 @@ void setupEnv(env *e) {
 
     if (e->client != NULL) {
         setEnvRenderScale(e);
-        renderEnv(e);
+        renderEnv(e, true, false, -1);
     }
 
     computeObs(e);
@@ -1116,7 +1116,7 @@ void stepEnv(env *e) {
         computeRewards(e, roundOver, lastAlive);
 
         if (e->client != NULL) {
-            renderEnv(e);
+            renderEnv(e, false, roundOver, lastAlive);
         }
 
         if (roundOver) {
