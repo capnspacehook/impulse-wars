@@ -163,13 +163,12 @@ agentActions scriptedBotActions(env *e, droneEntity *drone) {
         return actions;
     }
 
-        // find the nearest death wall or floating wall
+    // find the nearest death wall or floating wall
     nearEntity nearWalls[MAX_NEAR_WALLS] = {0};
     nearEntity nearPickups[MAX_WEAPON_PICKUPS] = {0};
     findNearWallsAndPickups(e, drone, nearWalls, NUM_NEAR_WALLS, nearPickups, NUM_NEAR_PICKUPS);
 
     // find the distance between the closest points on the drone and the nearest wall
-    const b2Vec2 pos = getCachedPos(drone->bodyID, &drone->pos);
     b2Vec2 nearestWallPos = b2Vec2_zero;
     float nearestWallDistance = FLT_MAX;
     for (uint8_t i = 0; i < NUM_NEAR_WALLS; i++) {
@@ -179,13 +178,13 @@ agentActions scriptedBotActions(env *e, droneEntity *drone) {
             b2DistanceInput input;
             input.proxyA = makeDistanceProxyFromType(DRONE_ENTITY, &isCircle);
             input.proxyB = makeDistanceProxyFromType(wall->type, &isCircle);
-            input.transformA = (b2Transform){.p = pos, .q = b2Rot_identity};
-            input.transformB = (b2Transform){.p = wall->pos.pos, .q = b2Rot_identity};
+            input.transformA = (b2Transform){.p = drone->pos, .q = b2Rot_identity};
+            input.transformB = (b2Transform){.p = wall->pos, .q = b2Rot_identity};
             input.useRadii = isCircle;
             b2SimplexCache cache = {0};
             const b2DistanceOutput output = b2ShapeDistance(&cache, &input, NULL, 0);
 
-            nearestWallPos = wall->pos.pos;
+            nearestWallPos = wall->pos;
             nearestWallDistance = output.distance;
             break;
         }
@@ -196,27 +195,26 @@ agentActions scriptedBotActions(env *e, droneEntity *drone) {
         if (floatingWall->type != DEATH_WALL_ENTITY) {
             continue;
         }
-        const b2Vec2 floatingWallPos = getCachedPos(floatingWall->bodyID, &floatingWall->pos);
-        const float floatingWallDistance = b2Distance(floatingWallPos, pos);
+        const float floatingWallDistance = b2Distance(floatingWall->pos, drone->pos);
         if (floatingWallDistance < nearestWallDistance) {
             bool isCircle = false;
             b2DistanceInput input;
             input.proxyA = makeDistanceProxyFromType(DRONE_ENTITY, &isCircle);
             input.proxyB = makeDistanceProxyFromType(floatingWall->type, &isCircle);
-            input.transformA = (b2Transform){.p = pos, .q = b2Rot_identity};
+            input.transformA = (b2Transform){.p = drone->pos, .q = b2Rot_identity};
             input.transformB = b2Body_GetTransform(floatingWall->bodyID);
             input.useRadii = isCircle;
             b2SimplexCache cache = {0};
             const b2DistanceOutput output = b2ShapeDistance(&cache, &input, NULL, 0);
 
-            nearestWallPos = floatingWallPos;
+            nearestWallPos = floatingWall->pos;
             nearestWallDistance = output.distance;
         }
     }
 
     // move away from a death wall if we're too close
     const b2Vec2 vel = b2Body_GetLinearVelocity(drone->bodyID);
-    const b2Vec2 wallDirection = b2Normalize(b2Sub(nearestWallPos, pos));
+    const b2Vec2 wallDirection = b2Normalize(b2Sub(nearestWallPos, drone->pos));
     const b2Vec2 invWallDirection = b2MulSV(-1.0f, wallDirection);
     if (nearestWallDistance <= WALL_AVOID_DISTANCE) {
         const float speedToWall = b2Dot(vel, wallDirection);
@@ -232,7 +230,7 @@ agentActions scriptedBotActions(env *e, droneEntity *drone) {
                 shotWait = ((e->defaultWeapon->coolDown + e->defaultWeapon->charge) / e->deltaTime) * 1.5f;
             }
             const float recoilDistance = shotRecoilDistance(e, drone, vel, invWallDirection, shotWait);
-            const bool safeShot = safeToFire(e, pos, invWallDirection, recoilDistance);
+            const bool safeShot = safeToFire(e, drone->pos, invWallDirection, recoilDistance);
             // e->debugPoint = b2MulAdd(pos, recoilDistance, invWallDirection);
             if (safeShot) {
                 actions.aim = wallDirection;
@@ -244,13 +242,12 @@ agentActions scriptedBotActions(env *e, droneEntity *drone) {
 
     if (drone->weaponInfo->type == STANDARD_WEAPON) {
         const weaponPickupEntity *pickup = (weaponPickupEntity *)nearPickups[0].entity;
-        moveTo(e, &actions, pos, pickup->pos);
+        moveTo(e, &actions, drone->pos, pickup->pos);
         return actions;
     }
 
     droneEntity *agentDrone = (droneEntity *)safe_array_get_at(e->drones, 0);
-    const b2Vec2 agentDronePos = getCachedPos(agentDrone->bodyID, &agentDrone->pos);
-    const b2Vec2 agentDroneDirection = b2Normalize(b2Sub(agentDronePos, pos));
+    const b2Vec2 agentDroneDirection = b2Normalize(b2Sub(agentDrone->pos, drone->pos));
     const b2Vec2 invAgentDroneDirection = b2MulSV(-1.0f, agentDroneDirection);
 
     float shotWait;
@@ -260,7 +257,7 @@ agentActions scriptedBotActions(env *e, droneEntity *drone) {
         shotWait = ((e->defaultWeapon->coolDown + e->defaultWeapon->charge) / e->deltaTime) * 1.5f;
     }
     const float recoilDistance = shotRecoilDistance(e, drone, vel, invAgentDroneDirection, shotWait);
-    const bool safeShot = safeToFire(e, pos, invAgentDroneDirection, recoilDistance);
+    const bool safeShot = safeToFire(e, drone->pos, invAgentDroneDirection, recoilDistance);
 
     // e->debugPoint = b2MulAdd(pos, recoilDistance, invAgentDroneDirection);
 
@@ -271,7 +268,7 @@ agentActions scriptedBotActions(env *e, droneEntity *drone) {
         actions.aim = agentDroneDirection;
         actions.shoot = true;
     } else {
-        moveTo(e, &actions, pos, agentDronePos);
+        moveTo(e, &actions, drone->pos, agentDrone->pos);
     }
 
     return actions;

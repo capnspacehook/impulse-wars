@@ -72,15 +72,12 @@ typedef struct mapBounds {
     b2Vec2 max;
 } mapBounds;
 
-typedef struct cachedPos {
-    b2Vec2 pos;
-    bool valid;
-} cachedPos;
-
 typedef struct wallEntity {
     b2BodyId bodyID;
     b2ShapeId shapeID;
-    cachedPos pos;
+    b2Vec2 pos;
+    b2Rot rot;
+    b2Vec2 velocity;
     b2Vec2 extent;
     int16_t mapCellIdx;
     bool isFloating;
@@ -123,8 +120,9 @@ typedef struct projectileEntity {
     b2BodyId bodyID;
     b2ShapeId shapeID;
     weaponInformation *weaponInfo;
-    cachedPos pos;
+    b2Vec2 pos;
     b2Vec2 lastPos;
+    b2Vec2 velocity;
     float lastSpeed;
     float distance;
     uint8_t bounces;
@@ -150,7 +148,7 @@ typedef struct droneStats {
     float shotsTaken[_NUM_WEAPONS];
     float ownShotsTaken[_NUM_WEAPONS];
     float weaponsPickedUp[_NUM_WEAPONS];
-    float shotDistances[_NUM_WEAPONS]; // TODO: remove?
+    float shotDistances[_NUM_WEAPONS];
     float lightBrakeTime;
     float heavyBrakeTime;
     float totalBursts;
@@ -181,10 +179,11 @@ typedef struct droneEntity {
 
     uint8_t idx;
     b2Vec2 initalPos;
-    cachedPos pos;
+    b2Vec2 pos;
     b2Vec2 lastPos;
     b2Vec2 lastMove;
     b2Vec2 lastAim;
+    b2Vec2 velocity;
     b2Vec2 lastVelocity;
     bool inLineOfSight[_MAX_DRONES];
     droneStepInfo stepInfo;

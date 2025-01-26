@@ -131,10 +131,7 @@ void renderUI(const env *e, const bool starting, const bool ending, const int8_t
     }
 
     // render timer
-    if (e->stepsLeft == 0) {
-        renderTimer(e, "SUDDEN DEATH", WHITE);
-        return;
-    } else if (starting) {
+    if (starting) {
         renderTimer(e, "READY", WHITE);
         return;
     } else if (e->stepsLeft > (ROUND_STEPS - 1) * e->frameRate) {
@@ -149,6 +146,9 @@ void renderUI(const env *e, const bool starting, const bool ending, const int8_t
         char winStr[bufferSize];
         snprintf(winStr, bufferSize, "Player %d wins!", winner + 1);
         renderTimer(e, winStr, getDroneColor(winner));
+        return;
+    } else if (e->stepsLeft == 0) {
+        renderTimer(e, "SUDDEN DEATH", WHITE);
         return;
     }
 
@@ -242,8 +242,7 @@ void renderWall(const env *e, const wallEntity *wall) {
         ERRORF("unknown wall type %d", wall->type);
     }
 
-    b2Vec2 wallPos = b2Body_GetPosition(wall->bodyID);
-    Vector2 pos = b2VecToRayVec(e, wallPos);
+    Vector2 pos = b2VecToRayVec(e, wall->pos);
     Rectangle rec = {
         .x = pos.x,
         .y = pos.y,
@@ -269,8 +268,7 @@ void renderWeaponPickup(const env *e, const weaponPickupEntity *pickup) {
         return;
     }
 
-    b2Vec2 pickupPos = b2Body_GetPosition(pickup->bodyID);
-    Vector2 pos = b2VecToRayVec(e, pickupPos);
+    Vector2 pos = b2VecToRayVec(e, pickup->pos);
     Rectangle rec = {
         .x = pos.x,
         .y = pos.y,
@@ -285,17 +283,15 @@ void renderWeaponPickup(const env *e, const weaponPickupEntity *pickup) {
 }
 
 b2RayResult droneAimingAt(const env *e, droneEntity *drone) {
-    const b2Vec2 pos = getCachedPos(drone->bodyID, &drone->pos);
-    const b2Vec2 rayEnd = b2MulAdd(pos, 150.0f, drone->lastAim);
-    const b2Vec2 translation = b2Sub(rayEnd, pos);
+    const b2Vec2 rayEnd = b2MulAdd(drone->pos, 150.0f, drone->lastAim);
+    const b2Vec2 translation = b2Sub(rayEnd, drone->pos);
     const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | DRONE_SHAPE};
-    return b2World_CastRayClosest(e->worldID, pos, translation, filter);
+    return b2World_CastRayClosest(e->worldID, drone->pos, translation, filter);
 }
 
 void renderDroneGuides(const env *e, droneEntity *drone, const uint8_t droneIdx) {
-    b2Vec2 pos = b2Body_GetPosition(drone->bodyID);
-    const float rayX = b2XToRayX(e, pos.x);
-    const float rayY = b2YToRayY(e, pos.y);
+    const float rayX = b2XToRayX(e, drone->pos.x);
+    const float rayY = b2YToRayY(e, drone->pos.y);
     const Color droneColor = getDroneColor(droneIdx);
 
     // render thruster move guide
@@ -330,7 +326,7 @@ void renderDroneGuides(const env *e, droneEntity *drone, const uint8_t droneIdx)
     const b2DistanceInput input = {
         .proxyA = proxyA,
         .proxyB = proxyB,
-        .transformA = {.p = pos, .q = b2Rot_identity},
+        .transformA = {.p = drone->pos, .q = b2Rot_identity},
         .transformB = {.p = rayRes.point, .q = b2Rot_identity},
         .useRadii = shapeIsCircle,
     };
@@ -373,19 +369,16 @@ void renderDroneGuides(const env *e, droneEntity *drone, const uint8_t droneIdx)
 }
 
 void renderDrone(const env *e, const droneEntity *drone, const int droneIdx) {
-    const b2Vec2 pos = b2Body_GetPosition(drone->bodyID);
-    const Vector2 raylibPos = b2VecToRayVec(e, pos);
+    const Vector2 raylibPos = b2VecToRayVec(e, drone->pos);
     DrawCircleV(raylibPos, DRONE_RADIUS * e->renderScale, getDroneColor(droneIdx));
     DrawCircleV(raylibPos, DRONE_RADIUS * 0.8f * e->renderScale, BLACK);
 }
 
 void renderDroneUI(const env *e, const droneEntity *drone) {
-    const b2Vec2 pos = b2Body_GetPosition(drone->bodyID);
-
     // draw energy meter
     const float energyMeterInnerRadius = 0.6f * e->renderScale;
     const float energyMeterOuterRadius = 0.3f * e->renderScale;
-    const Vector2 energyMeterOrigin = {.x = b2XToRayX(e, pos.x), .y = b2YToRayY(e, pos.y)};
+    const Vector2 energyMeterOrigin = {.x = b2XToRayX(e, drone->pos.x), .y = b2YToRayY(e, drone->pos.y)};
     float energyMeterEndAngle = 360.f * drone->energyLeft;
     Color energyMeterColor = RAYWHITE;
     if (drone->energyFullyDepleted && drone->energyRefillWait != 0.0f) {
@@ -409,11 +402,11 @@ void renderDroneUI(const env *e, const droneEntity *drone) {
     const int bufferSize = 5;
     char ammoStr[bufferSize];
     snprintf(ammoStr, bufferSize, "%d", drone->ammo);
-    float posX = pos.x - 0.25;
+    float posX = drone->pos.x - 0.25;
     if (drone->ammo >= 10 || drone->ammo == INFINITE) {
         posX -= 0.25f;
     }
-    DrawText(ammoStr, b2XToRayX(e, posX), b2YToRayY(e, pos.y + 1.5f), e->renderScale, WHITE);
+    DrawText(ammoStr, b2XToRayX(e, posX), b2YToRayY(e, drone->pos.y + 1.5f), e->renderScale, WHITE);
 
     const float maxCharge = drone->weaponInfo->charge;
     if (maxCharge == 0) {
@@ -424,8 +417,8 @@ void renderDroneUI(const env *e, const droneEntity *drone) {
     const float chargeMeterWidth = 2.0f;
     const float chargeMeterHeight = 1.0f;
     Rectangle outlineRec = {
-        .x = b2XToRayX(e, pos.x - (chargeMeterWidth / 2.0f)),
-        .y = b2YToRayY(e, pos.y - (chargeMeterHeight / 2.0f) + 3.0f),
+        .x = b2XToRayX(e, drone->pos.x - (chargeMeterWidth / 2.0f)),
+        .y = b2YToRayY(e, drone->pos.y - (chargeMeterHeight / 2.0f) + 3.0f),
         .width = chargeMeterWidth * e->renderScale,
         .height = chargeMeterHeight * e->renderScale,
     };
@@ -433,8 +426,8 @@ void renderDroneUI(const env *e, const droneEntity *drone) {
 
     const float fillRecWidth = (drone->weaponCharge / maxCharge) * chargeMeterWidth;
     Rectangle fillRec = {
-        .x = b2XToRayX(e, pos.x - 1.0f),
-        .y = b2YToRayY(e, pos.y - (chargeMeterHeight / 2.0f) + 3.0f),
+        .x = b2XToRayX(e, drone->pos.x - 1.0f),
+        .y = b2YToRayY(e, drone->pos.y - (chargeMeterHeight / 2.0f) + 3.0f),
         .width = fillRecWidth * e->renderScale,
         .height = chargeMeterHeight * e->renderScale,
     };
@@ -445,8 +438,7 @@ void renderDroneUI(const env *e, const droneEntity *drone) {
 void renderProjectiles(env *e) {
     for (SNode *cur = e->projectiles->head; cur != NULL; cur = cur->next) {
         projectileEntity *projectile = (projectileEntity *)cur->data;
-        b2Vec2 pos = b2Body_GetPosition(projectile->bodyID);
-        DrawCircleV(b2VecToRayVec(e, pos), e->renderScale * projectile->weaponInfo->radius, PURPLE);
+        DrawCircleV(b2VecToRayVec(e, projectile->pos), e->renderScale * projectile->weaponInfo->radius, PURPLE);
     }
 }
 
