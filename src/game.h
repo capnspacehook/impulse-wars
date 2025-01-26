@@ -378,6 +378,7 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     projectile->bodyID = projectileBodyID;
     projectile->shapeID = projectileShapeID;
     projectile->weaponInfo = drone->weaponInfo;
+    projectile->pos = projectileBodyDef.position;
     projectile->lastPos = projectileBodyDef.position;
     projectile->velocity = b2Body_GetLinearVelocity(projectileBodyID);
     projectile->lastSpeed = b2Length(projectile->velocity);
@@ -1269,7 +1270,6 @@ void handleProjectileEndContact(const entity *proj, const entity *ent) {
     b2Body_SetLinearVelocity(projectile->bodyID, newVel);
 }
 
-// TODO: handle body move events to get positions more efficiently and do away with cached positions
 void handleContactEvents(env *e) {
     b2ContactEvents events = b2World_GetContactEvents(e->worldID);
     for (int i = 0; i < events.beginCount; ++i) {
