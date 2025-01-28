@@ -812,7 +812,11 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
         }
         const uint8_t shoot = e->discActions[offset + 2];
         ASSERT(shoot <= 1);
-        actions.shoot = (bool)shoot;
+        actions.chargingWeapon = (bool)shoot;
+        actions.shoot = actions.chargingWeapon;
+        if (!actions.chargingWeapon && drone->chargingWeapon) {
+            actions.shoot = true;
+        }
         const uint8_t brake = e->discActions[offset + 3];
         ASSERT(brake <= 2);
         if (brake == 1) {
@@ -822,8 +826,8 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
         }
         const uint8_t burst = e->discActions[offset + 4];
         ASSERT(burst <= 1);
-        actions.chargeBurst = (bool)burst;
-        if (!actions.chargeBurst && drone->chargingBurst) {
+        actions.chargingBurst = (bool)burst;
+        if (!actions.chargingBurst && drone->chargingBurst) {
             actions.burst = true;
         }
         return actions;
@@ -833,21 +837,26 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
     if (manualActions == NULL) {
         actions.move = (b2Vec2){.x = tanhf(e->contActions[offset + 0]), .y = tanhf(e->contActions[offset + 1])};
         actions.aim = (b2Vec2){.x = tanhf(e->contActions[offset + 2]), .y = tanhf(e->contActions[offset + 3])};
-        actions.shoot = (bool)e->contActions[offset + 4];
+        actions.chargingWeapon = (bool)e->contActions[offset + 4];
+        actions.shoot = actions.chargingWeapon;
+        if (!actions.chargingWeapon && drone->chargingWeapon) {
+            actions.shoot = true;
+        }
         const float brake = tanhf(e->contActions[offset + 5]);
         actions.brakeLight = brake < 2.0f / 3.0f && brake > 0.0f;
         actions.brakeHeavy = brake < -2.0f / 3.0f;
-        actions.chargeBurst = (bool)e->contActions[offset + 6];
-        if (!actions.chargeBurst && drone->chargingBurst) {
+        actions.chargingBurst = (bool)e->contActions[offset + 6];
+        if (!actions.chargingBurst && drone->chargingBurst) {
             actions.burst = true;
         }
     } else {
         actions.move = manualActions->move;
         actions.aim = manualActions->aim;
+        actions.chargingWeapon = manualActions->chargingWeapon;
         actions.shoot = manualActions->shoot;
         actions.brakeLight = manualActions->brakeLight;
         actions.brakeHeavy = manualActions->brakeHeavy;
-        actions.chargeBurst = manualActions->chargeBurst;
+        actions.chargingBurst = manualActions->chargingBurst;
         actions.burst = manualActions->burst;
         actions.discardWeapon = manualActions->discardWeapon;
     }
@@ -907,7 +916,12 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, uint8_t gamepadIdx) {
         float rStickX = GetGamepadAxisMovement(gamepadIdx, GAMEPAD_AXIS_RIGHT_X);
         float rStickY = GetGamepadAxisMovement(gamepadIdx, GAMEPAD_AXIS_RIGHT_Y);
 
-        bool shoot = IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_RIGHT_TRIGGER_2);
+        if (IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_RIGHT_TRIGGER_2)) {
+            actions.chargingWeapon = true;
+            actions.shoot = true;
+        } else if (drone->chargingWeapon && IsGamepadButtonUp(gamepadIdx, GAMEPAD_BUTTON_RIGHT_TRIGGER_2)) {
+            actions.shoot = true;
+        }
 
         if (IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_LEFT_TRIGGER_2)) {
             actions.brakeLight = true;
@@ -916,7 +930,7 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, uint8_t gamepadIdx) {
         }
 
         if (IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_RIGHT_TRIGGER_1) || IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)) {
-            actions.chargeBurst = true;
+            actions.chargingBurst = true;
         } else if (drone->chargingBurst && (IsGamepadButtonUp(gamepadIdx, GAMEPAD_BUTTON_RIGHT_TRIGGER_1) || IsGamepadButtonUp(gamepadIdx, GAMEPAD_BUTTON_RIGHT_FACE_DOWN))) {
             actions.burst = true;
         }
@@ -927,7 +941,6 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, uint8_t gamepadIdx) {
 
         actions.move = (b2Vec2){.x = lStickX, .y = lStickY};
         actions.aim = (b2Vec2){.x = rStickX, .y = rStickY};
-        actions.shoot = shoot;
         return computeActions(e, drone, &actions);
     }
 
@@ -950,13 +963,16 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, uint8_t gamepadIdx) {
     actions.aim = b2Normalize(b2Sub(rayVecToB2Vec(e, mousePos), drone->pos));
 
     if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        actions.chargingWeapon = true;
+        actions.shoot = true;
+    } else if (drone->chargingWeapon && IsMouseButtonUp(MOUSE_BUTTON_LEFT)) {
         actions.shoot = true;
     }
     if (IsKeyDown(KEY_SPACE)) {
         actions.brakeLight = true;
     }
     if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
-        actions.chargeBurst = true;
+        actions.chargingBurst = true;
     } else if (drone->chargingBurst && IsMouseButtonUp(MOUSE_BUTTON_RIGHT)) {
         actions.burst = true;
     }
@@ -1022,7 +1038,7 @@ void stepEnv(env *e) {
                 actions = stepActions[i];
             }
 
-            if (actions.chargeBurst) {
+            if (actions.chargingBurst) {
                 droneChargeBurst(e, drone);
             }
             if (actions.burst) {
@@ -1033,7 +1049,7 @@ void stepEnv(env *e) {
             }
             droneBrake(e, drone, actions.brakeLight, actions.brakeHeavy);
             if (actions.shoot) {
-                droneShoot(e, drone, actions.aim);
+                droneShoot(e, drone, actions.aim, actions.chargingWeapon);
             }
             if (actions.discardWeapon) {
                 droneDiscardWeapon(e, drone);
@@ -1147,16 +1163,6 @@ void stepEnv(env *e) {
 #endif
 
     computeObs(e);
-}
-
-bool envTerminated(env *e) {
-    for (uint8_t i = 0; i < e->numDrones; i++) {
-        droneEntity *drone = safe_array_get_at(e->drones, i);
-        if (drone->dead) {
-            return true;
-        }
-    }
-    return false;
 }
 
 #endif

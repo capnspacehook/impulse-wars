@@ -164,6 +164,7 @@ typedef struct droneEntity {
     int8_t ammo;
     float weaponCooldown;
     uint16_t heat;
+    bool chargingWeapon;
     float weaponCharge;
     float energyLeft;
     bool lightBraking;
@@ -228,10 +229,11 @@ typedef struct explosionInfo {
 typedef struct agentActions {
     b2Vec2 move;
     b2Vec2 aim;
+    bool chargingWeapon;
     bool shoot;
     bool brakeLight;
     bool brakeHeavy;
-    bool chargeBurst;
+    bool chargingBurst;
     bool burst;
     bool discardWeapon;
 } agentActions;

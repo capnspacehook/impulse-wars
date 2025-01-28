@@ -20,6 +20,7 @@ const Color bambooBrown = {.r = 204, .g = 129, .b = 0, .a = 255};
 
 const float halfDroneRadius = DRONE_RADIUS / 2.0f;
 const float aimGuideHeight = 0.3f * DRONE_RADIUS;
+const float chargedAimGuideHeight = DRONE_RADIUS;
 
 static inline float b2XToRayX(const env *e, const float x) {
     return e->client->halfWidth + (x * e->renderScale);
@@ -355,16 +356,29 @@ void renderDroneGuides(const env *e, droneEntity *drone, const uint8_t droneIdx)
     default:
         ERRORF("unknown weapon when getting aim guide width %d", drone->weaponInfo->type);
     }
-    aimGuideWidth = fminf(aimGuideWidth, output.distance) + (DRONE_RADIUS * 2.0f);
+    aimGuideWidth = fminf(aimGuideWidth, output.distance + 0.1f) + (DRONE_RADIUS * 2.0f);
 
     // render laser aim guide
+    const float aimAngle = RAD2DEG * b2Rot_GetAngle(b2MakeRot(b2Atan2(drone->lastAim.y, drone->lastAim.x)));
+    // subtly light up the laser aim guide if the drone's weapon is fully charged
+    if (drone->weaponInfo->charge != 0.0f && drone->weaponCharge == drone->weaponInfo->charge) {
+        Rectangle chargedAimGuide = {
+            .x = rayX,
+            .y = rayY,
+            .width = aimGuideWidth * e->renderScale,
+            .height = chargedAimGuideHeight * e->renderScale,
+        };
+        Color chargedAimGuideColor = droneColor;
+        chargedAimGuideColor.a = 100;
+        DrawRectanglePro(chargedAimGuide, (Vector2){.x = 0.0f, .y = (chargedAimGuideHeight / 2.0f) * e->renderScale}, aimAngle, chargedAimGuideColor);
+    }
+
     Rectangle aimGuide = {
         .x = rayX,
         .y = rayY,
         .width = aimGuideWidth * e->renderScale,
         .height = aimGuideHeight * e->renderScale,
     };
-    const float aimAngle = RAD2DEG * b2Rot_GetAngle(b2MakeRot(b2Atan2(drone->lastAim.y, drone->lastAim.x)));
     DrawRectanglePro(aimGuide, (Vector2){.x = 0.0f, .y = (aimGuideHeight / 2.0f) * e->renderScale}, aimAngle, droneColor);
 }
 

@@ -637,7 +637,7 @@ void droneChangeWeapon(const env *e, droneEntity *drone, const enum weaponType n
     drone->ammo = weaponAmmo(e->defaultWeapon->type, drone->weaponInfo->type);
 }
 
-void droneShoot(env *e, droneEntity *drone, const b2Vec2 aim) {
+void droneShoot(env *e, droneEntity *drone, const b2Vec2 aim, const bool chargingWeapon) {
     ASSERT(drone->ammo != 0);
 
     drone->shotThisStep = true;
@@ -647,8 +647,12 @@ void droneShoot(env *e, droneEntity *drone, const b2Vec2 aim) {
     if (drone->weaponCooldown != 0.0f) {
         return;
     }
-    drone->weaponCharge += e->deltaTime;
-    if (drone->weaponCharge < drone->weaponInfo->charge) {
+    const bool weaponNeedsCharge = drone->weaponInfo->charge != 0.0f;
+    if (weaponNeedsCharge && chargingWeapon) {
+        drone->chargingWeapon = true;
+        drone->weaponCharge = fminf(drone->weaponCharge + e->deltaTime, drone->weaponInfo->charge);
+    }
+    if (weaponNeedsCharge && (chargingWeapon || drone->weaponCharge < drone->weaponInfo->charge)) {
         return;
     }
 
@@ -656,6 +660,7 @@ void droneShoot(env *e, droneEntity *drone, const b2Vec2 aim) {
         drone->ammo--;
     }
     drone->weaponCooldown = drone->weaponInfo->coolDown;
+    drone->chargingWeapon = false;
     drone->weaponCharge = 0.0f;
 
     b2Vec2 normAim = drone->lastAim;
