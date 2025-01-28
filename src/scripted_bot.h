@@ -153,6 +153,13 @@ void moveTo(env *e, agentActions *actions, const b2Vec2 srcPos, const b2Vec2 dst
     actions->move = b2Normalize(actions->move);
 }
 
+void scriptedBotShoot(droneEntity *drone, agentActions *actions) {
+    actions->shoot = true;
+    if (drone->chargingWeapon && drone->weaponCharge == drone->weaponInfo->charge) {
+        actions->chargingWeapon = false;
+    }
+}
+
 // TODO: switch between personalities when episode begins:
 // - aggressive
 // - defensive
@@ -162,6 +169,7 @@ agentActions scriptedBotActions(env *e, droneEntity *drone) {
     if (e->sittingDuck) {
         return actions;
     }
+    actions.chargingWeapon = true;
 
     // find the nearest death wall or floating wall
     nearEntity nearWalls[MAX_NEAR_WALLS] = {0};
@@ -234,7 +242,7 @@ agentActions scriptedBotActions(env *e, droneEntity *drone) {
             // e->debugPoint = b2MulAdd(pos, recoilDistance, invWallDirection);
             if (safeShot) {
                 actions.aim = wallDirection;
-                actions.shoot = true;
+                scriptedBotShoot(drone, &actions);
                 return actions;
             }
         }
@@ -266,7 +274,7 @@ agentActions scriptedBotActions(env *e, droneEntity *drone) {
         actions.move.y += agentDroneDirection.y;
         actions.move = b2Normalize(actions.move);
         actions.aim = agentDroneDirection;
-        actions.shoot = true;
+        scriptedBotShoot(drone, &actions);
     } else {
         moveTo(e, &actions, drone->pos, agentDrone->pos);
     }

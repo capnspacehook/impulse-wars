@@ -193,7 +193,7 @@ void renderBrakeTrails(const env *e) {
     }
 }
 
-void renderExplosions(const env *e) {
+void renderExplosions(const env *e, const bool ending) {
     CC_ArrayIter iter;
     cc_array_iter_init(&iter, e->explosions);
     explosionInfo *explosion;
@@ -214,7 +214,10 @@ void renderExplosions(const env *e) {
 
         DrawCircleV(b2VecToRayVec(e, explosion->def.position), (explosion->def.radius + explosion->def.falloff) * e->renderScale, falloffColor);
         DrawCircleV(b2VecToRayVec(e, explosion->def.position), explosion->def.radius * e->renderScale, explosionColor);
-        explosion->renderSteps = fmaxf(explosion->renderSteps - 1, 0);
+        // don't fade out explosions on the win screen
+        if (!ending) {
+            explosion->renderSteps = fmaxf(explosion->renderSteps - 1, 0);
+        }
     }
 }
 
@@ -476,7 +479,7 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
 
     renderUI(e, starting, ending, winner);
 
-    renderExplosions(e);
+    renderExplosions(e, ending);
 
     for (size_t i = 0; i < cc_array_size(e->pickups); i++) {
         const weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
