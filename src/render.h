@@ -96,8 +96,8 @@ char *getWeaponAbreviation(const enum weaponType type) {
     case MACHINEGUN_WEAPON:
         name = "MCGN";
         break;
-        // TODO: rename to railgun everywhere
     case SNIPER_WEAPON:
+        // TODO: rename to railgun everywhere
         name = "RAIL";
         break;
     case SHOTGUN_WEAPON:
@@ -108,6 +108,12 @@ char *getWeaponAbreviation(const enum weaponType type) {
         break;
     case ACCELERATOR_WEAPON:
         name = "ACCL";
+        break;
+    case FLAK_CANNON_WEAPON:
+        name = "FLAK";
+        break;
+    case MINE_LAUNCHER_WEAPON:
+        name = "MINE";
         break;
     default:
         ERRORF("unknown weapon pickup type %d", type);
@@ -352,6 +358,12 @@ void renderDroneGuides(const env *e, droneEntity *drone, const uint8_t droneIdx)
         break;
     case ACCELERATOR_WEAPON:
         aimGuideWidth = 5.0f;
+        break;
+    case FLAK_CANNON_WEAPON:
+        aimGuideWidth = 5.0f;
+        break;
+    case MINE_LAUNCHER_WEAPON:
+        aimGuideWidth = 10.0f;
         break;
     default:
         ERRORF("unknown weapon when getting aim guide width %d", drone->weaponInfo->type);

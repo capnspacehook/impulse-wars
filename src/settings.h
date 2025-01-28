@@ -234,6 +234,33 @@ const float discAimToContAimMap[2][16] = {
 #define ACCELERATOR_BOUNCE 100
 #define ACCELERATOR_BOUNCE_SPEED_COEF 1.05f
 
+#define FLAK_CANNON_AMMO 12
+#define FLAK_CANNON_PROJECTILES 1
+#define FLAK_CANNON_RECOIL_MAGNITUDE 30.0f
+#define FLAK_CANNON_FIRE_MAGNITUDE 14.0f
+#define FLAK_CANNON_CHARGE 0.0f
+#define FLAK_CANNON_COOL_DOWN 0.4f
+#define FLAK_CANNON_MAX_DISTANCE 100.0f
+#define FLAK_CANNON_RADIUS 0.3f
+#define FLAK_CANNON_DENSITY 1.0f
+#define FLAK_CANNON_INV_MASS INV_MASS(FLAK_CANNON_DENSITY, FLAK_CANNON_RADIUS)
+#define FLAK_CANNON_BOUNCE INFINITE
+#define FLAK_CANNON_SAFE_DISTANCE 25.0f
+#define FLAK_CANNON_PROXIMITY_RADIUS 2.0f
+
+#define MINE_LAUNCHER_AMMO 3
+#define MINE_LAUNCHER_PROJECTILES 1
+#define MINE_LAUNCHER_RECOIL_MAGNITUDE 20.0f
+#define MINE_LAUNCHER_FIRE_MAGNITUDE 25.0f
+#define MINE_LAUNCHER_CHARGE 0.0f
+#define MINE_LAUNCHER_COOL_DOWN 0.6f
+#define MINE_LAUNCHER_MAX_DISTANCE INFINITE
+#define MINE_LAUNCHER_RADIUS 0.5f
+#define MINE_LAUNCHER_DENSITY 0.5f
+#define MINE_LAUNCHER_INV_MASS INV_MASS(MINE_LAUNCHER_DENSITY, MINE_LAUNCHER_RADIUS)
+#define MINE_LAUNCHER_BOUNCE INFINITE // this is to avoid mines sometimes exploding when hitting walls
+#define MINE_LAUNCHER_PROXIMITY_RADIUS 7.5f
+
 const weaponInformation standard = {
     .type = STANDARD_WEAPON,
     .isPhysicsBullet = true,
@@ -247,7 +274,10 @@ const weaponInformation standard = {
     .density = STANDARD_DENSITY,
     .invMass = STANDARD_INV_MASS,
     .maxBounces = STANDARD_BOUNCE + 1,
+    .explosive = false,
     .destroyedOnDroneHit = false,
+    .explodesOnDroneHit = false,
+    .proximityDetonates = false,
     .energyRefill = (STANDARD_FIRE_MAGNITUDE * STANDARD_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF,
 };
 
@@ -264,7 +294,10 @@ const weaponInformation machineGun = {
     .density = MACHINEGUN_DENSITY,
     .invMass = MACHINEGUN_INV_MASS,
     .maxBounces = MACHINEGUN_BOUNCE + 1,
+    .explosive = false,
     .destroyedOnDroneHit = false,
+    .explodesOnDroneHit = false,
+    .proximityDetonates = false,
     .energyRefill = ((MACHINEGUN_FIRE_MAGNITUDE * MACHINEGUN_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF) * MACHINEGUN_ENERGY_REFILL_COEF,
 };
 
@@ -281,7 +314,10 @@ const weaponInformation sniper = {
     .density = SNIPER_DENSITY,
     .invMass = SNIPER_INV_MASS,
     .maxBounces = SNIPER_BOUNCE + 1,
+    .explosive = false,
     .destroyedOnDroneHit = true,
+    .explodesOnDroneHit = false,
+    .proximityDetonates = false,
     .energyRefill = ((SNIPER_FIRE_MAGNITUDE * SNIPER_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF) * SNIPER_ENERGY_REFILL_COEF,
 };
 
@@ -298,7 +334,10 @@ const weaponInformation shotgun = {
     .density = SHOTGUN_DENSITY,
     .invMass = SHOTGUN_INV_MASS,
     .maxBounces = SHOTGUN_BOUNCE + 1,
+    .explosive = false,
     .destroyedOnDroneHit = false,
+    .explodesOnDroneHit = false,
+    .proximityDetonates = false,
     .energyRefill = ((SHOTGUN_FIRE_MAGNITUDE * SHOTGUN_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF) * SHOTGUN_ENERGY_REFILL_COEF,
 };
 
@@ -315,7 +354,10 @@ const weaponInformation imploder = {
     .density = IMPLODER_DENSITY,
     .invMass = IMPLODER_INV_MASS,
     .maxBounces = IMPLODER_BOUNCE + 1,
+    .explosive = true,
     .destroyedOnDroneHit = true,
+    .explodesOnDroneHit = true,
+    .proximityDetonates = false,
     .energyRefill = (IMPLODER_FIRE_MAGNITUDE * IMPLODER_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF,
 };
 
@@ -332,8 +374,51 @@ const weaponInformation accelerator = {
     .density = ACCELERATOR_DENSITY,
     .invMass = ACCELERATOR_INV_MASS,
     .maxBounces = ACCELERATOR_BOUNCE + 1,
+    .explosive = false,
     .destroyedOnDroneHit = true,
+    .explodesOnDroneHit = false,
+    .proximityDetonates = false,
     .energyRefill = ((ACCELERATOR_FIRE_MAGNITUDE * ACCELERATOR_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF) * ACCELERATOR_BOUNCE_SPEED_COEF,
+};
+
+const weaponInformation flakCannon = {
+    .type = FLAK_CANNON_WEAPON,
+    .isPhysicsBullet = false,
+    .numProjectiles = FLAK_CANNON_PROJECTILES,
+    .fireMagnitude = FLAK_CANNON_FIRE_MAGNITUDE,
+    .recoilMagnitude = FLAK_CANNON_RECOIL_MAGNITUDE,
+    .charge = FLAK_CANNON_CHARGE,
+    .coolDown = FLAK_CANNON_COOL_DOWN,
+    .maxDistance = FLAK_CANNON_MAX_DISTANCE,
+    .radius = FLAK_CANNON_RADIUS,
+    .density = FLAK_CANNON_DENSITY,
+    .invMass = FLAK_CANNON_INV_MASS,
+    .maxBounces = FLAK_CANNON_BOUNCE + 1,
+    .explosive = true,
+    .destroyedOnDroneHit = false,
+    .explodesOnDroneHit = false,
+    .proximityDetonates = true,
+    .energyRefill = (FLAK_CANNON_FIRE_MAGNITUDE * FLAK_CANNON_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF,
+};
+
+const weaponInformation mineLauncher = {
+    .type = MINE_LAUNCHER_WEAPON,
+    .isPhysicsBullet = false,
+    .numProjectiles = MINE_LAUNCHER_PROJECTILES,
+    .fireMagnitude = MINE_LAUNCHER_FIRE_MAGNITUDE,
+    .recoilMagnitude = MINE_LAUNCHER_RECOIL_MAGNITUDE,
+    .charge = MINE_LAUNCHER_CHARGE,
+    .coolDown = MINE_LAUNCHER_COOL_DOWN,
+    .maxDistance = MINE_LAUNCHER_MAX_DISTANCE,
+    .radius = MINE_LAUNCHER_RADIUS,
+    .density = MINE_LAUNCHER_DENSITY,
+    .invMass = MINE_LAUNCHER_INV_MASS,
+    .maxBounces = MINE_LAUNCHER_BOUNCE + 1,
+    .explosive = true,
+    .destroyedOnDroneHit = true,
+    .explodesOnDroneHit = false,
+    .proximityDetonates = true,
+    .energyRefill = (MINE_LAUNCHER_FIRE_MAGNITUDE * MINE_LAUNCHER_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF,
 };
 
 #ifndef AUTOPXD
@@ -344,6 +429,8 @@ weaponInformation *weaponInfos[] = {
     (weaponInformation *)&shotgun,
     (weaponInformation *)&imploder,
     (weaponInformation *)&accelerator,
+    (weaponInformation *)&flakCannon,
+    (weaponInformation *)&mineLauncher,
 };
 #endif
 
@@ -365,9 +452,37 @@ int8_t weaponAmmo(const enum weaponType defaultWep, const enum weaponType type) 
         return IMPLODER_AMMO;
     case ACCELERATOR_WEAPON:
         return ACCELERATOR_AMMO;
+    case FLAK_CANNON_WEAPON:
+        return FLAK_CANNON_AMMO;
+    case MINE_LAUNCHER_WEAPON:
+        return MINE_LAUNCHER_AMMO;
     default:
         ERRORF("unknown weapon type %d", type);
     }
+}
+
+b2ShapeId weaponSensor(const b2BodyId bodyID, const enum weaponType type) {
+    b2ShapeDef sensorShapeDef = b2DefaultShapeDef();
+    sensorShapeDef.density = 0.0f;
+    sensorShapeDef.isSensor = true;
+    b2Circle sensorCircle = {.center = b2Vec2_zero};
+
+    switch (type) {
+    case FLAK_CANNON_WEAPON:
+        sensorShapeDef.filter.categoryBits = PROJECTILE_SHAPE;
+        sensorShapeDef.filter.maskBits = DRONE_SHAPE;
+        sensorCircle.radius = FLAK_CANNON_PROXIMITY_RADIUS;
+        break;
+    case MINE_LAUNCHER_WEAPON:
+        sensorShapeDef.filter.categoryBits = PROJECTILE_SHAPE;
+        sensorShapeDef.filter.maskBits = DRONE_SHAPE;
+        sensorCircle.radius = MINE_LAUNCHER_PROXIMITY_RADIUS;
+        break;
+    default:
+        ERRORF("unknown proximity detonating weapon type %d", type);
+    }
+
+    return b2CreateCircleShape(bodyID, &sensorShapeDef, &sensorCircle);
 }
 
 // amount of force to apply to projectile
@@ -388,6 +503,10 @@ float weaponFire(uint64_t *seed, const enum weaponType type) {
         return IMPLODER_FIRE_MAGNITUDE;
     case ACCELERATOR_WEAPON:
         return ACCELERATOR_FIRE_MAGNITUDE;
+    case FLAK_CANNON_WEAPON:
+        return FLAK_CANNON_FIRE_MAGNITUDE;
+    case MINE_LAUNCHER_WEAPON:
+        return MINE_LAUNCHER_FIRE_MAGNITUDE;
     default:
         ERRORF("unknown weapon type %d", type);
         return 0;
@@ -418,15 +537,25 @@ b2Vec2 weaponAdjustAim(uint64_t *seed, const enum weaponType type, const uint16_
 
 // sets explosion parameters and returns true if an explosion should be created
 // when a projectile is destroyed
-bool weaponExplosion(const enum weaponType type, b2ExplosionDef *explosionDef) {
+void weaponExplosion(const enum weaponType type, b2ExplosionDef *explosionDef) {
     switch (type) {
     case IMPLODER_WEAPON:
         explosionDef->radius = 10.0f;
         explosionDef->falloff = 5.0f;
         explosionDef->impulsePerLength = -150.0f;
-        return true;
+        return;
+    case FLAK_CANNON_WEAPON:
+        explosionDef->radius = 5.0;
+        explosionDef->falloff = 2.5f;
+        explosionDef->impulsePerLength = 45.0f;
+        return;
+    case MINE_LAUNCHER_WEAPON:
+        explosionDef->radius = 12.5f;
+        explosionDef->falloff = 2.5f;
+        explosionDef->impulsePerLength = 100.0f;
+        return;
     default:
-        return false;
+        ERRORF("unknown weapon type %d for projectile explosion", type);
     }
 }
 

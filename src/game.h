@@ -58,7 +58,7 @@ bool overlapCallback(b2ShapeId shapeID, void *context) {
 // a height and width of distance with shape categories specified in maskBits;
 // if type is set only entities that match a shape category in maskBits *and*
 // that have the entity type specified will be considered
-bool isOverlapping(env *e, const b2Vec2 pos, const float distance, const enum shapeCategory category, const uint64_t maskBits, const enum entityType *type) {
+bool isOverlappingAABB(env *e, const b2Vec2 pos, const float distance, const enum shapeCategory category, const uint64_t maskBits, const enum entityType *type) {
     b2AABB bounds = {
         .lowerBound = {.x = pos.x - distance, .y = pos.y - distance},
         .upperBound = {.x = pos.x + distance, .y = pos.y + distance},
@@ -69,6 +69,22 @@ bool isOverlapping(env *e, const b2Vec2 pos, const float distance, const enum sh
     };
     overlapCtx ctx = {.type = type, .overlaps = false};
     b2World_OverlapAABB(e->worldID, bounds, filter, overlapCallback, &ctx);
+    return ctx.overlaps;
+}
+
+// returns true if the given position overlaps with a circle
+// with shape categories specified in maskBits;
+// if type is set only entities that match a shape category in maskBits *and*
+// that have the entity type specified will be considered
+bool isOverlappingCircle(env *e, const b2Vec2 pos, const float radius, const enum shapeCategory category, const uint64_t maskBits, const enum entityType *type) {
+    const b2Circle circle = {.center = b2Vec2_zero, .radius = radius};
+    const b2Transform transform = {.p = pos, .q = b2Rot_identity};
+    b2QueryFilter filter = {
+        .categoryBits = category,
+        .maskBits = maskBits,
+    };
+    overlapCtx ctx = {.type = type, .overlaps = false};
+    b2World_OverlapCircle(e->worldID, &circle, transform, filter, overlapCallback, &ctx);
     return ctx.overlaps;
 }
 
@@ -97,23 +113,23 @@ bool findOpenPos(env *e, const enum shapeCategory type, b2Vec2 *emptyPos) {
 
         // ensure drones don't spawn too close to walls or other drones
         if (type == WEAPON_PICKUP_SHAPE) {
-            if (isOverlapping(e, cell->pos, PICKUP_SPAWN_DISTANCE, WEAPON_PICKUP_SHAPE, WEAPON_PICKUP_SHAPE, NULL)) {
+            if (isOverlappingAABB(e, cell->pos, PICKUP_SPAWN_DISTANCE, WEAPON_PICKUP_SHAPE, WEAPON_PICKUP_SHAPE, NULL)) {
                 continue;
             }
         } else if (type == DRONE_SHAPE) {
             const enum entityType deathWallType = DEATH_WALL_ENTITY;
-            if (isOverlapping(e, cell->pos, DRONE_DEATH_WALL_SPAWN_DISTANCE, DRONE_SHAPE, WALL_SHAPE | DRONE_SHAPE, &deathWallType)) {
+            if (isOverlappingAABB(e, cell->pos, DRONE_DEATH_WALL_SPAWN_DISTANCE, DRONE_SHAPE, WALL_SHAPE | DRONE_SHAPE, &deathWallType)) {
                 continue;
             }
-            if (isOverlapping(e, cell->pos, DRONE_WALL_SPAWN_DISTANCE, DRONE_SHAPE, WALL_SHAPE | DRONE_SHAPE, NULL)) {
+            if (isOverlappingAABB(e, cell->pos, DRONE_WALL_SPAWN_DISTANCE, DRONE_SHAPE, WALL_SHAPE | DRONE_SHAPE, NULL)) {
                 continue;
             }
-            if (isOverlapping(e, cell->pos, DRONE_DRONE_SPAWN_DISTANCE, DRONE_SHAPE, DRONE_SHAPE, NULL)) {
+            if (isOverlappingAABB(e, cell->pos, DRONE_DRONE_SPAWN_DISTANCE, DRONE_SHAPE, DRONE_SHAPE, NULL)) {
                 continue;
             }
         }
 
-        if (!isOverlapping(e, cell->pos, MIN_SPAWN_DISTANCE, type, FLOATING_WALL_SHAPE | WEAPON_PICKUP_SHAPE | DRONE_SHAPE, NULL)) {
+        if (!isOverlappingAABB(e, cell->pos, MIN_SPAWN_DISTANCE, type, FLOATING_WALL_SHAPE | WEAPON_PICKUP_SHAPE | DRONE_SHAPE, NULL)) {
             *emptyPos = cell->pos;
             return true;
         }
@@ -397,6 +413,11 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
 
     b2Body_SetUserData(projectile->bodyID, ent);
     b2Shape_SetUserData(projectile->shapeID, ent);
+
+    if (projectile->weaponInfo->proximityDetonates) {
+        projectile->sensorID = weaponSensor(projectile->bodyID, projectile->weaponInfo->type);
+        b2Shape_SetUserData(projectile->sensorID, ent);
+    }
 }
 
 typedef struct explosionCallbackContext {
@@ -426,10 +447,11 @@ bool explosionOverlapCallback(b2ShapeId shapeId, void *context) {
     return true;
 }
 
-void destroyProjectile(env *e, projectileEntity *projectile, const bool full) {
+void destroyProjectile(env *e, projectileEntity *projectile, const bool processExplosions, const bool full) {
     // explode projectile if necessary
     b2ExplosionDef explosion;
-    if (full && weaponExplosion(projectile->weaponInfo->type, &explosion)) {
+    if (processExplosions && projectile->weaponInfo->explosive) {
+        weaponExplosion(projectile->weaponInfo->type, &explosion);
         explosion.position = projectile->pos;
         explosion.maskBits = FLOATING_WALL_SHAPE | DRONE_SHAPE;
         b2World_Explode(e->worldID, &explosion);
@@ -567,7 +589,7 @@ void handleSuddenDeath(env *e) {
     bool droneDead = false;
     for (uint8_t i = 0; i < e->numDrones; i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
-        if (isOverlapping(e, drone->pos, DRONE_RADIUS, DRONE_SHAPE, WALL_SHAPE, NULL)) {
+        if (isOverlappingAABB(e, drone->pos, DRONE_RADIUS, DRONE_SHAPE, WALL_SHAPE, NULL)) {
             killDrone(e, drone);
             droneDead = true;
         }
@@ -614,7 +636,7 @@ void handleSuddenDeath(env *e) {
         const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
         if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
             cc_slist_iter_remove(&projectileIter, NULL);
-            destroyProjectile(e, projectile, false);
+            destroyProjectile(e, projectile, false, false);
         }
     }
 }
@@ -838,6 +860,7 @@ typedef struct burstExplosionCtx {
 // b2World_Explode doesn't support filtering on shapes of the same category,
 // so we have to do it manually
 // mostly copied from box2d/src/world.c
+// TODO: modify this so that I can use it for all explosions
 bool burstExplodeCallback(b2ShapeId shapeID, void *context) {
     if (!b2Shape_IsValid(shapeID)) {
         return true;
@@ -1129,7 +1152,7 @@ void projectilesStep(env *e) {
             // we can continue to iterate correctly, copy the body ID
             // so we can destroy it after the projectile has been freed
             cc_slist_iter_remove(&iter, NULL);
-            destroyProjectile(e, projectile, false);
+            destroyProjectile(e, projectile, true, false);
             continue;
         }
     }
@@ -1222,12 +1245,18 @@ void handleBodyMoveEvents(const env *e) {
 
 // destroy the projectile if it has traveled enough or has bounced enough
 // times, and update drone stats if a drone was hit
-bool handleProjectileBeginContact(env *e, const entity *proj, const entity *ent) {
+bool handleProjectileBeginContact(env *e, const entity *proj, const entity *ent, const b2Manifold *manifold, const bool projIsShapeA) {
     projectileEntity *projectile = (projectileEntity *)proj->entity;
     // e (shape B in the collision) will be NULL if it's another
     // projectile that was just destroyed
     if (ent == NULL || (ent != NULL && ent->type == PROJECTILE_ENTITY)) {
-        // always allow projectiles to bounce off each other
+        // explode mines when hit by a projectile
+        if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON) {
+            destroyProjectile(e, projectile, true, true);
+            return true;
+        }
+
+        // always allow all other projectiles to bounce off each other
         return false;
     } else if (ent->type == BOUNCY_WALL_ENTITY) {
         // always allow projectiles to bounce off bouncy walls
@@ -1254,14 +1283,43 @@ bool handleProjectileBeginContact(env *e, const entity *proj, const entity *ent)
             }
 
             if (projectile->weaponInfo->destroyedOnDroneHit) {
-                destroyProjectile(e, projectile, true);
+                destroyProjectile(e, projectile, projectile->weaponInfo->explodesOnDroneHit, true);
                 return true;
             }
+        } else if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON && projectile->lastSpeed != 0.0f) {
+            // if the mine is in explosion proximity of a drone now,
+            // destroy it
+            if (isOverlappingCircle(e, projectile->pos, MINE_LAUNCHER_PROXIMITY_RADIUS, PROJECTILE_SHAPE, DRONE_SHAPE, NULL)) {
+                destroyProjectile(e, projectile, true, true);
+                return true;
+            }
+
+            // create a weld joint to stick the mine to the wall
+            ASSERT(entityTypeIsWall(ent->type));
+            wallEntity *wall = ent->entity;
+            ASSERT(manifold->pointCount == 1);
+
+            // disable fixed rotation so floating walls mines are attached to can rotate
+            b2Body_SetFixedRotation(projectile->bodyID, false);
+
+            b2WeldJointDef jointDef = b2DefaultWeldJointDef();
+            jointDef.angularHertz = 100.0f;
+            jointDef.bodyIdA = wall->bodyID;
+            jointDef.bodyIdB = projectile->bodyID;
+            if (projIsShapeA) {
+                jointDef.localAnchorA = manifold->points[0].anchorB;
+                jointDef.localAnchorB = manifold->points[0].anchorA;
+            } else {
+                jointDef.localAnchorA = manifold->points[0].anchorA;
+                jointDef.localAnchorB = manifold->points[0].anchorB;
+            }
+            b2CreateWeldJoint(e->worldID, &jointDef);
+            projectile->lastSpeed = 0.0f;
         }
     }
     const uint8_t maxBounces = projectile->weaponInfo->maxBounces;
     if (projectile->bounces == maxBounces) {
-        destroyProjectile(e, projectile, true);
+        destroyProjectile(e, projectile, true, true);
         return true;
     }
 
@@ -1311,7 +1369,7 @@ void handleContactEvents(env *e) {
 
         if (e1 != NULL) {
             if (e1->type == PROJECTILE_ENTITY) {
-                if (handleProjectileBeginContact(e, e1, e2)) {
+                if (handleProjectileBeginContact(e, e1, e2, &event->manifold, true)) {
                     e1 = NULL;
                 }
             } else if (e1->type == DEATH_WALL_ENTITY && e2 != NULL && e2->type == DRONE_ENTITY) {
@@ -1321,7 +1379,7 @@ void handleContactEvents(env *e) {
         }
         if (e2 != NULL) {
             if (e2->type == PROJECTILE_ENTITY) {
-                handleProjectileBeginContact(e, e2, e1);
+                handleProjectileBeginContact(e, e2, e1, &event->manifold, false);
             } else if (e2->type == DEATH_WALL_ENTITY && e1 != NULL && e1->type == DRONE_ENTITY) {
                 droneEntity *drone = (droneEntity *)e1->entity;
                 killDrone(e, drone);
@@ -1383,6 +1441,27 @@ void handleWeaponPickupBeginTouch(env *e, const entity *sensor, entity *visitor)
     }
 }
 
+void handleProjectileBeginTouch(env *e, const entity *sensor) {
+    projectileEntity *projectile = sensor->entity;
+
+    switch (projectile->weaponInfo->type) {
+    case FLAK_CANNON_WEAPON:
+        if (projectile->distance < FLAK_CANNON_SAFE_DISTANCE) {
+            return;
+        }
+        destroyProjectile(e, projectile, true, true);
+        break;
+    case MINE_LAUNCHER_WEAPON:
+        if (projectile->lastSpeed != 0.0f) {
+            return;
+        }
+        destroyProjectile(e, projectile, true, true);
+        break;
+    default:
+        ERRORF("invalid projectile type %d for begin touch event", sensor->type);
+    }
+}
+
 // mark the pickup as enabled if no floating walls are touching it
 void handleWeaponPickupEndTouch(const entity *sensor, entity *visitor) {
     weaponPickupEntity *pickup = (weaponPickupEntity *)sensor->entity;
@@ -1413,7 +1492,6 @@ void handleSensorEvents(env *e) {
         }
         entity *s = (entity *)b2Shape_GetUserData(event->sensorShapeId);
         ASSERT(s != NULL);
-        ASSERT(s->type == WEAPON_PICKUP_ENTITY);
 
         if (!b2Shape_IsValid(event->visitorShapeId)) {
             DEBUG_LOG("could not find visitor shape for begin touch event");
@@ -1422,7 +1500,16 @@ void handleSensorEvents(env *e) {
         entity *v = (entity *)b2Shape_GetUserData(event->visitorShapeId);
         ASSERT(v != NULL);
 
-        handleWeaponPickupBeginTouch(e, s, v);
+        switch (s->type) {
+        case WEAPON_PICKUP_ENTITY:
+            handleWeaponPickupBeginTouch(e, s, v);
+            break;
+        case PROJECTILE_ENTITY:
+            handleProjectileBeginTouch(e, s);
+            break;
+        default:
+            ERRORF("unknown entity type %d for sensor begin touch event", s->type);
+        }
     }
 
     for (int i = 0; i < events.endCount; ++i) {
@@ -1433,7 +1520,9 @@ void handleSensorEvents(env *e) {
         }
         entity *s = (entity *)b2Shape_GetUserData(event->sensorShapeId);
         ASSERT(s != NULL);
-        ASSERT(s->type == WEAPON_PICKUP_ENTITY);
+        if (s->type != WEAPON_PICKUP_ENTITY) {
+            continue;
+        }
 
         if (!b2Shape_IsValid(event->visitorShapeId)) {
             DEBUG_LOG("could not find visitor shape for end touch event");

@@ -633,7 +633,7 @@ void clearEnv(env *e) {
 
     for (SNode *cur = e->projectiles->head; cur != NULL; cur = cur->next) {
         projectileEntity *p = (projectileEntity *)cur->data;
-        destroyProjectile(e, p, false);
+        destroyProjectile(e, p, false, false);
     }
 
     for (size_t i = 0; i < cc_array_size(e->brakeTrailPoints); i++) {

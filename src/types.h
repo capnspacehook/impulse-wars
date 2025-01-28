@@ -37,7 +37,7 @@ typedef struct entity {
     void *entity;
 } entity;
 
-#define _NUM_WEAPONS 6
+#define _NUM_WEAPONS 8
 const uint8_t NUM_WEAPONS = _NUM_WEAPONS;
 
 enum weaponType {
@@ -47,6 +47,8 @@ enum weaponType {
     SHOTGUN_WEAPON,
     IMPLODER_WEAPON,
     ACCELERATOR_WEAPON,
+    FLAK_CANNON_WEAPON,
+    MINE_LAUNCHER_WEAPON,
 };
 
 typedef struct mapEntry {
@@ -103,7 +105,10 @@ typedef struct weaponInformation {
     const float density;
     const float invMass;
     const uint8_t maxBounces;
+    const bool explosive;
     const bool destroyedOnDroneHit;
+    const bool explodesOnDroneHit;
+    const bool proximityDetonates;
     const float energyRefill;
 } weaponInformation;
 
@@ -125,6 +130,8 @@ typedef struct projectileEntity {
 
     b2BodyId bodyID;
     b2ShapeId shapeID;
+    // used for proximity explosive projectiles
+    b2ShapeId sensorID;
     weaponInformation *weaponInfo;
     b2Vec2 pos;
     b2Vec2 lastPos;
