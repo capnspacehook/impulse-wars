@@ -113,6 +113,7 @@ uint16_t findNearestCell(const env *e, const b2Vec2 pos, const uint16_t cellIdx)
     return closestCell;
 }
 
+// normalize a drone's ammo count, setting infinite ammo as no ammo
 static inline float scaleAmmo(const env *e, const droneEntity *drone) {
     int8_t maxAmmo = weaponAmmo(e->defaultWeapon->type, drone->weaponInfo->type);
     float scaledAmmo = 0;
@@ -122,6 +123,8 @@ static inline float scaleAmmo(const env *e, const droneEntity *drone) {
     return scaledAmmo;
 }
 
+// fills a small 2D grid centered around the agent with discretized
+// walls, floating walls, weapon pickups, and drone positions
 void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
     droneEntity *drone = safe_array_get_at(e->drones, agentIdx);
     const int16_t droneCellIdx = entityPosToCellIdx(e, drone->pos);
@@ -244,6 +247,7 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
 }
 
 #ifndef AUTOPXD
+// computes observations for N nearest walls, floating walls, and weapon pickups
 void computeNearMapObs(env *e, droneEntity *drone, float *scalarObs) {
     nearEntity nearWalls[MAX_NEAR_WALLS] = {0};
     nearEntity nearPickups[MAX_WEAPON_PICKUPS] = {0};
@@ -527,6 +531,8 @@ void setupEnv(env *e) {
     computeObs(e);
 }
 
+// sets the timing related variables for the environment depending on
+// the frame rate
 void setEnvFrameRate(env *e, uint8_t frameRate) {
     e->frameRate = frameRate;
     e->deltaTime = 1.0f / (float)frameRate;
@@ -556,6 +562,8 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
 
     float frameRate = TRAINING_FRAME_RATE;
     e->box2dSubSteps = TRAINING_BOX2D_SUBSTEPS;
+    // set a higher frame rate and physics substeps when evaluating
+    // to make it more enjoyable to play
     if (!isTraining) {
         frameRate = EVAL_FRAME_RATE;
         e->box2dSubSteps = EVAL_BOX2D_SUBSTEPS;
@@ -989,7 +997,7 @@ void stepEnv(env *e) {
     agentActions stepActions[e->numDrones];
     memset(stepActions, 0x0, e->numDrones * sizeof(agentActions));
 
-    // preprocess actions for the next N steps
+    // preprocess agent actions for the next frameSkip steps
     for (uint8_t i = 0; i < e->numDrones; i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
         if (drone->dead) {

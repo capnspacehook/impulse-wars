@@ -14,6 +14,8 @@ static inline int16_t cellIndex(const env *e, const int8_t col, const int8_t row
     return col + (row * e->columns);
 }
 
+// discretizes an entity's position into a cell index; -1 is returned if
+// the position is out of bounds of the map
 static inline int16_t entityPosToCellIdx(const env *e, const b2Vec2 pos) {
     const float cellX = pos.x + (((float)e->columns * WALL_THICKNESS) / 2.0f);
     const float cellY = pos.y + (((float)e->rows * WALL_THICKNESS) / 2.0f);
@@ -53,7 +55,9 @@ bool overlapCallback(b2ShapeId shapeID, void *context) {
 }
 
 // returns true if the given position overlaps with a bounding box with
-// a height and width of distance with shape categories specified in maskBits
+// a height and width of distance with shape categories specified in maskBits;
+// if type is set only entities that match a shape category in maskBits *and*
+// that have the entity type specified will be considered
 bool isOverlapping(env *e, const b2Vec2 pos, const float distance, const enum shapeCategory category, const uint64_t maskBits, const enum entityType *type) {
     b2AABB bounds = {
         .lowerBound = {.x = pos.x - distance, .y = pos.y - distance},
@@ -280,6 +284,7 @@ void createDrone(env *e, const uint8_t idx) {
     drone->ammo = weaponAmmo(e->defaultWeapon->type, drone->weaponInfo->type);
     drone->weaponCooldown = 0.0f;
     drone->heat = 0;
+    drone->chargingWeapon = false;
     drone->weaponCharge = 0.0f;
     drone->energyLeft = DRONE_ENERGY_MAX;
     drone->lightBraking = false;
@@ -436,7 +441,7 @@ void destroyProjectile(env *e, projectileEntity *projectile, const bool full) {
             cc_array_add(e->explosions, explInfo);
         }
 
-        // check if enemy drone is in explosion radius
+        // check if any enemy drones are in the explosion radius
         const float totalRadius = explosion.radius + explosion.falloff;
         const b2Circle cir = {.center = b2Vec2_zero, .radius = totalRadius};
         const b2Transform transform = {.p = projectile->pos, .q = b2Rot_identity};
@@ -508,6 +513,7 @@ void createSuddenDeathWalls(env *e, const b2Vec2 startPos, const b2Vec2 size) {
     }
 }
 
+// TODO: fix for maps with different columns and rows
 void handleSuddenDeath(env *e) {
     ASSERT(e->suddenDeathSteps == 0);
 
@@ -566,7 +572,7 @@ void handleSuddenDeath(env *e) {
             droneDead = true;
         }
     }
-    if (droneDead) {
+    if (droneDead && e->numDrones == 2) {
         return;
     }
 
@@ -616,7 +622,7 @@ void handleSuddenDeath(env *e) {
 void droneMove(droneEntity *drone, b2Vec2 direction) {
     ASSERT_VEC_BOUNDED(direction);
 
-    // if energy is fully depleted half movement until energy starts
+    // if energy is fully depleted halve movement until energy starts
     // to refill again
     if (drone->energyFullyDepleted && drone->energyRefillWait != 0.0f) {
         direction = b2MulSV(0.5f, direction);
@@ -652,6 +658,8 @@ void droneShoot(env *e, droneEntity *drone, const b2Vec2 aim, const bool chargin
         drone->chargingWeapon = true;
         drone->weaponCharge = fminf(drone->weaponCharge + e->deltaTime, drone->weaponInfo->charge);
     }
+    // if the weapon needs to be charged, only fire the weapon if it's
+    // fully charged and the agent released the trigger
     if (weaponNeedsCharge && (chargingWeapon || drone->weaponCharge < drone->weaponInfo->charge)) {
         return;
     }
@@ -1076,6 +1084,7 @@ void droneStep(env *e, droneEntity *drone) {
             continue;
         }
 
+        // cast a circle that's the size of a projectile of the current weapon
         droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
         const float enemyDistance = b2Distance(enemyDrone->pos, drone->pos);
         const b2Vec2 enemyDirection = b2Normalize(b2Sub(enemyDrone->pos, drone->pos));
@@ -1130,37 +1139,45 @@ void weaponPickupsStep(env *e) {
     CC_ArrayIter iter;
     cc_array_iter_init(&iter, e->pickups);
     weaponPickupEntity *pickup;
-    while (cc_array_iter_next(&iter, (void **)&pickup) != CC_ITER_END) {
-        if (pickup->respawnWait != 0.0f) {
-            pickup->respawnWait = fmaxf(pickup->respawnWait - e->deltaTime, 0.0f);
-            if (pickup->respawnWait == 0.0f) {
-                b2Vec2 pos;
-                if (!findOpenPos(e, WEAPON_PICKUP_SHAPE, &pos)) {
-                    const enum cc_stat res = cc_array_iter_remove(&iter, NULL);
-                    MAYBE_UNUSED(res);
-                    ASSERT(res == CC_OK);
-                    DEBUG_LOG("destroying weapon pickup");
-                    destroyWeaponPickup(e, pickup);
-                    continue;
-                }
-                b2Body_SetTransform(pickup->bodyID, pos, b2Rot_identity);
-                pickup->pos = pos;
-                pickup->weapon = randWeaponPickupType(e);
 
-                DEBUG_LOGF("respawned weapon pickup at %f, %f", pos.x, pos.y);
-                const int16_t cellIdx = entityPosToCellIdx(e, pos);
-                if (cellIdx == -1) {
-                    ERRORF("invalid position for weapon pickup spawn: (%f, %f)", pos.x, pos.y);
-                }
-                pickup->mapCellIdx = cellIdx;
-                mapCell *cell = safe_array_get_at(e->cells, cellIdx);
-                entity *ent = (entity *)b2Shape_GetUserData(pickup->shapeID);
-                cell->ent = ent;
-            }
+    // respawn weapon pickups at a random location as a random weapon type
+    // once the respawn wait has elapsed
+    while (cc_array_iter_next(&iter, (void **)&pickup) != CC_ITER_END) {
+        if (pickup->respawnWait == 0.0f) {
+            continue;
         }
+        pickup->respawnWait = fmaxf(pickup->respawnWait - e->deltaTime, 0.0f);
+        if (pickup->respawnWait != 0.0f) {
+            continue;
+        }
+
+        b2Vec2 pos;
+        if (!findOpenPos(e, WEAPON_PICKUP_SHAPE, &pos)) {
+            const enum cc_stat res = cc_array_iter_remove(&iter, NULL);
+            MAYBE_UNUSED(res);
+            ASSERT(res == CC_OK);
+            DEBUG_LOG("destroying weapon pickup");
+            destroyWeaponPickup(e, pickup);
+            continue;
+        }
+        b2Body_SetTransform(pickup->bodyID, pos, b2Rot_identity);
+        pickup->pos = pos;
+        pickup->weapon = randWeaponPickupType(e);
+
+        DEBUG_LOGF("respawned weapon pickup at %f, %f", pos.x, pos.y);
+        const int16_t cellIdx = entityPosToCellIdx(e, pos);
+        if (cellIdx == -1) {
+            ERRORF("invalid position for weapon pickup spawn: (%f, %f)", pos.x, pos.y);
+        }
+        pickup->mapCellIdx = cellIdx;
+        mapCell *cell = safe_array_get_at(e->cells, cellIdx);
+        entity *ent = (entity *)b2Shape_GetUserData(pickup->shapeID);
+        cell->ent = ent;
     }
 }
 
+// only update positions and velocities of dynamic bodies if they moved
+// this step
 void handleBodyMoveEvents(const env *e) {
     b2BodyEvents events = b2World_GetBodyEvents(e->worldID);
     for (int i = 0; i < events.moveCount; i++) {
@@ -1257,7 +1274,8 @@ void handleProjectileEndContact(const entity *proj, const entity *ent) {
     projectileEntity *projectile = (projectileEntity *)proj->entity;
     if (ent != NULL && ent->type == PROJECTILE_ENTITY) {
         const projectileEntity *projectile2 = (projectileEntity *)ent->entity;
-        // if the projectiles are from the different weapons, don't change the speed
+        // don't change projectile speeds if two projectiles of the same
+        // weapon type collide
         if (projectile->weaponInfo->type != projectile2->weaponInfo->type) {
             projectile->lastSpeed = b2Length(b2Body_GetLinearVelocity(projectile->bodyID));
             return;

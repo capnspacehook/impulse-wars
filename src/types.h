@@ -56,6 +56,7 @@ typedef struct mapEntry {
     const uint8_t randFloatingStandardWalls;
     const uint8_t randFloatingBouncyWalls;
     const uint8_t randFloatingDeathWalls;
+    // are there any floating walls that have consistent starting positions
     const bool hasSetFloatingWalls;
     const uint16_t weaponPickups;
     const enum weaponType defaultWeapon;
@@ -87,6 +88,10 @@ typedef struct wallEntity {
 
 typedef struct weaponInformation {
     const enum weaponType type;
+    // should the body be treated as a bullet by box2d; if so CCD
+    // (continuous collision detection) will be enabled to prevent
+    // tunneling through static bodies which is expensive so it's
+    // only enabled for fast moving projectiles
     const bool isPhysicsBullet;
     const uint8_t numProjectiles;
     const float fireMagnitude;
@@ -107,6 +112,7 @@ typedef struct weaponPickupEntity {
     b2ShapeId shapeID;
     enum weaponType weapon;
     float respawnWait;
+    // how many floating walls are touching this pickup
     uint8_t floatingWallsTouching;
     b2Vec2 pos;
     uint16_t mapCellIdx;
@@ -128,6 +134,7 @@ typedef struct projectileEntity {
     uint8_t bounces;
 } projectileEntity;
 
+// used to keep track of what happened each step for reward purposes
 typedef struct droneStepInfo {
     bool firedShot;
     bool pickedUpWeapon;
@@ -139,6 +146,7 @@ typedef struct droneStepInfo {
     bool ownShotTaken;
 } droneStepInfo;
 
+// stats for the whole episode
 typedef struct droneStats {
     float reward;
     float distanceTraveled;
