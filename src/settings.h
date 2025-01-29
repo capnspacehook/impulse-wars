@@ -89,10 +89,10 @@ uint16_t obsBytes(uint8_t numDrones) {
     return alignedSize((MAP_OBS_SIZE * sizeof(uint8_t)) + (scalarObsSize(numDrones) * sizeof(float)), sizeof(float));
 }
 
-#define MAX_X_POS 100.0f
-#define MAX_Y_POS 100.0f
-#define MAX_DISTANCE 150.0f
-#define MAX_SPEED 300.0f
+#define MAX_X_POS 150.0f
+#define MAX_Y_POS 150.0f
+#define MAX_DISTANCE 200.0f
+#define MAX_SPEED 500.0f
 #define MAX_ANGLE (float)PI
 
 #define MAX_NEAR_WALLS 64

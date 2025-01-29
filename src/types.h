@@ -139,6 +139,7 @@ typedef struct projectileEntity {
     float lastSpeed;
     float distance;
     uint8_t bounces;
+    bool needsToBeDestroyed;
 } projectileEntity;
 
 // used to keep track of what happened each step for reward purposes
@@ -297,7 +298,8 @@ typedef struct env {
     CC_Array *floatingWalls;
     CC_Array *drones;
     CC_Array *pickups;
-    CC_SList *projectiles;
+    CC_SList *projectiles; // TODO: benchmark using an array instead here
+    CC_Array *explodingProjectiles;
 
     pathingInfo *mapPathing;
 

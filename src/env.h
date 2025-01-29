@@ -587,6 +587,7 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
     cc_slist_new(&e->projectiles);
     cc_array_new(&e->brakeTrailPoints);
     cc_array_new(&e->explosions);
+    cc_array_new(&e->explodingProjectiles);
 
     e->mapPathing = fastCalloc(NUM_MAPS, sizeof(pathingInfo));
     for (uint8_t i = 0; i < NUM_MAPS; i++) {
@@ -682,6 +683,7 @@ void destroyEnv(env *e) {
     cc_slist_destroy(e->projectiles);
     cc_array_destroy(e->brakeTrailPoints);
     cc_array_destroy(e->explosions);
+    cc_array_destroy(e->explodingProjectiles);
 
     b2DestroyWorld(e->worldID);
 }

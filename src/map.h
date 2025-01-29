@@ -364,7 +364,7 @@ void resetMap(env *e) {
         DEBUG_LOG("removing sudden death walls");
         // remove walls from the end of the array, sudden death walls
         // are added last
-        for (uint16_t i = cc_array_size(e->walls) - 1; i >= 0; i--) {
+        for (int16_t i = cc_array_size(e->walls) - 1; i >= 0; i--) {
             wallEntity *wall = safe_array_get_at(e->walls, i);
             if (!wall->isSuddenDeath) {
                 // if we reached the first non sudden death wall, we're done

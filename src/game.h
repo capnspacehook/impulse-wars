@@ -6,6 +6,10 @@
 #include "settings.h"
 #include "types.h"
 
+// these functions call each other so need to be forward declared
+void destroyProjectile(env *e, projectileEntity *projectile, const bool processExplosions, const bool full);
+void createExplosion(env *e, droneEntity *drone, const enum weaponType *type, const b2ExplosionDef *def);
+
 static inline bool entityTypeIsWall(const enum entityType type) {
     return type == STANDARD_WALL_ENTITY || type == BOUNCY_WALL_ENTITY || type == DEATH_WALL_ENTITY;
 }
@@ -19,8 +23,8 @@ static inline int16_t cellIndex(const env *e, const int8_t col, const int8_t row
 static inline int16_t entityPosToCellIdx(const env *e, const b2Vec2 pos) {
     const float cellX = pos.x + (((float)e->columns * WALL_THICKNESS) / 2.0f);
     const float cellY = pos.y + (((float)e->rows * WALL_THICKNESS) / 2.0f);
-    const uint8_t cellCol = cellX / WALL_THICKNESS;
-    const uint8_t cellRow = cellY / WALL_THICKNESS;
+    const int8_t cellCol = cellX / WALL_THICKNESS;
+    const int8_t cellRow = cellY / WALL_THICKNESS;
     const int16_t cellIdx = cellIndex(e, cellCol, cellRow);
     // set the cell to -1 if it's out of bounds
     // TODO: this is a box2d issue, investigate more
@@ -405,6 +409,7 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     projectile->lastSpeed = b2Length(projectile->velocity);
     projectile->distance = 0.0f;
     projectile->bounces = 0;
+    projectile->needsToBeDestroyed = false;
     cc_slist_add(e->projectiles, projectile);
 
     entity *ent = (entity *)fastCalloc(1, sizeof(entity));
@@ -420,64 +425,280 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     }
 }
 
-typedef struct explosionCallbackContext {
-    droneEntity *drone;
-    env *e;
-    enum weaponType weaponType;
-} explosionCallbackContext;
+b2ShapeProxy makeDistanceProxyFromType(const enum entityType type, bool *isCircle) {
+    b2ShapeProxy proxy = {0};
+    switch (type) {
+    case DRONE_ENTITY:
+        *isCircle = true;
+        proxy.radius = DRONE_RADIUS;
+        break;
+    case WEAPON_PICKUP_ENTITY:
+        proxy.count = 4;
+        proxy.points[0] = (b2Vec2){.x = -PICKUP_THICKNESS / 2.0f, .y = -PICKUP_THICKNESS / 2.0f};
+        proxy.points[1] = (b2Vec2){.x = -PICKUP_THICKNESS / 2.0f, .y = +PICKUP_THICKNESS / 2.0f};
+        proxy.points[2] = (b2Vec2){.x = +PICKUP_THICKNESS / 2.0f, .y = -PICKUP_THICKNESS / 2.0f};
+        proxy.points[3] = (b2Vec2){.x = +PICKUP_THICKNESS / 2.0f, .y = +PICKUP_THICKNESS / 2.0f};
+        break;
+    case STANDARD_WALL_ENTITY:
+    case BOUNCY_WALL_ENTITY:
+    case DEATH_WALL_ENTITY:
+        proxy.count = 4;
+        proxy.points[0] = (b2Vec2){.x = -FLOATING_WALL_THICKNESS / 2.0f, .y = -FLOATING_WALL_THICKNESS / 2.0f};
+        proxy.points[1] = (b2Vec2){.x = -FLOATING_WALL_THICKNESS / 2.0f, .y = +FLOATING_WALL_THICKNESS / 2.0f};
+        proxy.points[2] = (b2Vec2){.x = +FLOATING_WALL_THICKNESS / 2.0f, .y = -FLOATING_WALL_THICKNESS / 2.0f};
+        proxy.points[3] = (b2Vec2){.x = +FLOATING_WALL_THICKNESS / 2.0f, .y = +FLOATING_WALL_THICKNESS / 2.0f};
+        break;
+    default:
+        ERRORF("unknown entity type for shape distance: %d", type);
+    }
 
-bool explosionOverlapCallback(b2ShapeId shapeId, void *context) {
-    explosionCallbackContext *ctx = (explosionCallbackContext *)context;
-    entity *ent = (entity *)b2Shape_GetUserData(shapeId);
-    droneEntity *hitDrone = (droneEntity *)ent->entity;
-    if (hitDrone->idx == ctx->drone->idx) {
-        hitDrone->stepInfo.ownShotTaken = true;
-        ctx->e->stats[hitDrone->idx].ownShotsTaken[ctx->weaponType]++;
-        DEBUG_LOGF("drone %d hit itself with explosion from weapon %d", ctx->drone->idx, ctx->weaponType);
+    return proxy;
+}
+
+b2ShapeProxy makeDistanceProxy(const entity *ent, bool *isCircle) {
+    if (ent->type == PROJECTILE_ENTITY) {
+        b2ShapeProxy proxy = {0};
+        const projectileEntity *proj = (projectileEntity *)ent->entity;
+        proxy.radius = proj->weaponInfo->radius;
+        return proxy;
+    }
+
+    return makeDistanceProxyFromType(ent->type, isCircle);
+}
+
+// simplified and copied from box2d/src/shape.c
+float getShapeProjectedPerimeter(const b2ShapeId shapeID, const b2Vec2 line) {
+    if (b2Shape_GetType(shapeID) == b2_circleShape) {
+        const b2Circle circle = b2Shape_GetCircle(shapeID);
+        return circle.radius * 2.0f;
+    }
+
+    const b2Polygon polygon = b2Shape_GetPolygon(shapeID);
+    const b2Vec2 *points = polygon.vertices;
+    int count = polygon.count;
+    B2_ASSERT(count > 0);
+    float value = b2Dot(points[0], line);
+    float lower = value;
+    float upper = value;
+    for (int i = 1; i < count; ++i) {
+        value = b2Dot(points[i], line);
+        lower = b2MinFloat(lower, value);
+        upper = b2MaxFloat(upper, value);
+    }
+
+    return upper - lower;
+}
+
+// explodes projectile and ensures any other projectiles that are caught
+// in the explosion are also destroyed if necessary
+void createProjectileExplosion(env *e, projectileEntity *projectile, const bool initalProjectile, const bool destroyProjectiles) {
+    b2ExplosionDef explosion;
+    weaponExplosion(projectile->weaponInfo->type, &explosion);
+    explosion.position = projectile->pos;
+    explosion.maskBits = FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE;
+    droneEntity *parentDrone = safe_array_get_at(e->drones, projectile->droneIdx);
+    cc_array_add(e->explodingProjectiles, projectile);
+    createExplosion(e, parentDrone, &projectile->weaponInfo->type, &explosion);
+
+    if (e->client != NULL) {
+        explosionInfo *explInfo = fastCalloc(1, sizeof(explosionInfo));
+        explInfo->def = explosion;
+        explInfo->renderSteps = UINT16_MAX;
+        cc_array_add(e->explosions, explInfo);
+    }
+
+    if (!initalProjectile) {
+        return;
+    }
+    // destroy all other projectiles that were caught in the explosion
+    // and also exploded now that the initial projectile has been destroyed
+    for (uint8_t i = 1; i < cc_array_size(e->explodingProjectiles); i++) {
+        projectileEntity *proj = safe_array_get_at(e->explodingProjectiles, i);
+        if (destroyProjectiles) {
+            destroyProjectile(e, proj, false, true);
+        } else {
+            proj->needsToBeDestroyed = true;
+        }
+    }
+    if (destroyProjectiles) {
+        cc_array_remove_all(e->explodingProjectiles);
+    } else {
+        // if we're not destroying the projectiles now, we need to remove the initial projectile
+        // from the list of exploding projectiles so it's not destroyed twice
+        const enum cc_stat res = cc_array_remove(e->explodingProjectiles, projectile, NULL);
+        MAYBE_UNUSED(res);
+        ASSERT(res == CC_OK);
+    }
+}
+
+typedef struct explosionCtx {
+    env *e;
+    const bool isBurst;
+    droneEntity *parentDrone;
+    const enum weaponType *weaponType;
+    const b2ExplosionDef *def;
+} explosionCtx;
+
+// b2World_Explode doesn't support filtering on shapes of the same category,
+// so we have to do it manually
+// mostly copied from box2d/src/world.c
+bool explodeCallback(b2ShapeId shapeID, void *context) {
+    if (!b2Shape_IsValid(shapeID)) {
         return true;
     }
 
-    ctx->drone->stepInfo.explosionHit[hitDrone->idx] = true;
-    ctx->e->stats[ctx->drone->idx].shotsHit[ctx->weaponType]++;
-    DEBUG_LOGF("drone %d hit drone %d with explosion from weapon %d", ctx->drone->idx, hitDrone->idx, ctx->weaponType);
-    hitDrone->stepInfo.explosionTaken[ctx->drone->idx] = true;
-    ctx->e->stats[hitDrone->idx].shotsTaken[ctx->weaponType]++;
-    DEBUG_LOGF("drone %d hit by explosion from drone %d with weapon %d", hitDrone->idx, ctx->drone->idx, ctx->weaponType);
+    const explosionCtx *ctx = context;
+    const entity *entity = b2Shape_GetUserData(shapeID);
+    DEBUG_LOGF("exploding entity type %d", entity->type);
+    droneEntity *drone = NULL;
+    wallEntity *wall = NULL;
+    projectileEntity *projectile = NULL;
+
+    // the explosion shouldn't affect the parent drone
+    if (ctx->isBurst && entity->type == DRONE_ENTITY) {
+        drone = entity->entity;
+        if (drone->idx == ctx->parentDrone->idx) {
+            if (!ctx->isBurst) {
+                drone->stepInfo.ownShotTaken = true;
+                ctx->e->stats[drone->idx].ownShotsTaken[*ctx->weaponType]++;
+                DEBUG_LOGF("drone %d hit itself with explosion from weapon %d", drone->idx, *ctx->weaponType);
+            }
+            return true;
+        }
+        ctx->parentDrone->stepInfo.explosionHit[drone->idx] = true;
+        if (ctx->isBurst) {
+            ctx->e->stats[ctx->parentDrone->idx].burstsHit++;
+        } else {
+            ctx->e->stats[ctx->parentDrone->idx].shotsHit[*ctx->weaponType]++;
+            ctx->e->stats[drone->idx].shotsTaken[*ctx->weaponType]++;
+        }
+        DEBUG_LOGF("drone %d hit drone %d with burst", ctx->parentDrone->idx, drone->idx);
+        drone->stepInfo.explosionTaken[ctx->parentDrone->idx] = true;
+        DEBUG_LOGF("drone %d hit burst from drone %d", drone->idx, ctx->parentDrone->idx);
+    }
+    bool isStaticWall = false;
+    bool isFloatingWall = false;
+    if (entityTypeIsWall(entity->type)) {
+        wall = (wallEntity *)entity->entity;
+        isStaticWall = !wall->isFloating;
+        isFloatingWall = wall->isFloating;
+    }
+    // normal explosions don't affect static walls
+    if (!ctx->isBurst && isStaticWall) {
+        return true;
+    }
+
+    b2BodyId bodyID = b2Shape_GetBody(shapeID);
+    ASSERT(b2Body_IsValid(bodyID));
+    b2Transform transform = b2Body_GetTransform(bodyID);
+
+    bool isCircle = false;
+    b2DistanceInput input;
+    input.proxyA = makeDistanceProxy(entity, &isCircle);
+    input.proxyB = b2MakeProxy(&ctx->def->position, 1, 0.0f);
+    input.transformA = transform;
+    input.transformB = b2Transform_identity;
+    input.useRadii = isCircle;
+
+    b2SimplexCache cache = {0};
+    const b2DistanceOutput output = b2ShapeDistance(&cache, &input, NULL, 0);
+    // don't consider for static walls so burst pushback isn't as
+    // surprising to players
+    if (output.distance > ctx->def->radius + ctx->def->falloff || (isStaticWall && output.distance > ctx->def->radius)) {
+        return true;
+    }
+
+    const b2Vec2 closestPoint = output.pointA;
+    b2Vec2 direction;
+    if (isStaticWall) {
+        direction = b2Normalize(b2Sub(ctx->def->position, closestPoint));
+    } else {
+        direction = b2Normalize(b2Sub(closestPoint, ctx->def->position));
+    }
+
+    b2Vec2 localLine = b2InvRotateVector(transform.q, b2LeftPerp(direction));
+    float perimeter = getShapeProjectedPerimeter(shapeID, localLine);
+    float scale = 1.0f;
+    // ignore falloff for projectiles to avoid slowing them down to a crawl
+    if (output.distance > ctx->def->radius && entity->type != PROJECTILE_ENTITY) {
+        scale = clamp((ctx->def->radius + ctx->def->falloff - output.distance) / ctx->def->falloff);
+    }
+
+    float magnitude = (ctx->def->impulsePerLength + b2Length(ctx->parentDrone->lastVelocity)) * perimeter * scale;
+    if (isStaticWall) {
+        // reduce the magnitude when pushing a drone away from a wall
+        magnitude = log2f(magnitude) * 7.5f;
+    }
+    const b2Vec2 impulse = b2MulSV(magnitude, direction);
+
+    if (isStaticWall) {
+        b2Body_ApplyLinearImpulseToCenter(ctx->parentDrone->bodyID, impulse, true);
+    } else {
+        b2Body_ApplyLinearImpulseToCenter(bodyID, impulse, true);
+        switch (entity->type) {
+        case STANDARD_WALL_ENTITY:
+        case BOUNCY_WALL_ENTITY:
+        case DEATH_WALL_ENTITY:
+            wall->velocity = b2Body_GetLinearVelocity(wall->bodyID);
+            if (isFloatingWall) {
+                // floating walls are the only bodies that can rotate
+                b2Body_ApplyAngularImpulse(bodyID, magnitude, true);
+            }
+            break;
+        case PROJECTILE_ENTITY:
+            projectile = entity->entity;
+            // mine launcher projectiles explode when caught in another
+            // explosion, explode this mine only once
+            if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON) {
+                if (!cc_array_contains(ctx->e->explodingProjectiles, projectile)) {
+                    createProjectileExplosion(ctx->e, projectile, false, false);
+                }
+                break;
+            }
+
+            projectile->velocity = b2Body_GetLinearVelocity(projectile->bodyID);
+            projectile->lastSpeed = b2Length(projectile->velocity);
+            break;
+        case DRONE_ENTITY:
+            drone = entity->entity;
+            drone->lastVelocity = drone->velocity;
+            drone->velocity = b2Body_GetLinearVelocity(drone->bodyID);
+            break;
+        default:
+            ERRORF("unknown entity type for burst impulse %d", entity->type);
+        }
+    }
 
     return true;
 }
 
+void createExplosion(env *e, droneEntity *drone, const enum weaponType *type, const b2ExplosionDef *def) {
+    const float fullRadius = def->radius + def->falloff;
+    b2AABB aabb = {
+        .lowerBound.x = def->position.x - fullRadius,
+        .lowerBound.y = def->position.y - fullRadius,
+        .upperBound.x = def->position.x + fullRadius,
+        .upperBound.y = def->position.y + fullRadius,
+    };
+
+    b2QueryFilter filter = b2DefaultQueryFilter();
+    filter.categoryBits = PROJECTILE_SHAPE;
+    filter.maskBits = def->maskBits;
+
+    explosionCtx ctx = {
+        .e = e,
+        .isBurst = type == NULL,
+        .parentDrone = drone,
+        .weaponType = type,
+        .def = def,
+    };
+    b2World_OverlapAABB(e->worldID, aabb, filter, explodeCallback, &ctx);
+}
+
 void destroyProjectile(env *e, projectileEntity *projectile, const bool processExplosions, const bool full) {
     // explode projectile if necessary
-    b2ExplosionDef explosion;
     if (processExplosions && projectile->weaponInfo->explosive) {
-        weaponExplosion(projectile->weaponInfo->type, &explosion);
-        explosion.position = projectile->pos;
-        explosion.maskBits = FLOATING_WALL_SHAPE | DRONE_SHAPE;
-        b2World_Explode(e->worldID, &explosion);
-
-        if (e->client != NULL) {
-            explosionInfo *explInfo = fastCalloc(1, sizeof(explosionInfo));
-            explInfo->def = explosion;
-            explInfo->renderSteps = UINT16_MAX;
-            cc_array_add(e->explosions, explInfo);
-        }
-
-        // check if any enemy drones are in the explosion radius
-        const float totalRadius = explosion.radius + explosion.falloff;
-        const b2Circle cir = {.center = b2Vec2_zero, .radius = totalRadius};
-        const b2Transform transform = {.p = projectile->pos, .q = b2Rot_identity};
-        const b2QueryFilter filter = {
-            .categoryBits = PROJECTILE_SHAPE,
-            .maskBits = DRONE_SHAPE,
-        };
-        droneEntity *drone = safe_array_get_at(e->drones, projectile->droneIdx);
-        explosionCallbackContext ctx = {
-            .drone = drone,
-            .e = e,
-            .weaponType = projectile->weaponInfo->type,
-        };
-        b2World_OverlapCircle(e->worldID, &cir, transform, filter, explosionOverlapCallback, &ctx);
+        createProjectileExplosion(e, projectile, true, full);
     }
 
     entity *ent = (entity *)b2Shape_GetUserData(projectile->shapeID);
@@ -787,203 +1008,6 @@ void droneChargeBurst(env *e, droneEntity *drone) {
     }
 }
 
-b2ShapeProxy makeDistanceProxyFromType(const enum entityType type, bool *isCircle) {
-    b2ShapeProxy proxy = {0};
-    switch (type) {
-    case DRONE_ENTITY:
-        *isCircle = true;
-        proxy.radius = DRONE_RADIUS;
-        break;
-    case WEAPON_PICKUP_ENTITY:
-        proxy.count = 4;
-        proxy.points[0] = (b2Vec2){.x = -PICKUP_THICKNESS / 2.0f, .y = -PICKUP_THICKNESS / 2.0f};
-        proxy.points[1] = (b2Vec2){.x = -PICKUP_THICKNESS / 2.0f, .y = +PICKUP_THICKNESS / 2.0f};
-        proxy.points[2] = (b2Vec2){.x = +PICKUP_THICKNESS / 2.0f, .y = -PICKUP_THICKNESS / 2.0f};
-        proxy.points[3] = (b2Vec2){.x = +PICKUP_THICKNESS / 2.0f, .y = +PICKUP_THICKNESS / 2.0f};
-        break;
-    case STANDARD_WALL_ENTITY:
-    case BOUNCY_WALL_ENTITY:
-    case DEATH_WALL_ENTITY:
-        proxy.count = 4;
-        proxy.points[0] = (b2Vec2){.x = -FLOATING_WALL_THICKNESS / 2.0f, .y = -FLOATING_WALL_THICKNESS / 2.0f};
-        proxy.points[1] = (b2Vec2){.x = -FLOATING_WALL_THICKNESS / 2.0f, .y = +FLOATING_WALL_THICKNESS / 2.0f};
-        proxy.points[2] = (b2Vec2){.x = +FLOATING_WALL_THICKNESS / 2.0f, .y = -FLOATING_WALL_THICKNESS / 2.0f};
-        proxy.points[3] = (b2Vec2){.x = +FLOATING_WALL_THICKNESS / 2.0f, .y = +FLOATING_WALL_THICKNESS / 2.0f};
-        break;
-    default:
-        ERRORF("unknown entity type for shape distance: %d", type);
-    }
-
-    return proxy;
-}
-
-b2ShapeProxy makeDistanceProxy(const entity *ent, bool *isCircle) {
-    if (ent->type == PROJECTILE_ENTITY) {
-        b2ShapeProxy proxy = {0};
-        const projectileEntity *proj = (projectileEntity *)ent->entity;
-        proxy.radius = proj->weaponInfo->radius;
-        return proxy;
-    }
-
-    return makeDistanceProxyFromType(ent->type, isCircle);
-}
-
-// simplified and copied from box2d/src/shape.c
-float getShapeProjectedPerimeter(const b2ShapeId shapeID, const b2Vec2 line) {
-    if (b2Shape_GetType(shapeID) == b2_circleShape) {
-        const b2Circle circle = b2Shape_GetCircle(shapeID);
-        return circle.radius * 2.0f;
-    }
-
-    const b2Polygon polygon = b2Shape_GetPolygon(shapeID);
-    const b2Vec2 *points = polygon.vertices;
-    int count = polygon.count;
-    B2_ASSERT(count > 0);
-    float value = b2Dot(points[0], line);
-    float lower = value;
-    float upper = value;
-    for (int i = 1; i < count; ++i) {
-        value = b2Dot(points[i], line);
-        lower = b2MinFloat(lower, value);
-        upper = b2MaxFloat(upper, value);
-    }
-
-    return upper - lower;
-}
-
-typedef struct burstExplosionCtx {
-    env *e;
-    droneEntity *parentDrone;
-    const b2ExplosionDef *def;
-} burstExplosionCtx;
-
-// b2World_Explode doesn't support filtering on shapes of the same category,
-// so we have to do it manually
-// mostly copied from box2d/src/world.c
-// TODO: modify this so that I can use it for all explosions
-bool burstExplodeCallback(b2ShapeId shapeID, void *context) {
-    if (!b2Shape_IsValid(shapeID)) {
-        return true;
-    }
-
-    const burstExplosionCtx *ctx = (burstExplosionCtx *)context;
-    const entity *entity = b2Shape_GetUserData(shapeID);
-    DEBUG_LOGF("exploding entity type %d", entity->type);
-    droneEntity *drone = NULL;
-    wallEntity *wall = NULL;
-    projectileEntity *projectile = NULL;
-
-    // the explosion shouldn't affect the parent drone
-    if (entity->type == DRONE_ENTITY) {
-        drone = (droneEntity *)entity->entity;
-        if (drone->idx == ctx->parentDrone->idx) {
-            return true;
-        }
-        ctx->parentDrone->stepInfo.explosionHit[drone->idx] = true;
-        ctx->e->stats[ctx->parentDrone->idx].burstsHit++;
-        DEBUG_LOGF("drone %d hit drone %d with burst", ctx->parentDrone->idx, drone->idx);
-        drone->stepInfo.explosionTaken[ctx->parentDrone->idx] = true;
-        DEBUG_LOGF("drone %d hit burst from drone %d", drone->idx, ctx->parentDrone->idx);
-    }
-    bool isStaticWall = false;
-    bool isFloatingWall = false;
-    if (entityTypeIsWall(entity->type)) {
-        wall = (wallEntity *)entity->entity;
-        isStaticWall = !wall->isFloating;
-        isFloatingWall = wall->isFloating;
-    }
-
-    b2BodyId bodyID = b2Shape_GetBody(shapeID);
-    ASSERT(b2Body_IsValid(bodyID));
-    b2Transform transform = b2Body_GetTransform(bodyID);
-
-    bool isCircle = false;
-    b2DistanceInput input;
-    input.proxyA = makeDistanceProxy(entity, &isCircle);
-    input.proxyB = b2MakeProxy(&ctx->def->position, 1, 0.0f);
-    input.transformA = transform;
-    input.transformB = b2Transform_identity;
-    input.useRadii = isCircle;
-
-    b2SimplexCache cache = {0};
-    const b2DistanceOutput output = b2ShapeDistance(&cache, &input, NULL, 0);
-    // don't consider for static walls so burst pushback isn't as
-    // surprising to players
-    if (output.distance > ctx->def->radius + ctx->def->falloff || (isStaticWall && output.distance > ctx->def->radius)) {
-        return true;
-    }
-
-    const b2Vec2 closestPoint = output.pointA;
-    b2Vec2 direction;
-    if (isStaticWall) {
-        direction = b2Normalize(b2Sub(ctx->def->position, closestPoint));
-    } else {
-        direction = b2Normalize(b2Sub(closestPoint, ctx->def->position));
-    }
-
-    b2Vec2 localLine = b2InvRotateVector(transform.q, b2LeftPerp(direction));
-    float perimeter = getShapeProjectedPerimeter(shapeID, localLine);
-    float scale = 1.0f;
-    // ignore falloff for projectiles to avoid slowing them down to a crawl
-    if (output.distance > ctx->def->radius && entity->type != PROJECTILE_ENTITY) {
-        scale = clamp((ctx->def->radius + ctx->def->falloff - output.distance) / ctx->def->falloff);
-    }
-
-    float magnitude = (ctx->def->impulsePerLength + b2Length(ctx->parentDrone->lastVelocity)) * perimeter * scale;
-    if (isStaticWall) {
-        // reduce the magnitude when pushing a drone away from a wall
-        magnitude = log2f(magnitude) * 7.5f;
-    }
-    const b2Vec2 impulse = b2MulSV(magnitude, direction);
-
-    if (isStaticWall) {
-        b2Body_ApplyLinearImpulseToCenter(ctx->parentDrone->bodyID, impulse, true);
-    } else {
-        b2Body_ApplyLinearImpulseToCenter(bodyID, impulse, true);
-        switch (entity->type) {
-        case STANDARD_WALL_ENTITY:
-        case BOUNCY_WALL_ENTITY:
-        case DEATH_WALL_ENTITY:
-            wall->velocity = b2Body_GetLinearVelocity(wall->bodyID);
-            if (isFloatingWall) {
-                // floating walls are the only bodies that can rotate
-                b2Body_ApplyAngularImpulse(bodyID, magnitude, true);
-            }
-            break;
-        case PROJECTILE_ENTITY:
-            projectile = (projectileEntity *)entity->entity;
-            projectile->velocity = b2Body_GetLinearVelocity(projectile->bodyID);
-            projectile->lastSpeed = b2Length(projectile->velocity);
-            break;
-        case DRONE_ENTITY:
-            drone->lastVelocity = drone->velocity;
-            drone->velocity = b2Body_GetLinearVelocity(drone->bodyID);
-            break;
-        default:
-            ERRORF("unknown entity type for burst impulse %d", entity->type);
-        }
-    }
-
-    return true;
-}
-
-void burstExplode(env *e, droneEntity *drone, const b2ExplosionDef *def) {
-    const float fullRadius = def->radius + def->falloff;
-    b2AABB aabb = {
-        .lowerBound.x = def->position.x - fullRadius,
-        .lowerBound.y = def->position.y - fullRadius,
-        .upperBound.x = def->position.x + fullRadius,
-        .upperBound.y = def->position.y + fullRadius,
-    };
-
-    b2QueryFilter filter = b2DefaultQueryFilter();
-    filter.categoryBits = PROJECTILE_SHAPE;
-    filter.maskBits = def->maskBits;
-
-    burstExplosionCtx ctx = {.e = e, .parentDrone = drone, .def = def};
-    b2World_OverlapAABB(e->worldID, aabb, filter, burstExplodeCallback, &ctx);
-}
-
 void droneBurst(env *e, droneEntity *drone) {
     if (!drone->chargingBurst) {
         return;
@@ -997,7 +1021,7 @@ void droneBurst(env *e, droneEntity *drone) {
         .falloff = radius / 2.0f,
         .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE,
     };
-    burstExplode(e, drone, &explosion);
+    createExplosion(e, drone, NULL, &explosion);
 
     drone->chargingBurst = false;
     drone->burstCharge = 0.0f;
@@ -1139,6 +1163,9 @@ void projectilesStep(env *e) {
     cc_slist_iter_init(&iter, e->projectiles);
     projectileEntity *projectile;
     while (cc_slist_iter_next(&iter, (void **)&projectile) != CC_ITER_END) {
+        if (projectile->needsToBeDestroyed) {
+            continue;
+        }
         const float maxDistance = projectile->weaponInfo->maxDistance;
         const b2Vec2 distance = b2Sub(projectile->pos, projectile->lastPos);
         projectile->distance += b2Length(distance);
@@ -1149,13 +1176,21 @@ void projectilesStep(env *e) {
 
         if (projectile->distance >= maxDistance) {
             // we have to destroy the projectile using the iterator so
-            // we can continue to iterate correctly, copy the body ID
-            // so we can destroy it after the projectile has been freed
+            // we can continue to iterate correctly
             cc_slist_iter_remove(&iter, NULL);
             destroyProjectile(e, projectile, true, false);
             continue;
         }
     }
+
+    // destroy all other projectiles that were caught in explosions of
+    // projectiles destroyed above and also exploded now that the
+    // initial projectiles have been destroyed
+    for (uint8_t i = 0; i < cc_array_size(e->explodingProjectiles); i++) {
+        projectileEntity *proj = safe_array_get_at(e->explodingProjectiles, i);
+        destroyProjectile(e, proj, false, true);
+    }
+    cc_array_remove_all(e->explodingProjectiles);
 }
 
 void weaponPickupsStep(env *e) {
@@ -1245,15 +1280,23 @@ void handleBodyMoveEvents(const env *e) {
 
 // destroy the projectile if it has traveled enough or has bounced enough
 // times, and update drone stats if a drone was hit
-bool handleProjectileBeginContact(env *e, const entity *proj, const entity *ent, const b2Manifold *manifold, const bool projIsShapeA) {
+uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *ent, const b2Manifold *manifold, const bool projIsShapeA) {
     projectileEntity *projectile = (projectileEntity *)proj->entity;
     // e (shape B in the collision) will be NULL if it's another
     // projectile that was just destroyed
     if (ent == NULL || (ent != NULL && ent->type == PROJECTILE_ENTITY)) {
         // explode mines when hit by a projectile
         if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON) {
+            uint8_t numDestroyed = 1;
+            if (ent != NULL) {
+                const projectileEntity *projectile2 = ent->entity;
+                // if both entities are mines both will be destroyed
+                if (projectile2->weaponInfo->type == MINE_LAUNCHER_WEAPON) {
+                    numDestroyed = 2;
+                }
+            }
             destroyProjectile(e, projectile, true, true);
-            return true;
+            return numDestroyed;
         }
 
         // always allow all other projectiles to bounce off each other
@@ -1284,14 +1327,14 @@ bool handleProjectileBeginContact(env *e, const entity *proj, const entity *ent,
 
             if (projectile->weaponInfo->destroyedOnDroneHit) {
                 destroyProjectile(e, projectile, projectile->weaponInfo->explodesOnDroneHit, true);
-                return true;
+                return 1;
             }
         } else if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON && projectile->lastSpeed != 0.0f) {
             // if the mine is in explosion proximity of a drone now,
             // destroy it
             if (isOverlappingCircle(e, projectile->pos, MINE_LAUNCHER_PROXIMITY_RADIUS, PROJECTILE_SHAPE, DRONE_SHAPE, NULL)) {
                 destroyProjectile(e, projectile, true, true);
-                return true;
+                return 1;
             }
 
             // create a weld joint to stick the mine to the wall
@@ -1320,10 +1363,10 @@ bool handleProjectileBeginContact(env *e, const entity *proj, const entity *ent,
     const uint8_t maxBounces = projectile->weaponInfo->maxBounces;
     if (projectile->bounces == maxBounces) {
         destroyProjectile(e, projectile, true, true);
-        return true;
+        return 1;
     }
 
-    return false;
+    return 0;
 }
 
 void handleProjectileEndContact(const entity *proj, const entity *ent) {
@@ -1369,9 +1412,13 @@ void handleContactEvents(env *e) {
 
         if (e1 != NULL) {
             if (e1->type == PROJECTILE_ENTITY) {
-                if (handleProjectileBeginContact(e, e1, e2, &event->manifold, true)) {
+                uint8_t numDestroyed = handleProjectileBeginContact(e, e1, e2, &event->manifold, true);
+                if (numDestroyed == 2) {
+                    continue;
+                } else if (numDestroyed == 1) {
                     e1 = NULL;
                 }
+
             } else if (e1->type == DEATH_WALL_ENTITY && e2 != NULL && e2->type == DRONE_ENTITY) {
                 droneEntity *drone = (droneEntity *)e2->entity;
                 killDrone(e, drone);
