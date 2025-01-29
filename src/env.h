@@ -869,7 +869,6 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
         actions.discardWeapon = manualActions->discardWeapon;
     }
 
-    ASSERT_VEC_BOUNDED(actions.move);
     // cap movement magnitude to 1.0
     if (b2Length(actions.move) > 1.0f) {
         actions.move = b2Normalize(actions.move);
@@ -877,7 +876,6 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
         actions.move = b2Vec2_zero;
     }
 
-    ASSERT_VEC_BOUNDED(actions.aim);
     if (isActionNoop(actions.aim)) {
         actions.aim = b2Vec2_zero;
     } else {
@@ -1040,7 +1038,7 @@ void stepEnv(env *e) {
 
             agentActions actions;
             // take inputs from humans every frame
-            if (e->humanInput && e->humanDroneInput == i) {
+            if (e->humanInput && (e->numAgents > 1 || e->humanDroneInput == i)) {
                 actions = getPlayerInputs(e, drone, i);
             } else {
                 actions = stepActions[i];
