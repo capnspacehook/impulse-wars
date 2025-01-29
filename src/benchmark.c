@@ -3,12 +3,15 @@
 void perfTest(const float testTime) {
     const uint8_t NUM_DRONES = 2;
 
-    env *e = (env *)fastCalloc(1, sizeof(env));
-    uint8_t *obs = (uint8_t *)aligned_alloc(sizeof(float), alignedSize(NUM_DRONES * obsBytes(NUM_DRONES), sizeof(float)));
-    float *rewards = (float *)fastCalloc(NUM_DRONES, sizeof(float));
-    float *actions = (float *)fastCalloc(NUM_DRONES * CONTINUOUS_ACTION_SIZE, sizeof(float));
+    env *e = fastCalloc(1, sizeof(env));
+
+    uint8_t *obs = NULL;
+    posix_memalign((void **)&obs, sizeof(void *), alignedSize(NUM_DRONES * obsBytes(NUM_DRONES), sizeof(float)));
+
+    float *rewards = fastCalloc(NUM_DRONES, sizeof(float));
+    float *actions = fastCalloc(NUM_DRONES * CONTINUOUS_ACTION_SIZE, sizeof(float));
     uint8_t *terminals = (unsigned char *)fastCalloc(NUM_DRONES, sizeof(uint8_t));
-    uint8_t *truncations = (uint8_t *)fastCalloc(NUM_DRONES, sizeof(uint8_t));
+    uint8_t *truncations = fastCalloc(NUM_DRONES, sizeof(uint8_t));
     logBuffer *logs = createLogBuffer(1);
 
     initEnv(e, NUM_DRONES, NUM_DRONES, obs, false, actions, NULL, rewards, terminals, truncations, logs, 0, false, true);
@@ -49,6 +52,6 @@ void perfTest(const float testTime) {
 }
 
 int main(void) {
-    perfTest(5.0f);
+    perfTest(60.0f);
     return 0;
 }

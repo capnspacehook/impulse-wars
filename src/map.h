@@ -345,15 +345,15 @@ const mapEntry siegeMap = {
 
 #ifndef AUTOPXD
 const mapEntry *maps[] = {
-    (mapEntry *)&boringMap,
-    (mapEntry *)&prototypeArenaMap,
-    (mapEntry *)&snipersMap,
-    (mapEntry *)&roomsMap,
-    (mapEntry *)&xArena,
-    (mapEntry *)&crossBounce,
-    (mapEntry *)&asteriskArena,
-    (mapEntry *)&foamPitMap,
-    (mapEntry *)&siegeMap,
+    &boringMap,
+    &prototypeArenaMap,
+    &snipersMap,
+    &roomsMap,
+    &xArena,
+    &crossBounce,
+    &asteriskArena,
+    &foamPitMap,
+    &siegeMap,
 };
 #endif
 
@@ -457,7 +457,7 @@ void setupMap(env *e, const uint8_t mapIdx) {
             const float y = (row - (rows - 1) / 2.0f) * WALL_THICKNESS;
 
             b2Vec2 pos = {.x = x, .y = y};
-            mapCell *cell = (mapCell *)fastCalloc(1, sizeof(mapCell));
+            mapCell *cell = fastCalloc(1, sizeof(mapCell));
             cell->ent = NULL;
             cell->pos = pos;
             cc_array_add(e->cells, cell);

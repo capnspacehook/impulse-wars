@@ -26,7 +26,7 @@ void pathfindBFS(const env *e, uint8_t *flatPaths, uint16_t destCellIdx) {
     uint16_t start = 0;
     uint16_t end = 1;
 
-    const mapCell *cell = (mapCell *)safe_array_get_at(e->cells, destCellIdx);
+    const mapCell *cell = safe_array_get_at(e->cells, destCellIdx);
     if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
         return;
     }
@@ -46,7 +46,7 @@ void pathfindBFS(const env *e, uint8_t *flatPaths, uint16_t destCellIdx) {
             continue;
         }
         int16_t cellIdx = cellIndex(e, startCol, startRow);
-        const mapCell *cell = (mapCell *)safe_array_get_at(e->cells, cellIdx);
+        const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
         if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
             paths[startRow][startCol] = 8;
             continue;
@@ -180,7 +180,7 @@ agentActions scriptedBotActions(env *e, droneEntity *drone) {
     b2Vec2 nearestWallPos = b2Vec2_zero;
     float nearestWallDistance = FLT_MAX;
     for (uint8_t i = 0; i < NUM_NEAR_WALLS; i++) {
-        const wallEntity *wall = (wallEntity *)nearWalls[i].entity;
+        const wallEntity *wall = nearWalls[i].entity;
         if (wall->type == DEATH_WALL_ENTITY) {
             bool isCircle = false;
             b2DistanceInput input;
@@ -249,12 +249,12 @@ agentActions scriptedBotActions(env *e, droneEntity *drone) {
     }
 
     if (drone->weaponInfo->type == STANDARD_WEAPON) {
-        const weaponPickupEntity *pickup = (weaponPickupEntity *)nearPickups[0].entity;
+        const weaponPickupEntity *pickup = nearPickups[0].entity;
         moveTo(e, &actions, drone->pos, pickup->pos);
         return actions;
     }
 
-    droneEntity *agentDrone = (droneEntity *)safe_array_get_at(e->drones, 0);
+    droneEntity *agentDrone = safe_array_get_at(e->drones, 0);
     const b2Vec2 agentDroneDirection = b2Normalize(b2Sub(agentDrone->pos, drone->pos));
     const b2Vec2 invAgentDroneDirection = b2MulSV(-1.0f, agentDroneDirection);
 

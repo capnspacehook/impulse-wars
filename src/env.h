@@ -27,8 +27,8 @@ const uint8_t THREE_BIT_MASK = 0x7;
 const uint8_t FOUR_BIT_MASK = 0xf;
 
 logBuffer *createLogBuffer(uint16_t capacity) {
-    logBuffer *logs = (logBuffer *)fastCalloc(1, sizeof(logBuffer));
-    logs->logs = (logEntry *)fastCalloc(capacity, sizeof(logEntry));
+    logBuffer *logs = fastCalloc(1, sizeof(logBuffer));
+    logs->logs = fastCalloc(capacity, sizeof(logEntry));
     logs->size = 0;
     logs->capacity = capacity;
     return logs;
@@ -257,7 +257,7 @@ void computeNearMapObs(env *e, droneEntity *drone, float *scalarObs) {
 
     // compute type and position of N nearest walls
     for (uint8_t i = 0; i < NUM_NEAR_WALL_OBS; i++) {
-        const wallEntity *wall = (wallEntity *)nearWalls[i].entity;
+        const wallEntity *wall = nearWalls[i].entity;
 
         offset = NEAR_WALL_TYPES_OBS_OFFSET + i;
         ASSERTF(offset <= NEAR_WALL_POS_OBS_OFFSET, "offset: %d", offset);
@@ -291,7 +291,7 @@ void computeNearMapObs(env *e, droneEntity *drone, float *scalarObs) {
             if (i == NUM_FLOATING_WALL_OBS) {
                 break;
             }
-            const wallEntity *wall = (wallEntity *)nearFloatingWalls[i].entity;
+            const wallEntity *wall = nearFloatingWalls[i].entity;
 
             const b2Transform wallTransform = b2Body_GetTransform(wall->bodyID);
             const b2Vec2 wallRelPos = b2Sub(wallTransform.p, drone->pos);
@@ -318,7 +318,7 @@ void computeNearMapObs(env *e, droneEntity *drone, float *scalarObs) {
         if (i == NUM_WEAPON_PICKUP_OBS) {
             break;
         }
-        const weaponPickupEntity *pickup = (weaponPickupEntity *)nearPickups[i].entity;
+        const weaponPickupEntity *pickup = nearPickups[i].entity;
 
         offset = WEAPON_PICKUP_TYPES_OBS_OFFSET + i;
         ASSERTF(offset <= WEAPON_PICKUP_POS_OBS_OFFSET, "offset: %d", offset);
@@ -363,7 +363,7 @@ void computeObs(env *e) {
             if (projIdx == NUM_PROJECTILE_OBS) {
                 break;
             }
-            const projectileEntity *projectile = (projectileEntity *)cur->data;
+            const projectileEntity *projectile = cur->data;
 
             scalarObsOffset = PROJECTILE_TYPES_OBS_OFFSET + projIdx;
             ASSERTF(scalarObsOffset <= PROJECTILE_POS_OBS_OFFSET, "offset: %d", scalarObsOffset);
@@ -633,7 +633,7 @@ void clearEnv(env *e) {
     }
 
     for (SNode *cur = e->projectiles->head; cur != NULL; cur = cur->next) {
-        projectileEntity *p = (projectileEntity *)cur->data;
+        projectileEntity *p = cur->data;
         destroyProjectile(e, p, false, false);
     }
 
@@ -914,7 +914,7 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, uint8_t gamepadIdx) {
     bool controllerConnected = false;
     if (IsGamepadAvailable(gamepadIdx)) {
         controllerConnected = true;
-    } else if (IsGamepadAvailable(0)) {
+    } else if (e->numAgents == 1 && IsGamepadAvailable(0)) {
         controllerConnected = true;
         gamepadIdx = 0;
     }
@@ -1135,7 +1135,7 @@ void stepEnv(env *e) {
 
             // add existing projectile distances to stats
             for (SNode *cur = e->projectiles->head; cur != NULL; cur = cur->next) {
-                const projectileEntity *projectile = (projectileEntity *)cur->data;
+                const projectileEntity *projectile = cur->data;
                 e->stats[projectile->droneIdx].shotDistances[projectile->weaponInfo->type] += projectile->distance;
             }
 

@@ -43,7 +43,7 @@ rayClient *createRayClient() {
     InitWindow(DEFAULT_WIDTH, DEFAULT_HEIGHT, "Impulse Wars");
     const int monitor = GetCurrentMonitor();
 
-    rayClient *client = (rayClient *)fastCalloc(1, sizeof(rayClient));
+    rayClient *client = fastCalloc(1, sizeof(rayClient));
 
     if (client->height == 0) {
         client->height = GetMonitorHeight(monitor) - HEIGHT_LEEWAY;
@@ -320,7 +320,7 @@ void renderDroneGuides(const env *e, droneEntity *drone, const uint8_t droneIdx)
     // find length of laser aiming guide by where it touches the nearest shape
     const b2RayResult rayRes = droneAimingAt(e, drone);
     ASSERT(b2Shape_IsValid(rayRes.shapeId));
-    const entity *ent = (entity *)b2Shape_GetUserData(rayRes.shapeId);
+    const entity *ent = b2Shape_GetUserData(rayRes.shapeId);
 
     b2SimplexCache cache = {0};
     bool shapeIsCircle = false;
@@ -464,9 +464,10 @@ void renderDroneUI(const env *e, const droneEntity *drone) {
     DrawRectanglePro(fillRec, origin, 0.0f, RAYWHITE);
 }
 
+// TODO: render projectile trails, different colors for different weapons
 void renderProjectiles(env *e) {
     for (SNode *cur = e->projectiles->head; cur != NULL; cur = cur->next) {
-        projectileEntity *projectile = (projectileEntity *)cur->data;
+        projectileEntity *projectile = cur->data;
         DrawCircleV(b2VecToRayVec(e, projectile->pos), e->renderScale * projectile->weaponInfo->radius, PURPLE);
     }
 }
