@@ -76,7 +76,7 @@ const mapEntry prototypeArenaMap = {
     .randFloatingBouncyWalls = 0,
     .randFloatingDeathWalls = 0,
     .hasSetFloatingWalls = true,
-    .weaponPickups = 8,
+    .weaponPickups = 6,
     .defaultWeapon = STANDARD_WEAPON,
 };
 
@@ -148,7 +148,7 @@ const mapEntry roomsMap = {
     .randFloatingBouncyWalls = 0,
     .randFloatingDeathWalls = 3,
     .hasSetFloatingWalls = false,
-    .weaponPickups = 12,
+    .weaponPickups = 10,
     .defaultWeapon = SHOTGUN_WEAPON,
 };
 
@@ -186,7 +186,7 @@ const mapEntry xArena = {
     .randFloatingBouncyWalls = 0,
     .randFloatingDeathWalls = 0,
     .hasSetFloatingWalls = true,
-    .weaponPickups = 12,
+    .weaponPickups = 8,
     .defaultWeapon = STANDARD_WEAPON,
 };
 
@@ -225,7 +225,7 @@ const mapEntry crossBounce = {
     .randFloatingBouncyWalls = 0,
     .randFloatingDeathWalls = 0,
     .hasSetFloatingWalls = true,
-    .weaponPickups = 12,
+    .weaponPickups = 8,
     .defaultWeapon = STANDARD_WEAPON,// TODO: make this exploding weapon
 };
 
@@ -263,7 +263,7 @@ const mapEntry asteriskArena = {
     .randFloatingBouncyWalls = 0,
     .randFloatingDeathWalls = 0,
     .hasSetFloatingWalls = false,
-    .weaponPickups = 12,
+    .weaponPickups = 8,
     .defaultWeapon = STANDARD_WEAPON,
 };
 
@@ -298,7 +298,7 @@ const mapEntry foamPitMap = {
     .randFloatingBouncyWalls = 0,
     .randFloatingDeathWalls = 0,
     .hasSetFloatingWalls = true,
-    .weaponPickups = 8,
+    .weaponPickups = 6,
     .defaultWeapon = STANDARD_WEAPON,
 };
 
@@ -337,7 +337,7 @@ const mapEntry siegeMap = {
     .randFloatingBouncyWalls = 0,
     .randFloatingDeathWalls = 0,
     .hasSetFloatingWalls = true,
-    .weaponPickups = 4,
+    .weaponPickups = 5,
     .defaultWeapon = STANDARD_WEAPON,
 };
 

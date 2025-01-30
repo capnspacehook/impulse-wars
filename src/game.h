@@ -898,9 +898,14 @@ void droneShoot(env *e, droneEntity *drone, const b2Vec2 aim, const bool chargin
         return;
     }
     const bool weaponNeedsCharge = drone->weaponInfo->charge != 0.0f;
-    if (weaponNeedsCharge && chargingWeapon) {
-        drone->chargingWeapon = true;
-        drone->weaponCharge = fminf(drone->weaponCharge + e->deltaTime, drone->weaponInfo->charge);
+    if (weaponNeedsCharge) {
+        if (chargingWeapon) {
+            drone->chargingWeapon = true;
+            drone->weaponCharge = fminf(drone->weaponCharge + e->deltaTime, drone->weaponInfo->charge);
+        } else if (drone->weaponCharge < drone->weaponInfo->charge) {
+            drone->chargingWeapon = false;
+            drone->weaponCharge = fmaxf(drone->weaponCharge - e->deltaTime, 0.0f);
+        }
     }
     // if the weapon needs to be charged, only fire the weapon if it's
     // fully charged and the agent released the trigger
@@ -1386,7 +1391,7 @@ void handleProjectileEndContact(const entity *proj, const entity *ent) {
 
     float speed = projectile->lastSpeed;
     if (projectile->weaponInfo->type == ACCELERATOR_WEAPON) {
-        speed = projectile->lastSpeed * ACCELERATOR_BOUNCE_SPEED_COEF;
+        speed = fminf(projectile->lastSpeed * ACCELERATOR_BOUNCE_SPEED_COEF, ACCELERATOR_MAX_SPEED);
         projectile->lastSpeed = speed;
     }
 

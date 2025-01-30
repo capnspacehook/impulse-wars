@@ -121,6 +121,46 @@ char *getWeaponAbreviation(const enum weaponType type) {
     return name;
 }
 
+float getWeaponAimGuideWidth(const enum weaponType type) {
+    switch (type) {
+    case STANDARD_WEAPON:
+    case IMPLODER_WEAPON:
+    case ACCELERATOR_WEAPON:
+        return 5.0f;
+    case FLAK_CANNON_WEAPON:
+        return 7.5f;
+    case MACHINEGUN_WEAPON:
+    case MINE_LAUNCHER_WEAPON:
+        return 10.0f;
+    case SNIPER_WEAPON:
+        return 150.0f;
+    case SHOTGUN_WEAPON:
+        return 3.0f;
+    default:
+        ERRORF("unknown weapon when getting aim guide width %d", type);
+    }
+}
+
+Color getProjectileColor(const enum weaponType type) {
+    switch (type) {
+    case STANDARD_WEAPON:
+        return PURPLE;
+    case IMPLODER_WEAPON:
+    case ACCELERATOR_WEAPON:
+        return DARKBLUE;
+    case FLAK_CANNON_WEAPON:
+        return VIOLET;
+    case MACHINEGUN_WEAPON:
+    case SNIPER_WEAPON:
+    case SHOTGUN_WEAPON:
+        return ORANGE;
+    case MINE_LAUNCHER_WEAPON:
+        return BROWN;
+    default:
+        ERRORF("unknown weapon when getting projectile color %d", type);
+    }
+}
+
 void renderTimer(const env *e, const char *timerStr, const Color color) {
     int fontSize = 2 * e->client->scale;
     int textWidth = MeasureText(timerStr, fontSize);
@@ -169,7 +209,7 @@ void renderUI(const env *e, const bool starting, const bool ending, const int8_t
     renderTimer(e, timerStr, WHITE);
 }
 
-void renderBrakeTrails(const env *e) {
+void renderBrakeTrails(const env *e, const bool ending) {
     CC_ArrayIter brakeTrailIter;
     cc_array_iter_init(&brakeTrailIter, e->brakeTrailPoints);
     brakeTrailPoint *trailPoint;
@@ -189,7 +229,9 @@ void renderBrakeTrails(const env *e) {
             radius = 0.5f * e->renderScale;
         }
         DrawCircleV(b2VecToRayVec(e, trailPoint->pos), radius, trailColor);
-        trailPoint->lifetime--;
+        if (!ending) {
+            trailPoint->lifetime--;
+        }
     }
 }
 
@@ -342,35 +384,7 @@ void renderDroneGuides(const env *e, droneEntity *drone, const uint8_t droneIdx)
     };
     const b2DistanceOutput output = b2ShapeDistance(&cache, &input, NULL, 0);
 
-    float aimGuideWidth = 0.0f;
-    switch (drone->weaponInfo->type) {
-    case STANDARD_WEAPON:
-        aimGuideWidth = 5.0f;
-        break;
-    case MACHINEGUN_WEAPON:
-        aimGuideWidth = 10.0f;
-        break;
-    case SNIPER_WEAPON:
-        aimGuideWidth = 100.0f;
-        break;
-    case SHOTGUN_WEAPON:
-        aimGuideWidth = 3.0f;
-        break;
-    case IMPLODER_WEAPON:
-        aimGuideWidth = 5.0f;
-        break;
-    case ACCELERATOR_WEAPON:
-        aimGuideWidth = 5.0f;
-        break;
-    case FLAK_CANNON_WEAPON:
-        aimGuideWidth = 5.0f;
-        break;
-    case MINE_LAUNCHER_WEAPON:
-        aimGuideWidth = 10.0f;
-        break;
-    default:
-        ERRORF("unknown weapon when getting aim guide width %d", drone->weaponInfo->type);
-    }
+    float aimGuideWidth = getWeaponAimGuideWidth(drone->weaponInfo->type);
     aimGuideWidth = fminf(aimGuideWidth, output.distance + 0.1f) + (DRONE_RADIUS * 2.0f);
 
     // render laser aim guide
@@ -468,7 +482,8 @@ void renderDroneUI(const env *e, const droneEntity *drone) {
 void renderProjectiles(env *e) {
     for (SNode *cur = e->projectiles->head; cur != NULL; cur = cur->next) {
         projectileEntity *projectile = cur->data;
-        DrawCircleV(b2VecToRayVec(e, projectile->pos), e->renderScale * projectile->weaponInfo->radius, PURPLE);
+        const Color projectileColor = getProjectileColor(projectile->weaponInfo->type);
+        DrawCircleV(b2VecToRayVec(e, projectile->pos), e->renderScale * projectile->weaponInfo->radius, projectileColor);
     }
 }
 
@@ -487,7 +502,7 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
         renderWeaponPickup(e, pickup);
     }
 
-    renderBrakeTrails(e);
+    renderBrakeTrails(e, ending);
 
     for (uint8_t i = 0; i < e->numDrones; i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
