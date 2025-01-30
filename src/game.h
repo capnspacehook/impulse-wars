@@ -724,6 +724,7 @@ void createSuddenDeathWalls(env *e, const b2Vec2 startPos, const b2Vec2 size) {
     int16_t endIdx;
     uint8_t indexIncrement;
     if (size.y == WALL_THICKNESS) {
+        // horizontal walls
         const b2Vec2 endPos = (b2Vec2){.x = startPos.x + size.x, .y = startPos.y};
         endIdx = entityPosToCellIdx(e, endPos);
         if (endIdx == -1) {
@@ -731,12 +732,13 @@ void createSuddenDeathWalls(env *e, const b2Vec2 startPos, const b2Vec2 size) {
         }
         indexIncrement = 1;
     } else {
+        // vertical walls
         const b2Vec2 endPos = (b2Vec2){.x = startPos.x, .y = startPos.y + size.y};
         endIdx = entityPosToCellIdx(e, endPos);
         if (endIdx == -1) {
             ERRORF("invalid position for sudden death wall: (%f, %f)", endPos.x, endPos.y);
         }
-        indexIncrement = e->rows;
+        indexIncrement = e->columns;
     }
     const int16_t startIdx = entityPosToCellIdx(e, startPos);
     if (startIdx == -1) {
@@ -765,37 +767,44 @@ void handleSuddenDeath(env *e) {
     e->suddenDeathWallCounter++;
     e->suddenDeathWallsPlaced = true;
 
-    // TODO: these magic numbers can probably be simplified somehow
+    const float leftX = (e->suddenDeathWallCounter - 1) * WALL_THICKNESS;
+    const float yOffset = (WALL_THICKNESS * (e->suddenDeathWallCounter - 1)) + (WALL_THICKNESS / 2);
+    const float xWidth = WALL_THICKNESS * (e->columns - (e->suddenDeathWallCounter * 2) - 1);
+
+    // top walls
     createSuddenDeathWalls(
         e,
         (b2Vec2){
-            .x = e->bounds.min.x + ((e->suddenDeathWallCounter - 1) * WALL_THICKNESS),
-            .y = e->bounds.min.y + ((WALL_THICKNESS * (e->suddenDeathWallCounter - 1)) + (WALL_THICKNESS / 2)),
+            .x = e->bounds.min.x + leftX,
+            .y = e->bounds.min.y + yOffset,
         },
         (b2Vec2){
-            .x = WALL_THICKNESS * (e->columns - (e->suddenDeathWallCounter * 2) - 1),
+            .x = xWidth,
             .y = WALL_THICKNESS,
         });
+    // bottom walls
     createSuddenDeathWalls(
         e,
         (b2Vec2){
-            .x = e->bounds.min.x + ((e->suddenDeathWallCounter - 1) * WALL_THICKNESS),
-            .y = e->bounds.max.y - ((WALL_THICKNESS * (e->suddenDeathWallCounter - 1)) + (WALL_THICKNESS / 2)),
+            .x = e->bounds.min.x + leftX,
+            .y = e->bounds.max.y - yOffset,
         },
         (b2Vec2){
-            .x = WALL_THICKNESS * (e->columns - (e->suddenDeathWallCounter * 2) - 1),
+            .x = xWidth,
             .y = WALL_THICKNESS,
         });
+    // left walls
     createSuddenDeathWalls(
         e,
         (b2Vec2){
-            .x = e->bounds.min.x + ((e->suddenDeathWallCounter - 1) * WALL_THICKNESS),
+            .x = e->bounds.min.x + leftX,
             .y = e->bounds.min.y + (e->suddenDeathWallCounter * WALL_THICKNESS),
         },
         (b2Vec2){
             .x = WALL_THICKNESS,
             .y = WALL_THICKNESS * (e->rows - (e->suddenDeathWallCounter * 2) - 2),
         });
+    // right walls
     createSuddenDeathWalls(
         e,
         (b2Vec2){
