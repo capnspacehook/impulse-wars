@@ -298,7 +298,7 @@ typedef struct env {
     CC_Array *floatingWalls;
     CC_Array *drones;
     CC_Array *pickups;
-    CC_SList *projectiles; // TODO: benchmark using an array instead here
+    CC_SList *projectiles;
     CC_Array *explodingProjectiles;
 
     pathingInfo *mapPathing;

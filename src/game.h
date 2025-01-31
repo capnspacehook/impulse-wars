@@ -759,7 +759,6 @@ void createSuddenDeathWalls(env *e, const b2Vec2 startPos, const b2Vec2 size) {
     }
 }
 
-// TODO: fix for maps with different columns and rows
 void handleSuddenDeath(env *e) {
     ASSERT(e->suddenDeathSteps == 0);
 
@@ -1361,15 +1360,14 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
             b2Body_SetFixedRotation(projectile->bodyID, false);
 
             b2WeldJointDef jointDef = b2DefaultWeldJointDef();
-            jointDef.angularHertz = 100.0f;
-            jointDef.bodyIdA = wall->bodyID;
-            jointDef.bodyIdB = projectile->bodyID;
+            jointDef.bodyIdA = projectile->bodyID;
+            jointDef.bodyIdB = wall->bodyID;
             if (projIsShapeA) {
-                jointDef.localAnchorA = manifold->points[0].anchorB;
-                jointDef.localAnchorB = manifold->points[0].anchorA;
-            } else {
                 jointDef.localAnchorA = manifold->points[0].anchorA;
                 jointDef.localAnchorB = manifold->points[0].anchorB;
+            } else {
+                jointDef.localAnchorA = manifold->points[0].anchorB;
+                jointDef.localAnchorB = manifold->points[0].anchorA;
             }
             b2CreateWeldJoint(e->worldID, &jointDef);
             projectile->lastSpeed = 0.0f;

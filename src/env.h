@@ -951,6 +951,9 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, uint8_t gamepadIdx) {
         actions.aim = (b2Vec2){.x = rStickX, .y = rStickY};
         return computeActions(e, drone, &actions);
     }
+    if (!controllerConnected && drone->idx != e->humanDroneInput) {
+        return actions;
+    }
 
     b2Vec2 move = b2Vec2_zero;
     if (IsKeyDown(KEY_W)) {
