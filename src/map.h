@@ -500,7 +500,7 @@ void setupMap(env *e, const uint8_t mapIdx) {
 
 void placeRandFloatingWall(env *e, const enum entityType wallType) {
     b2Vec2 pos;
-    if (!findOpenPos(e, FLOATING_WALL_SHAPE, &pos)) {
+    if (!findOpenPos(e, FLOATING_WALL_SHAPE, &pos, -1)) {
         ERROR("failed to find open position for floating wall");
     }
     createWall(e, pos.x, pos.y, FLOATING_WALL_THICKNESS, FLOATING_WALL_THICKNESS, -1, wallType, true);

@@ -94,7 +94,7 @@ bool isOverlappingCircle(env *e, const b2Vec2 pos, const float radius, const enu
 
 // returns true and sets emptyPos to the position of an empty cell
 // that is an appropriate distance away from other entities if one exists
-bool findOpenPos(env *e, const enum shapeCategory type, b2Vec2 *emptyPos) {
+bool findOpenPos(env *e, const enum shapeCategory type, b2Vec2 *emptyPos, int8_t quad) {
     uint8_t checkedCells[BITNSLOTS(MAX_CELLS)] = {0};
     const size_t nCells = cc_array_size(e->cells);
     uint16_t attempts = 0;
@@ -103,7 +103,18 @@ bool findOpenPos(env *e, const enum shapeCategory type, b2Vec2 *emptyPos) {
         if (attempts == nCells) {
             return false;
         }
-        const int cellIdx = randInt(&e->randState, 0, nCells - 1);
+        uint16_t cellIdx;
+        if (quad == -1) {
+            cellIdx = randInt(&e->randState, 0, nCells - 1);
+        } else {
+            const float minX = e->spawnQuads[quad].min.x;
+            const float minY = e->spawnQuads[quad].min.y;
+            const float maxX = e->spawnQuads[quad].max.x;
+            const float maxY = e->spawnQuads[quad].max.y;
+
+            b2Vec2 randPos = {.x = randFloat(&e->randState, minX, maxX), .y = randFloat(&e->randState, minY, maxY)};
+            cellIdx = entityPosToCellIdx(e, randPos);
+        }
         if (bitTest(checkedCells, cellIdx)) {
             continue;
         }
@@ -218,23 +229,46 @@ void destroyWall(const env *e, wallEntity *wall, const bool full) {
     fastFree(wall);
 }
 
-// TODO: make weapon types less likely to spawn depending on how many there already are
 enum weaponType randWeaponPickupType(env *e) {
+    // spawn weapon pickups according to their spawn weights and how many
+    // pickups are currently spawned with different weapons
+    float totalWeight = 0.0f;
+    float spawnWeights[_NUM_WEAPONS - 1] = {0};
+    for (uint8_t i = 1; i < NUM_WEAPONS; i++) {
+        spawnWeights[i - 1] = weaponInfos[i]->spawnWeight / ((e->spawnedWeaponPickups[i] + 1) * 2.0f);
+        totalWeight += spawnWeights[i - 1];
+    }
+
     while (true) {
-        const enum weaponType type = (enum weaponType)randInt(&e->randState, STANDARD_WEAPON + 1, NUM_WEAPONS - 1);
-        if (type != e->defaultWeapon->type) {
-            return type;
+        const float randPick = randFloat(&e->randState, 0.0f, totalWeight);
+        float cumulativeWeight = 0.0f;
+        enum weaponType type = STANDARD_WEAPON;
+        for (uint8_t i = 0; i < NUM_WEAPONS - 1; i++) {
+            cumulativeWeight += spawnWeights[i];
+            if (randPick < cumulativeWeight) {
+                type = i + 1;
+                break;
+            }
         }
+        if (type == e->defaultWeapon->type) {
+            continue;
+        }
+
+        e->spawnedWeaponPickups[type]++;
+        return type;
     }
 }
 
 void createWeaponPickup(env *e) {
     b2BodyDef pickupBodyDef = b2DefaultBodyDef();
+
     b2Vec2 pos;
-    if (!findOpenPos(e, WEAPON_PICKUP_SHAPE, &pos)) {
+    e->lastSpawnQuad = (e->lastSpawnQuad + 1) % 4;
+    if (!findOpenPos(e, WEAPON_PICKUP_SHAPE, &pos, e->lastSpawnQuad)) {
         ERROR("no open position for weapon pickup");
     }
     pickupBodyDef.position = pos;
+
     b2BodyId pickupBodyID = b2CreateBody(e->worldID, &pickupBodyDef);
     b2ShapeDef pickupShapeDef = b2DefaultShapeDef();
     pickupShapeDef.filter.categoryBits = WEAPON_PICKUP_SHAPE;
@@ -280,12 +314,29 @@ void destroyWeaponPickup(const env *e, weaponPickupEntity *pickup) {
     fastFree(pickup);
 }
 
+void disableWeaponPickup(env *e, weaponPickupEntity *pickup) {
+    pickup->respawnWait = PICKUP_RESPAWN_WAIT;
+    if (e->suddenDeathWallsPlaced) {
+        pickup->respawnWait = SUDDEN_DEATH_PICKUP_RESPAWN_WAIT;
+    }
+    e->spawnedWeaponPickups[pickup->weapon]--;
+}
+
 void createDrone(env *e, const uint8_t idx) {
     b2BodyDef droneBodyDef = b2DefaultBodyDef();
     droneBodyDef.type = b2_dynamicBody;
-    if (!findOpenPos(e, DRONE_SHAPE, &droneBodyDef.position)) {
+
+    // spawn drones in diagonal quadrants from each other so that they're
+    // more likely to be further apart
+    int8_t spawnQuad = 3 - e->lastSpawnQuad;
+    if (e->lastSpawnQuad == -1) {
+        spawnQuad = randInt(&e->randState, 0, 3);
+        e->lastSpawnQuad = spawnQuad;
+    }
+    if (!findOpenPos(e, DRONE_SHAPE, &droneBodyDef.position, spawnQuad)) {
         ERROR("no open position for drone");
     }
+
     droneBodyDef.fixedRotation = true;
     droneBodyDef.linearDamping = DRONE_LINEAR_DAMPING;
     b2BodyId droneBodyID = b2CreateBody(e->worldID, &droneBodyDef);
@@ -749,7 +800,7 @@ void createSuddenDeathWalls(env *e, const b2Vec2 startPos, const b2Vec2 size) {
         if (cell->ent != NULL) {
             if (cell->ent->type == WEAPON_PICKUP_ENTITY) {
                 weaponPickupEntity *pickup = cell->ent->entity;
-                pickup->respawnWait = PICKUP_RESPAWN_WAIT;
+                disableWeaponPickup(e, pickup);
             } else {
                 continue;
             }
@@ -1224,7 +1275,7 @@ void weaponPickupsStep(env *e) {
         }
 
         b2Vec2 pos;
-        if (!findOpenPos(e, WEAPON_PICKUP_SHAPE, &pos)) {
+        if (!findOpenPos(e, WEAPON_PICKUP_SHAPE, &pos, -1)) {
             const enum cc_stat res = cc_array_iter_remove(&iter, NULL);
             MAYBE_UNUSED(res);
             ASSERT(res == CC_OK);
@@ -1478,7 +1529,7 @@ void handleWeaponPickupBeginTouch(env *e, const entity *sensor, entity *visitor)
 
     switch (visitor->type) {
     case DRONE_ENTITY:
-        pickup->respawnWait = PICKUP_RESPAWN_WAIT;
+        disableWeaponPickup(e, pickup);
         mapCell *cell = safe_array_get_at(e->cells, pickup->mapCellIdx);
         ASSERT(cell->ent != NULL);
         cell->ent = NULL;

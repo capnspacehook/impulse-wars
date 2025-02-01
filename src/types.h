@@ -75,6 +75,11 @@ typedef struct mapBounds {
     b2Vec2 max;
 } mapBounds;
 
+typedef struct quadBounds {
+    float min;
+    float max;
+} quadBounds;
+
 typedef struct wallEntity {
     b2BodyId bodyID;
     b2ShapeId shapeID;
@@ -110,6 +115,7 @@ typedef struct weaponInformation {
     const bool explodesOnDroneHit;
     const bool proximityDetonates;
     const float energyRefill;
+    const float spawnWeight;
 } weaponInformation;
 
 typedef struct weaponPickupEntity {
@@ -292,6 +298,9 @@ typedef struct env {
     uint8_t columns;
     uint8_t rows;
     mapBounds bounds;
+    mapBounds spawnQuads[4];
+    int8_t lastSpawnQuad;
+    uint8_t spawnedWeaponPickups[_NUM_WEAPONS];
     weaponInformation *defaultWeapon;
     CC_Array *cells;
     CC_Array *walls;

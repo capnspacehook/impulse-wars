@@ -491,6 +491,8 @@ void setupEnv(env *e) {
     e->suddenDeathSteps = e->totalSuddenDeathSteps;
     e->suddenDeathWallCounter = 0;
 
+    e->lastSpawnQuad = -1;
+
     uint8_t firstMap = 0;
     // don't evaluate on the boring empty map
     if (!e->isTraining) {
@@ -509,6 +511,42 @@ void setupEnv(env *e) {
         bounds.max.y = fmaxf(wall->pos.y + wall->extent.y - WALL_THICKNESS, bounds.max.y);
     }
     e->bounds = bounds;
+    e->spawnQuads[0] = (mapBounds){
+        .min = (b2Vec2){
+            .x = e->bounds.min.x + WALL_THICKNESS,
+            .y = e->bounds.min.y + WALL_THICKNESS,
+        },
+        .max = (b2Vec2){
+            .x = 0.0f,
+            .y = 0.0f,
+        }};
+    e->spawnQuads[1] = (mapBounds){
+        .min = (b2Vec2){
+            .x = 0.0f,
+            .y = e->bounds.min.y + WALL_THICKNESS,
+        },
+        .max = (b2Vec2){
+            .x = e->bounds.max.x - WALL_THICKNESS,
+            .y = 0.0f,
+        }};
+    e->spawnQuads[2] = (mapBounds){
+        .min = (b2Vec2){
+            .x = e->bounds.min.x + WALL_THICKNESS,
+            .y = 0.0f,
+        },
+        .max = (b2Vec2){
+            .x = 0.0f,
+            .y = e->bounds.max.y - WALL_THICKNESS,
+        }};
+    e->spawnQuads[3] = (mapBounds){
+        .min = (b2Vec2){
+            .x = 0.0f,
+            .y = 0.0f,
+        },
+        .max = (b2Vec2){
+            .x = e->bounds.max.x - WALL_THICKNESS,
+            .y = e->bounds.max.y - WALL_THICKNESS,
+        }};
 
     DEBUG_LOG("creating drones");
     for (uint8_t i = 0; i < e->numDrones; i++) {
@@ -519,6 +557,8 @@ void setupEnv(env *e) {
     placeRandFloatingWalls(e, mapIdx);
 
     DEBUG_LOG("creating weapon pickups");
+    // start spawning pickups in a random quadrant
+    e->lastSpawnQuad = randInt(&e->randState, 0, 3);
     for (uint8_t i = 0; i < maps[mapIdx]->weaponPickups; i++) {
         createWeaponPickup(e);
     }

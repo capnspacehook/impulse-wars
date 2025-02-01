@@ -125,6 +125,7 @@ const float discAimToContAimMap[2][16] = {
 #define PICKUP_THICKNESS 3.0f
 #define PICKUP_SPAWN_DISTANCE 10.0f
 #define PICKUP_RESPAWN_WAIT 3.0f
+#define SUDDEN_DEATH_PICKUP_RESPAWN_WAIT 2.0f
 
 // drone settings
 #define DRONE_WALL_SPAWN_DISTANCE 5.0f
@@ -169,6 +170,7 @@ const float discAimToContAimMap[2][16] = {
 #define STANDARD_DENSITY 3.25f
 #define STANDARD_INV_MASS INV_MASS(STANDARD_DENSITY, STANDARD_RADIUS)
 #define STANDARD_BOUNCE 2
+#define STANDARD_SPAWN_WEIGHT 0
 
 #define MACHINEGUN_AMMO 35
 #define MACHINEGUN_PROJECTILES 1
@@ -182,6 +184,7 @@ const float discAimToContAimMap[2][16] = {
 #define MACHINEGUN_INV_MASS INV_MASS(MACHINEGUN_DENSITY, MACHINEGUN_RADIUS)
 #define MACHINEGUN_BOUNCE 1
 #define MACHINEGUN_ENERGY_REFILL_COEF 0.2f
+#define MACHINEGUN_SPAWN_WEIGHT 3.0f
 
 #define SNIPER_AMMO 3
 #define SNIPER_PROJECTILES 1
@@ -195,6 +198,7 @@ const float discAimToContAimMap[2][16] = {
 #define SNIPER_INV_MASS INV_MASS(SNIPER_DENSITY, SNIPER_RADIUS)
 #define SNIPER_BOUNCE 0
 #define SNIPER_ENERGY_REFILL_COEF 1.2f
+#define SNIPER_SPAWN_WEIGHT 3.0f
 
 #define SHOTGUN_AMMO 8
 #define SHOTGUN_PROJECTILES 8
@@ -208,6 +212,7 @@ const float discAimToContAimMap[2][16] = {
 #define SHOTGUN_INV_MASS INV_MASS(SHOTGUN_DENSITY, SHOTGUN_RADIUS)
 #define SHOTGUN_BOUNCE 1
 #define SHOTGUN_ENERGY_REFILL_COEF 0.5f
+#define SHOTGUN_SPAWN_WEIGHT 3.0f
 
 #define IMPLODER_AMMO 1
 #define IMPLODER_PROJECTILES 1
@@ -220,6 +225,7 @@ const float discAimToContAimMap[2][16] = {
 #define IMPLODER_DENSITY 1.0f
 #define IMPLODER_INV_MASS INV_MASS(IMPLODER_DENSITY, IMPLODER_RADIUS)
 #define IMPLODER_BOUNCE 0
+#define IMPLODER_SPAWN_WEIGHT 1.0f
 
 #define ACCELERATOR_AMMO 1
 #define ACCELERATOR_PROJECTILES 1
@@ -234,6 +240,7 @@ const float discAimToContAimMap[2][16] = {
 #define ACCELERATOR_BOUNCE 100
 #define ACCELERATOR_BOUNCE_SPEED_COEF 1.05f
 #define ACCELERATOR_MAX_SPEED 500.f
+#define ACCELERATOR_SPAWN_WEIGHT 1.0f
 
 #define FLAK_CANNON_AMMO 12
 #define FLAK_CANNON_PROJECTILES 1
@@ -248,6 +255,7 @@ const float discAimToContAimMap[2][16] = {
 #define FLAK_CANNON_BOUNCE INFINITE
 #define FLAK_CANNON_SAFE_DISTANCE 25.0f
 #define FLAK_CANNON_PROXIMITY_RADIUS 2.0f
+#define FLAK_CANNON_SPAWN_WEIGHT 2.0f
 
 #define MINE_LAUNCHER_AMMO 3
 #define MINE_LAUNCHER_PROJECTILES 1
@@ -260,6 +268,7 @@ const float discAimToContAimMap[2][16] = {
 #define MINE_LAUNCHER_DENSITY 0.5f
 #define MINE_LAUNCHER_INV_MASS INV_MASS(MINE_LAUNCHER_DENSITY, MINE_LAUNCHER_RADIUS)
 #define MINE_LAUNCHER_BOUNCE INFINITE // this is to avoid mines sometimes exploding when hitting walls
+#define MINE_LAUNCHER_SPAWN_WEIGHT 2.0f
 #define MINE_LAUNCHER_PROXIMITY_RADIUS 7.5f
 
 const weaponInformation standard = {
@@ -280,6 +289,7 @@ const weaponInformation standard = {
     .explodesOnDroneHit = false,
     .proximityDetonates = false,
     .energyRefill = (STANDARD_FIRE_MAGNITUDE * STANDARD_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF,
+    .spawnWeight = STANDARD_SPAWN_WEIGHT,
 };
 
 const weaponInformation machineGun = {
@@ -300,6 +310,7 @@ const weaponInformation machineGun = {
     .explodesOnDroneHit = false,
     .proximityDetonates = false,
     .energyRefill = ((MACHINEGUN_FIRE_MAGNITUDE * MACHINEGUN_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF) * MACHINEGUN_ENERGY_REFILL_COEF,
+    .spawnWeight = MACHINEGUN_SPAWN_WEIGHT,
 };
 
 const weaponInformation sniper = {
@@ -320,6 +331,7 @@ const weaponInformation sniper = {
     .explodesOnDroneHit = false,
     .proximityDetonates = false,
     .energyRefill = ((SNIPER_FIRE_MAGNITUDE * SNIPER_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF) * SNIPER_ENERGY_REFILL_COEF,
+    .spawnWeight = SNIPER_SPAWN_WEIGHT,
 };
 
 const weaponInformation shotgun = {
@@ -340,6 +352,7 @@ const weaponInformation shotgun = {
     .explodesOnDroneHit = false,
     .proximityDetonates = false,
     .energyRefill = ((SHOTGUN_FIRE_MAGNITUDE * SHOTGUN_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF) * SHOTGUN_ENERGY_REFILL_COEF,
+    .spawnWeight = SHOTGUN_SPAWN_WEIGHT,
 };
 
 const weaponInformation imploder = {
@@ -360,6 +373,7 @@ const weaponInformation imploder = {
     .explodesOnDroneHit = true,
     .proximityDetonates = false,
     .energyRefill = (IMPLODER_FIRE_MAGNITUDE * IMPLODER_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF,
+    .spawnWeight = IMPLODER_SPAWN_WEIGHT,
 };
 
 const weaponInformation accelerator = {
@@ -380,6 +394,7 @@ const weaponInformation accelerator = {
     .explodesOnDroneHit = false,
     .proximityDetonates = false,
     .energyRefill = ((ACCELERATOR_FIRE_MAGNITUDE * ACCELERATOR_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF) * ACCELERATOR_BOUNCE_SPEED_COEF,
+    .spawnWeight = ACCELERATOR_SPAWN_WEIGHT,
 };
 
 const weaponInformation flakCannon = {
@@ -400,6 +415,7 @@ const weaponInformation flakCannon = {
     .explodesOnDroneHit = false,
     .proximityDetonates = true,
     .energyRefill = (FLAK_CANNON_FIRE_MAGNITUDE * FLAK_CANNON_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF,
+    .spawnWeight = FLAK_CANNON_SPAWN_WEIGHT,
 };
 
 const weaponInformation mineLauncher = {
@@ -420,6 +436,7 @@ const weaponInformation mineLauncher = {
     .explodesOnDroneHit = false,
     .proximityDetonates = true,
     .energyRefill = (MINE_LAUNCHER_FIRE_MAGNITUDE * MINE_LAUNCHER_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF,
+    .spawnWeight = MINE_LAUNCHER_SPAWN_WEIGHT,
 };
 
 #ifndef AUTOPXD
