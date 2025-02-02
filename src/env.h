@@ -100,10 +100,10 @@ uint16_t findNearestCell(const env *e, const b2Vec2 pos, const uint16_t cellIdx)
 
     uint16_t closestCell = cellIdx;
     float minDistance = FLT_MAX;
-    const uint8_t cellRow = cellIdx % e->columns;
-    const uint8_t cellCol = cellIdx / e->columns;
+    const uint8_t cellCol = cellIdx % e->columns;
+    const uint8_t cellRow = cellIdx / e->columns;
     for (uint8_t i = 0; i < 8; i++) {
-        const uint16_t newCellIdx = ((cellRow + cellOffsets[i][0]) * e->columns) + (cellCol + cellOffsets[i][1]);
+        const uint16_t newCellIdx = (cellCol + cellOffsets[i][0]) + ((cellRow + cellOffsets[i][1]) * e->columns);
         const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
         if (minDistance != fminf(minDistance, b2Distance(pos, cell->pos))) {
             closestCell = newCellIdx;

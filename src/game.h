@@ -608,8 +608,8 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
     wallEntity *wall = NULL;
     projectileEntity *projectile = NULL;
 
-    // the explosion shouldn't affect the parent drone
-    if (ctx->isBurst && entity->type == DRONE_ENTITY) {
+    // the explosion shouldn't affect the parent drone if this is a burst
+    if (entity->type == DRONE_ENTITY) {
         drone = entity->entity;
         if (drone->idx == ctx->parentDrone->idx) {
             if (!ctx->isBurst) {
@@ -621,14 +621,15 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
         }
         ctx->parentDrone->stepInfo.explosionHit[drone->idx] = true;
         if (ctx->isBurst) {
+            DEBUG_LOGF("drone %d hit drone %d with burst", ctx->parentDrone->idx, drone->idx);
             ctx->e->stats[ctx->parentDrone->idx].burstsHit++;
+            DEBUG_LOGF("drone %d hit by burst from drone %d", drone->idx, ctx->parentDrone->idx);
         } else {
+            DEBUG_LOGF("drone %d hit drone %d with explosion from weapon %d", ctx->parentDrone->idx, drone->idx, *ctx->weaponType);
             ctx->e->stats[ctx->parentDrone->idx].shotsHit[*ctx->weaponType]++;
-            ctx->e->stats[drone->idx].shotsTaken[*ctx->weaponType]++;
+            DEBUG_LOGF("drone %d hit by explosion from weapon %d from drone %d", drone->idx, *ctx->weaponType, ctx->parentDrone->idx);
         }
-        DEBUG_LOGF("drone %d hit drone %d with burst", ctx->parentDrone->idx, drone->idx);
         drone->stepInfo.explosionTaken[ctx->parentDrone->idx] = true;
-        DEBUG_LOGF("drone %d hit burst from drone %d", drone->idx, ctx->parentDrone->idx);
     }
     bool isStaticWall = false;
     bool isFloatingWall = false;
@@ -714,7 +715,6 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
             projectile->lastSpeed = b2Length(projectile->velocity);
             break;
         case DRONE_ENTITY:
-            drone = entity->entity;
             drone->lastVelocity = drone->velocity;
             drone->velocity = b2Body_GetLinearVelocity(drone->bodyID);
             break;
