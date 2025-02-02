@@ -235,28 +235,30 @@ enum weaponType randWeaponPickupType(env *e) {
     float totalWeight = 0.0f;
     float spawnWeights[_NUM_WEAPONS - 1] = {0};
     for (uint8_t i = 1; i < NUM_WEAPONS; i++) {
+        if (i == e->defaultWeapon->type) {
+            continue;
+        }
         spawnWeights[i - 1] = weaponInfos[i]->spawnWeight / ((e->spawnedWeaponPickups[i] + 1) * 2.0f);
         totalWeight += spawnWeights[i - 1];
     }
 
-    while (true) {
-        const float randPick = randFloat(&e->randState, 0.0f, totalWeight);
-        float cumulativeWeight = 0.0f;
-        enum weaponType type = STANDARD_WEAPON;
-        for (uint8_t i = 0; i < NUM_WEAPONS - 1; i++) {
-            cumulativeWeight += spawnWeights[i];
-            if (randPick < cumulativeWeight) {
-                type = i + 1;
-                break;
-            }
-        }
-        if (type == e->defaultWeapon->type) {
+    const float randPick = randFloat(&e->randState, 0.0f, totalWeight);
+    float cumulativeWeight = 0.0f;
+    enum weaponType type = STANDARD_WEAPON;
+    for (uint8_t i = 1; i < NUM_WEAPONS; i++) {
+        if (i == e->defaultWeapon->type) {
             continue;
         }
-
-        e->spawnedWeaponPickups[type]++;
-        return type;
+        cumulativeWeight += spawnWeights[i - 1];
+        if (randPick < cumulativeWeight) {
+            type = i;
+            break;
+        }
     }
+    ASSERT(type != STANDARD_WEAPON && type != e->defaultWeapon->type);
+    e->spawnedWeaponPickups[type]++;
+
+    return type;
 }
 
 void createWeaponPickup(env *e) {
