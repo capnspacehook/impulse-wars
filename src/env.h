@@ -887,7 +887,7 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
     if (manualActions == NULL) {
         actions.move = (b2Vec2){.x = tanhf(e->contActions[offset + 0]), .y = tanhf(e->contActions[offset + 1])};
         actions.aim = (b2Vec2){.x = tanhf(e->contActions[offset + 2]), .y = tanhf(e->contActions[offset + 3])};
-        actions.chargingWeapon = (bool)e->contActions[offset + 4];
+        actions.chargingWeapon = e->contActions[offset + 4] >= 0.0f;
         actions.shoot = actions.chargingWeapon;
         if (!actions.chargingWeapon && drone->chargingWeapon) {
             actions.shoot = true;
@@ -895,7 +895,7 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
         const float brake = tanhf(e->contActions[offset + 5]);
         actions.brakeLight = brake < 2.0f / 3.0f && brake > 0.0f;
         actions.brakeHeavy = brake < -2.0f / 3.0f;
-        actions.chargingBurst = (bool)e->contActions[offset + 6];
+        actions.chargingBurst = e->contActions[offset + 6] >= 0.0f;
         if (!actions.chargingBurst && drone->chargingBurst) {
             actions.burst = true;
         }
@@ -1174,12 +1174,6 @@ void stepEnv(env *e) {
             for (uint8_t i = 0; i < e->numDrones; i++) {
                 const droneEntity *drone = safe_array_get_at(e->drones, i);
                 e->stats[i].absDistanceTraveled = b2Distance(drone->initalPos, drone->pos);
-            }
-
-            // add existing projectile distances to stats
-            for (SNode *cur = e->projectiles->head; cur != NULL; cur = cur->next) {
-                const projectileEntity *projectile = cur->data;
-                e->stats[projectile->droneIdx].shotDistances[projectile->weaponInfo->type] += projectile->distance;
             }
 
             logEntry log = {0};

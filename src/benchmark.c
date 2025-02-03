@@ -1,6 +1,6 @@
 #include "env.h"
 
-void perfTest(const float testTime) {
+void perfTest(const uint32_t numSteps) {
     const uint8_t NUM_DRONES = 2;
 
     env *e = fastCalloc(1, sizeof(env));
@@ -14,11 +14,10 @@ void perfTest(const float testTime) {
     uint8_t *truncations = fastCalloc(NUM_DRONES, sizeof(uint8_t));
     logBuffer *logs = createLogBuffer(1);
 
-    initEnv(e, NUM_DRONES, NUM_DRONES, obs, false, actions, NULL, rewards, terminals, truncations, logs, 0, false, true);
+    initEnv(e, NUM_DRONES, NUM_DRONES, obs, false, actions, NULL, rewards, terminals, truncations, logs, time(NULL), false, true);
 
-    const time_t start = time(NULL);
-    int steps = 0;
-    while (time(NULL) - start < testTime) {
+    uint32_t steps = 0;
+    while (steps != numSteps) {
         uint8_t actionOffset = 0;
         for (uint8_t i = 0; i < e->numDrones; i++) {
             e->contActions[actionOffset + 0] = randFloat(&e->randState, -1.0f, 1.0f);
@@ -36,10 +35,6 @@ void perfTest(const float testTime) {
         steps++;
     }
 
-    const time_t end = time(NULL);
-    printf("SPS: %f\n", (float)NUM_DRONES * ((float)steps / (float)(end - start)));
-    printf("Steps: %d\n", NUM_DRONES * steps);
-
     destroyEnv(e);
 
     fastFree(obs);
@@ -52,6 +47,6 @@ void perfTest(const float testTime) {
 }
 
 int main(void) {
-    perfTest(60.0f);
+    perfTest(2500000);
     return 0;
 }

@@ -764,11 +764,9 @@ void destroyProjectile(env *e, projectileEntity *projectile, const bool processE
         const enum cc_stat res = cc_slist_remove(e->projectiles, projectile, NULL);
         MAYBE_UNUSED(res);
         ASSERT(res == CC_OK);
-    } else {
-        // only add to the stats if we are not clearing the environment,
-        // otherwise this projectile's distance will be counted twice
-        e->stats[projectile->droneIdx].shotDistances[projectile->droneIdx] += projectile->distance;
     }
+
+    e->stats[projectile->droneIdx].shotDistances[projectile->droneIdx] += projectile->distance;
 
     fastFree(projectile);
 }
@@ -1234,8 +1232,8 @@ void projectilesStep(env *e) {
             continue;
         }
         const float maxDistance = projectile->weaponInfo->maxDistance;
-        const b2Vec2 distance = b2Sub(projectile->pos, projectile->lastPos);
-        projectile->distance += b2Length(distance);
+        const float distance = b2Distance(projectile->pos, projectile->lastPos);
+        projectile->distance += distance;
 
         if (maxDistance == INFINITE) {
             continue;
