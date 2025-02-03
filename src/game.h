@@ -361,8 +361,7 @@ void createDrone(env *e, const uint8_t idx) {
     drone->chargingWeapon = false;
     drone->weaponCharge = 0.0f;
     drone->energyLeft = DRONE_ENERGY_MAX;
-    drone->lightBraking = false;
-    drone->heavyBraking = false;
+    drone->braking = false;
     drone->chargingBurst = false;
     drone->burstCharge = 0.0f;
     drone->burstCooldown = 0.0f;
@@ -415,8 +414,7 @@ void killDrone(env *e, droneEntity *drone) {
     }
 
     b2Body_Disable(drone->bodyID);
-    drone->lightBraking = false;
-    drone->heavyBraking = false;
+    drone->braking = false;
     drone->chargingBurst = false;
     drone->energyFullyDepleted = false;
     drone->shotThisStep = false;
@@ -1001,13 +999,12 @@ void droneShoot(env *e, droneEntity *drone, const b2Vec2 aim, const bool chargin
     }
 }
 
-void droneBrake(env *e, droneEntity *drone, const bool lightBrake, const bool heavyBrake) {
+void droneBrake(env *e, droneEntity *drone, const bool brake) {
     // if the drone isn't braking or energy is fully depleted, return
     // unless the drone was braking during the last step
-    if ((!lightBrake && !heavyBrake) || drone->energyFullyDepleted) {
-        if (drone->lightBraking || drone->heavyBraking) {
-            drone->lightBraking = false;
-            drone->heavyBraking = false;
+    if (!brake || drone->energyFullyDepleted) {
+        if (drone->braking) {
+            drone->braking = false;
             b2Body_SetLinearDamping(drone->bodyID, DRONE_LINEAR_DAMPING);
             if (drone->energyRefillWait == 0.0f && !drone->chargingBurst) {
                 drone->energyRefillWait = DRONE_ENERGY_REFILL_WAIT;
@@ -1018,20 +1015,13 @@ void droneBrake(env *e, droneEntity *drone, const bool lightBrake, const bool he
     ASSERT(!drone->energyFullyDepleted);
 
     // apply additional brake damping and decrease energy
-    if (lightBrake) {
-        if (!drone->lightBraking) {
-            drone->lightBraking = true;
-            b2Body_SetLinearDamping(drone->bodyID, DRONE_LINEAR_DAMPING * DRONE_LIGHT_BRAKE_COEF);
+    if (brake) {
+        if (!drone->braking) {
+            drone->braking = true;
+            b2Body_SetLinearDamping(drone->bodyID, DRONE_LINEAR_DAMPING * DRONE_BRAKE_COEF);
         }
-        drone->energyLeft = fmaxf(drone->energyLeft - (DRONE_LIGHT_BRAKE_DRAIN_RATE * e->deltaTime), 0.0f);
-        e->stats[drone->idx].lightBrakeTime += e->deltaTime;
-    } else if (heavyBrake) {
-        if (!drone->heavyBraking) {
-            drone->heavyBraking = true;
-            b2Body_SetLinearDamping(drone->bodyID, DRONE_LINEAR_DAMPING * DRONE_HEAVY_BRAKE_COEF);
-        }
-        drone->energyLeft = fmaxf(drone->energyLeft - (DRONE_HEAVY_BRAKE_DRAIN_RATE * e->deltaTime), 0.0f);
-        e->stats[drone->idx].heavyBrakeTime += e->deltaTime;
+        drone->energyLeft = fmaxf(drone->energyLeft - (DRONE_BRAKE_DRAIN_RATE * e->deltaTime), 0.0f);
+        e->stats[drone->idx].brakeTime += e->deltaTime;
     }
 
     // if energy is empty but burst is being charged, let burst functions
@@ -1046,7 +1036,6 @@ void droneBrake(env *e, droneEntity *drone, const bool lightBrake, const bool he
     if (e->client != NULL) {
         brakeTrailPoint *trailPoint = fastCalloc(1, sizeof(brakeTrailPoint));
         trailPoint->pos = drone->pos;
-        trailPoint->heavyBrake = heavyBrake;
         trailPoint->lifetime = UINT16_MAX;
         cc_array_add(e->brakeTrailPoints, trailPoint);
     }

@@ -72,8 +72,7 @@ logEntry aggregateAndClearLogBuffer(uint8_t numDrones, logBuffer *logs) {
                 log.stats[j].ownShotsTaken[k] += logs->logs[i].stats[j].ownShotsTaken[k] / logSize;
                 log.stats[j].weaponsPickedUp[k] += logs->logs[i].stats[j].weaponsPickedUp[k] / logSize;
                 log.stats[j].shotDistances[k] += logs->logs[i].stats[j].shotDistances[k] / logSize;
-                log.stats[j].lightBrakeTime += logs->logs[i].stats[j].lightBrakeTime / logSize;
-                log.stats[j].heavyBrakeTime += logs->logs[i].stats[j].heavyBrakeTime / logSize;
+                log.stats[j].brakeTime += logs->logs[i].stats[j].brakeTime / logSize;
                 log.stats[j].totalBursts += logs->logs[i].stats[j].totalBursts / logSize;
                 log.stats[j].burstsHit += logs->logs[i].stats[j].burstsHit / logSize;
                 log.stats[j].energyEmptied += logs->logs[i].stats[j].energyEmptied / logSize;
@@ -409,10 +408,8 @@ void computeObs(env *e) {
             const b2Vec2 enemyDroneRelNormPos = b2Normalize(b2Sub(enemyDrone->pos, agentDrone->pos));
             const float enemyDroneAimAngle = atan2f(enemyDrone->lastAim.y, enemyDrone->lastAim.x);
             float enemyDroneBraking = 0.0f;
-            if (enemyDrone->lightBraking) {
+            if (enemyDrone->braking) {
                 enemyDroneBraking = 1.0f;
-            } else if (enemyDrone->heavyBraking) {
-                enemyDroneBraking = 2.0f;
             }
 
             const uint16_t enemyDroneObsOffset = ENEMY_DRONE_OBS_OFFSET + processedDrones;
@@ -437,7 +434,7 @@ void computeObs(env *e) {
             scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->weaponCharge, enemyDrone->weaponInfo->charge, true);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->energyLeft, DRONE_ENERGY_MAX, true);
             scalarObs[scalarObsOffset++] = (float)enemyDrone->energyFullyDepleted;
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneBraking, 2.0f, true);
+            scalarObs[scalarObsOffset++] = enemyDroneBraking;
             scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->burstCooldown, DRONE_BURST_COOLDOWN, true);
             scalarObs[scalarObsOffset++] = (float)enemyDrone->chargingBurst;
             scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->burstCharge, DRONE_ENERGY_MAX, true);
@@ -451,10 +448,8 @@ void computeObs(env *e) {
         scalarObsOffset = ENEMY_DRONE_OBS_OFFSET + ((e->numDrones - 1) * ENEMY_DRONE_OBS_SIZE);
         const b2Vec2 agentDroneAccel = b2Sub(agentDrone->velocity, agentDrone->lastVelocity);
         float agentDroneBraking = 0.0f;
-        if (agentDrone->lightBraking) {
+        if (agentDrone->braking) {
             agentDroneBraking = 1.0f;
-        } else if (agentDrone->heavyBraking) {
-            agentDroneBraking = 2.0f;
         }
 
         scalarObs[scalarObsOffset++] = agentDrone->weaponInfo->type + 1;
@@ -471,7 +466,7 @@ void computeObs(env *e) {
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->weaponCharge, agentDrone->weaponInfo->charge, true);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->energyLeft, DRONE_ENERGY_MAX, true);
         scalarObs[scalarObsOffset++] = (float)agentDrone->energyFullyDepleted;
-        scalarObs[scalarObsOffset++] = scaleValue(agentDroneBraking, 2.0f, true);
+        scalarObs[scalarObsOffset++] = agentDroneBraking;
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->burstCooldown, DRONE_BURST_COOLDOWN, true);
         scalarObs[scalarObsOffset++] = (float)agentDrone->chargingBurst;
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->burstCharge, DRONE_ENERGY_MAX, true);
@@ -868,11 +863,9 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
             actions.shoot = true;
         }
         const uint8_t brake = e->discActions[offset + 3];
-        ASSERT(brake <= 2);
+        ASSERT(brake <= 1);
         if (brake == 1) {
-            actions.brakeLight = true;
-        } else if (brake == 2) {
-            actions.brakeHeavy = true;
+            actions.brake = true;
         }
         const uint8_t burst = e->discActions[offset + 4];
         ASSERT(burst <= 1);
@@ -887,15 +880,14 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
     if (manualActions == NULL) {
         actions.move = (b2Vec2){.x = tanhf(e->contActions[offset + 0]), .y = tanhf(e->contActions[offset + 1])};
         actions.aim = (b2Vec2){.x = tanhf(e->contActions[offset + 2]), .y = tanhf(e->contActions[offset + 3])};
-        actions.chargingWeapon = e->contActions[offset + 4] >= 0.0f;
+        actions.chargingWeapon = e->contActions[offset + 4] > 0.0f;
         actions.shoot = actions.chargingWeapon;
         if (!actions.chargingWeapon && drone->chargingWeapon) {
             actions.shoot = true;
         }
         const float brake = tanhf(e->contActions[offset + 5]);
-        actions.brakeLight = brake < 2.0f / 3.0f && brake > 0.0f;
-        actions.brakeHeavy = brake < -2.0f / 3.0f;
-        actions.chargingBurst = e->contActions[offset + 6] >= 0.0f;
+        actions.brake = brake > 0.0f;
+        actions.chargingBurst = e->contActions[offset + 6] > 0.0f;
         if (!actions.chargingBurst && drone->chargingBurst) {
             actions.burst = true;
         }
@@ -904,8 +896,7 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
         actions.aim = manualActions->aim;
         actions.chargingWeapon = manualActions->chargingWeapon;
         actions.shoot = manualActions->shoot;
-        actions.brakeLight = manualActions->brakeLight;
-        actions.brakeHeavy = manualActions->brakeHeavy;
+        actions.brake = manualActions->brake;
         actions.chargingBurst = manualActions->chargingBurst;
         actions.burst = manualActions->burst;
         actions.discardWeapon = manualActions->discardWeapon;
@@ -972,9 +963,7 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, uint8_t gamepadIdx) {
         }
 
         if (IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_LEFT_TRIGGER_2)) {
-            actions.brakeLight = true;
-        } else if (IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_LEFT_TRIGGER_1)) {
-            actions.brakeHeavy = true;
+            actions.brake = true;
         }
 
         if (IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_RIGHT_TRIGGER_1) || IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)) {
@@ -1020,7 +1009,7 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, uint8_t gamepadIdx) {
         actions.shoot = true;
     }
     if (IsKeyDown(KEY_SPACE)) {
-        actions.brakeLight = true;
+        actions.brake = true;
     }
     if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
         actions.chargingBurst = true;
@@ -1098,7 +1087,7 @@ void stepEnv(env *e) {
             if (!b2VecEqual(actions.move, b2Vec2_zero)) {
                 droneMove(drone, actions.move);
             }
-            droneBrake(e, drone, actions.brakeLight, actions.brakeHeavy);
+            droneBrake(e, drone, actions.brake);
             if (actions.shoot) {
                 droneShoot(e, drone, actions.aim, actions.chargingWeapon);
             }

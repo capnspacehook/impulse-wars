@@ -171,8 +171,7 @@ typedef struct droneStats {
     float ownShotsTaken[_NUM_WEAPONS];
     float weaponsPickedUp[_NUM_WEAPONS];
     float shotDistances[_NUM_WEAPONS];
-    float lightBrakeTime;
-    float heavyBrakeTime;
+    float brakeTime;
     float totalBursts;
     float burstsHit;
     float energyEmptied;
@@ -189,8 +188,7 @@ typedef struct droneEntity {
     bool chargingWeapon;
     float weaponCharge;
     float energyLeft;
-    bool lightBraking;
-    bool heavyBraking;
+    bool braking;
     bool chargingBurst;
     float burstCharge;
     float burstCooldown;
@@ -239,7 +237,6 @@ typedef struct rayClient {
 
 typedef struct brakeTrailPoint {
     b2Vec2 pos;
-    bool heavyBrake;
     uint16_t lifetime;
 } brakeTrailPoint;
 
@@ -253,8 +250,7 @@ typedef struct agentActions {
     b2Vec2 aim;
     bool chargingWeapon;
     bool shoot;
-    bool brakeLight;
-    bool brakeHeavy;
+    bool brake;
     bool chargingBurst;
     bool burst;
     bool discardWeapon;

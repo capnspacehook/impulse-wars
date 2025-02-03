@@ -225,9 +225,6 @@ void renderBrakeTrails(const env *e, const bool ending) {
         Color trailColor = GRAY;
         trailColor.a = 32.0f * (trailPoint->lifetime / (3.0f * e->frameRate));
         float radius = 0.3f * e->renderScale;
-        if (trailPoint->heavyBrake) {
-            radius = 0.5f * e->renderScale;
-        }
         DrawCircleV(b2VecToRayVec(e, trailPoint->pos), radius, trailColor);
         if (!ending) {
             trailPoint->lifetime--;

@@ -29,8 +29,7 @@ def transformRawLog(numDrones: int, rawLog: Dict[str, float]):
         log[f"drone_{i}_own_shots_taken"] = sum(stats["ownShotsTaken"])
         log[f"drone_{i}_weapons_picked_up"] = sum(stats["weaponsPickedUp"])
         log[f"drone_{i}_shots_distance"] = sum(stats["shotDistances"])
-        log[f"drone_{i}_light_brake_time"] = stats["lightBrakeTime"]
-        log[f"drone_{i}_heavy_brake_time"] = stats["heavyBrakeTime"]
+        log[f"drone_{i}_brake_time"] = stats["brakeTime"]
         log[f"drone_{i}_bursts"] = stats["totalBursts"]
         log[f"drone_{i}_burst_hit"] = stats["burstsHit"]
         log[f"drone_{i}_energy_emptied"] = stats["energyEmptied"]
@@ -79,7 +78,7 @@ class ImpulseWars(pufferlib.PufferEnv):
                     9,  # move, noop + 8 directions
                     17,  # aim, noop + 16 directions
                     2,  # shoot or not
-                    3,  # brake, noop + light brake + hard brake
+                    2,  # brake or not
                     2,  # burst
                 ]
             )
