@@ -118,6 +118,7 @@ const float discAimToContAimMap[2][16] = {
 #define FLOATING_WALL_THICKNESS 3.0f
 #define FLOATING_WALL_DAMPING 0.75f
 #define STANDARD_WALL_RESTITUTION 0.01f
+#define STANDARD_WALL_FRICTION 0.3f
 #define BOUNCY_WALL_RESTITUTION 1.0f
 #define WALL_DENSITY 4.0f
 
@@ -133,6 +134,8 @@ const float discAimToContAimMap[2][16] = {
 #define DRONE_DRONE_SPAWN_DISTANCE 10.0f
 #define DRONE_RADIUS 1.0f
 #define DRONE_DENSITY 1.25f
+#define DRONE_RESTITUTION 0.3f
+#define DRONE_FRICTION 0.1f
 #define DRONE_INV_MASS INV_MASS(DRONE_DENSITY, DRONE_RADIUS)
 #define DRONE_MOVE_MAGNITUDE 35.0f
 #define DRONE_LINEAR_DAMPING 1.0f
@@ -161,6 +164,7 @@ const float discAimToContAimMap[2][16] = {
 #define STANDARD_PROJECTILES 1
 #define STANDARD_RECOIL_MAGNITUDE 20.0f
 #define STANDARD_FIRE_MAGNITUDE 17.0f
+#define STANDARD_DAMPING 0.0f
 #define STANDARD_CHARGE 0.0f
 #define STANDARD_COOL_DOWN 0.37f
 #define STANDARD_MAX_DISTANCE 80.0f
@@ -174,6 +178,7 @@ const float discAimToContAimMap[2][16] = {
 #define MACHINEGUN_PROJECTILES 1
 #define MACHINEGUN_RECOIL_MAGNITUDE 12.8f
 #define MACHINEGUN_FIRE_MAGNITUDE 25.0f
+#define MACHINEGUN_DAMPING 0.1f
 #define MACHINEGUN_CHARGE 0.0f
 #define MACHINEGUN_COOL_DOWN 0.07f
 #define MACHINEGUN_MAX_DISTANCE 225.0f
@@ -188,6 +193,7 @@ const float discAimToContAimMap[2][16] = {
 #define SNIPER_PROJECTILES 1
 #define SNIPER_RECOIL_MAGNITUDE 96.0f
 #define SNIPER_FIRE_MAGNITUDE 300.0f
+#define SNIPER_DAMPING 0.05f
 #define SNIPER_CHARGE 1.0f
 #define SNIPER_COOL_DOWN 1.5f
 #define SNIPER_MAX_DISTANCE INFINITE
@@ -202,6 +208,7 @@ const float discAimToContAimMap[2][16] = {
 #define SHOTGUN_PROJECTILES 8
 #define SHOTGUN_RECOIL_MAGNITUDE 100.0f
 #define SHOTGUN_FIRE_MAGNITUDE 22.5f
+#define SHOTGUN_DAMPING 0.3f
 #define SHOTGUN_CHARGE 0.0f
 #define SHOTGUN_COOL_DOWN 1.0f
 #define SHOTGUN_MAX_DISTANCE 100.0f
@@ -216,6 +223,7 @@ const float discAimToContAimMap[2][16] = {
 #define IMPLODER_PROJECTILES 1
 #define IMPLODER_RECOIL_MAGNITUDE 65.0f
 #define IMPLODER_FIRE_MAGNITUDE 60.0f
+#define IMPLODER_DAMPING 0.0f
 #define IMPLODER_CHARGE 2.0f
 #define IMPLODER_COOL_DOWN 0.0f
 #define IMPLODER_MAX_DISTANCE INFINITE
@@ -229,6 +237,7 @@ const float discAimToContAimMap[2][16] = {
 #define ACCELERATOR_PROJECTILES 1
 #define ACCELERATOR_RECOIL_MAGNITUDE 100.0f
 #define ACCELERATOR_FIRE_MAGNITUDE 35.0f
+#define ACCELERATOR_DAMPING 0.0f
 #define ACCELERATOR_CHARGE 0.0f
 #define ACCELERATOR_COOL_DOWN 0.0f
 #define ACCELERATOR_MAX_DISTANCE INFINITE
@@ -244,6 +253,7 @@ const float discAimToContAimMap[2][16] = {
 #define FLAK_CANNON_PROJECTILES 1
 #define FLAK_CANNON_RECOIL_MAGNITUDE 30.0f
 #define FLAK_CANNON_FIRE_MAGNITUDE 14.0f
+#define FLAK_CANNON_DAMPING 0.15f
 #define FLAK_CANNON_CHARGE 0.0f
 #define FLAK_CANNON_COOL_DOWN 0.4f
 #define FLAK_CANNON_MAX_DISTANCE 100.0f
@@ -259,6 +269,7 @@ const float discAimToContAimMap[2][16] = {
 #define MINE_LAUNCHER_PROJECTILES 1
 #define MINE_LAUNCHER_RECOIL_MAGNITUDE 20.0f
 #define MINE_LAUNCHER_FIRE_MAGNITUDE 25.0f
+#define MINE_LAUNCHER_DAMPING 0.25f
 #define MINE_LAUNCHER_CHARGE 0.0f
 #define MINE_LAUNCHER_COOL_DOWN 0.6f
 #define MINE_LAUNCHER_MAX_DISTANCE INFINITE
@@ -275,6 +286,7 @@ const weaponInformation standard = {
     .numProjectiles = STANDARD_PROJECTILES,
     .fireMagnitude = STANDARD_FIRE_MAGNITUDE,
     .recoilMagnitude = STANDARD_RECOIL_MAGNITUDE,
+    .damping = STANDARD_DAMPING,
     .charge = STANDARD_CHARGE,
     .coolDown = STANDARD_COOL_DOWN,
     .maxDistance = STANDARD_MAX_DISTANCE,
@@ -296,6 +308,7 @@ const weaponInformation machineGun = {
     .numProjectiles = MACHINEGUN_PROJECTILES,
     .fireMagnitude = MACHINEGUN_FIRE_MAGNITUDE,
     .recoilMagnitude = MACHINEGUN_RECOIL_MAGNITUDE,
+    .damping = MACHINEGUN_DAMPING,
     .charge = MACHINEGUN_CHARGE,
     .coolDown = MACHINEGUN_COOL_DOWN,
     .maxDistance = MACHINEGUN_MAX_DISTANCE,
@@ -317,6 +330,7 @@ const weaponInformation sniper = {
     .numProjectiles = SNIPER_PROJECTILES,
     .fireMagnitude = SNIPER_FIRE_MAGNITUDE,
     .recoilMagnitude = SNIPER_RECOIL_MAGNITUDE,
+    .damping = SNIPER_DAMPING,
     .charge = SNIPER_CHARGE,
     .coolDown = SNIPER_COOL_DOWN,
     .maxDistance = SNIPER_MAX_DISTANCE,
@@ -338,6 +352,7 @@ const weaponInformation shotgun = {
     .numProjectiles = SHOTGUN_PROJECTILES,
     .fireMagnitude = SHOTGUN_FIRE_MAGNITUDE,
     .recoilMagnitude = SHOTGUN_RECOIL_MAGNITUDE,
+    .damping = SHOTGUN_DAMPING,
     .charge = SHOTGUN_CHARGE,
     .coolDown = SHOTGUN_COOL_DOWN,
     .maxDistance = SHOTGUN_MAX_DISTANCE,
@@ -359,6 +374,7 @@ const weaponInformation imploder = {
     .numProjectiles = IMPLODER_PROJECTILES,
     .fireMagnitude = IMPLODER_FIRE_MAGNITUDE,
     .recoilMagnitude = IMPLODER_RECOIL_MAGNITUDE,
+    .damping = IMPLODER_DAMPING,
     .charge = IMPLODER_CHARGE,
     .coolDown = IMPLODER_COOL_DOWN,
     .maxDistance = IMPLODER_MAX_DISTANCE,
@@ -380,6 +396,7 @@ const weaponInformation accelerator = {
     .numProjectiles = ACCELERATOR_PROJECTILES,
     .fireMagnitude = ACCELERATOR_FIRE_MAGNITUDE,
     .recoilMagnitude = ACCELERATOR_RECOIL_MAGNITUDE,
+    .damping = ACCELERATOR_DAMPING,
     .charge = ACCELERATOR_CHARGE,
     .coolDown = ACCELERATOR_COOL_DOWN,
     .maxDistance = ACCELERATOR_MAX_DISTANCE,
@@ -401,6 +418,7 @@ const weaponInformation flakCannon = {
     .numProjectiles = FLAK_CANNON_PROJECTILES,
     .fireMagnitude = FLAK_CANNON_FIRE_MAGNITUDE,
     .recoilMagnitude = FLAK_CANNON_RECOIL_MAGNITUDE,
+    .damping = FLAK_CANNON_DAMPING,
     .charge = FLAK_CANNON_CHARGE,
     .coolDown = FLAK_CANNON_COOL_DOWN,
     .maxDistance = FLAK_CANNON_MAX_DISTANCE,
@@ -422,6 +440,7 @@ const weaponInformation mineLauncher = {
     .numProjectiles = MINE_LAUNCHER_PROJECTILES,
     .fireMagnitude = MINE_LAUNCHER_FIRE_MAGNITUDE,
     .recoilMagnitude = MINE_LAUNCHER_RECOIL_MAGNITUDE,
+    .damping = MINE_LAUNCHER_DAMPING,
     .charge = MINE_LAUNCHER_CHARGE,
     .coolDown = MINE_LAUNCHER_COOL_DOWN,
     .maxDistance = MINE_LAUNCHER_MAX_DISTANCE,

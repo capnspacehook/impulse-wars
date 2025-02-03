@@ -103,6 +103,7 @@ typedef struct weaponInformation {
     const uint8_t numProjectiles;
     const float fireMagnitude;
     const float recoilMagnitude;
+    const float damping;
     const float charge;
     const float coolDown;
     const float maxDistance;
@@ -142,9 +143,12 @@ typedef struct projectileEntity {
     b2Vec2 pos;
     b2Vec2 lastPos;
     b2Vec2 velocity;
+    float speed;
     float lastSpeed;
     float distance;
     uint8_t bounces;
+    bool inContact;
+    bool setMine;
     bool needsToBeDestroyed;
 } projectileEntity;
 

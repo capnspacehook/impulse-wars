@@ -172,6 +172,7 @@ entity *createWall(const env *e, const float posX, const float posY, const float
     b2ShapeDef wallShapeDef = b2DefaultShapeDef();
     wallShapeDef.density = WALL_DENSITY;
     wallShapeDef.restitution = STANDARD_WALL_RESTITUTION;
+    wallShapeDef.friction = STANDARD_WALL_FRICTION;
     wallShapeDef.filter.categoryBits = WALL_SHAPE;
     wallShapeDef.filter.maskBits = FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | WEAPON_PICKUP_SHAPE | DRONE_SHAPE;
     if (floating) {
@@ -182,8 +183,8 @@ entity *createWall(const env *e, const float posX, const float posY, const float
 
     if (type == BOUNCY_WALL_ENTITY) {
         wallShapeDef.restitution = BOUNCY_WALL_RESTITUTION;
-    }
-    if (type == DEATH_WALL_ENTITY) {
+        wallShapeDef.friction = 0.0f;
+    } else if (type == DEATH_WALL_ENTITY) {
         wallShapeDef.enableContactEvents = true;
     }
 
@@ -344,8 +345,8 @@ void createDrone(env *e, const uint8_t idx) {
     b2BodyId droneBodyID = b2CreateBody(e->worldID, &droneBodyDef);
     b2ShapeDef droneShapeDef = b2DefaultShapeDef();
     droneShapeDef.density = DRONE_DENSITY;
-    droneShapeDef.friction = 0.0f;
-    droneShapeDef.restitution = 0.3f;
+    droneShapeDef.friction = DRONE_FRICTION;
+    droneShapeDef.restitution = DRONE_RESTITUTION;
     droneShapeDef.filter.categoryBits = DRONE_SHAPE;
     droneShapeDef.filter.maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | WEAPON_PICKUP_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE;
     droneShapeDef.enableContactEvents = true;
@@ -427,6 +428,7 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     projectileBodyDef.type = b2_dynamicBody;
     projectileBodyDef.fixedRotation = true;
     projectileBodyDef.isBullet = drone->weaponInfo->isPhysicsBullet;
+    projectileBodyDef.linearDamping = drone->weaponInfo->damping;
     projectileBodyDef.enableSleep = false;
     float radius = drone->weaponInfo->radius;
     projectileBodyDef.position = b2MulAdd(drone->pos, 1.0f + (radius * 1.5f), normAim);
@@ -458,9 +460,12 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     projectile->pos = projectileBodyDef.position;
     projectile->lastPos = projectileBodyDef.position;
     projectile->velocity = b2Body_GetLinearVelocity(projectileBodyID);
-    projectile->lastSpeed = b2Length(projectile->velocity);
+    projectile->speed = b2Length(projectile->velocity);
+    projectile->lastSpeed = projectile->speed;
     projectile->distance = 0.0f;
     projectile->bounces = 0;
+    projectile->inContact = false;
+    projectile->setMine = false;
     projectile->needsToBeDestroyed = false;
     cc_slist_add(e->projectiles, projectile);
 
@@ -610,12 +615,13 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
     if (entity->type == DRONE_ENTITY) {
         drone = entity->entity;
         if (drone->idx == ctx->parentDrone->idx) {
-            if (!ctx->isBurst) {
-                drone->stepInfo.ownShotTaken = true;
-                ctx->e->stats[drone->idx].ownShotsTaken[*ctx->weaponType]++;
-                DEBUG_LOGF("drone %d hit itself with explosion from weapon %d", drone->idx, *ctx->weaponType);
+            if (ctx->isBurst) {
+                return true;
             }
-            return true;
+
+            drone->stepInfo.ownShotTaken = true;
+            ctx->e->stats[drone->idx].ownShotsTaken[*ctx->weaponType]++;
+            DEBUG_LOGF("drone %d hit itself with explosion from weapon %d", drone->idx, *ctx->weaponType);
         }
         ctx->parentDrone->stepInfo.explosionHit[drone->idx] = true;
         if (ctx->isBurst) {
@@ -702,7 +708,7 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
             projectile = entity->entity;
             // mine launcher projectiles explode when caught in another
             // explosion, explode this mine only once
-            if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON) {
+            if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON && ctx->def->impulsePerLength > 0.0f) {
                 if (!cc_array_contains(ctx->e->explodingProjectiles, projectile)) {
                     createProjectileExplosion(ctx->e, projectile, false, false);
                 }
@@ -710,7 +716,8 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
             }
 
             projectile->velocity = b2Body_GetLinearVelocity(projectile->bodyID);
-            projectile->lastSpeed = b2Length(projectile->velocity);
+            projectile->lastSpeed = projectile->speed;
+            projectile->speed = b2Length(projectile->velocity);
             break;
         case DRONE_ENTITY:
             drone->lastVelocity = drone->velocity;
@@ -1318,6 +1325,10 @@ void handleBodyMoveEvents(const env *e) {
             proj->lastPos = proj->pos;
             proj->pos = event->transform.p;
             proj->velocity = b2Body_GetLinearVelocity(proj->bodyID);
+            if (proj->weaponInfo->damping != 0.0f && !proj->inContact) {
+                proj->lastSpeed = proj->speed;
+                proj->speed = b2Length(proj->velocity);
+            }
             break;
         case DRONE_ENTITY:
             drone = ent->entity;
@@ -1336,6 +1347,8 @@ void handleBodyMoveEvents(const env *e) {
 // times, and update drone stats if a drone was hit
 uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *ent, const b2Manifold *manifold, const bool projIsShapeA) {
     projectileEntity *projectile = proj->entity;
+    projectile->inContact = true;
+
     // e (shape B in the collision) will be NULL if it's another
     // projectile that was just destroyed
     if (ent == NULL || (ent != NULL && ent->type == PROJECTILE_ENTITY)) {
@@ -1383,7 +1396,7 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
                 destroyProjectile(e, projectile, projectile->weaponInfo->explodesOnDroneHit, true);
                 return 1;
             }
-        } else if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON && projectile->lastSpeed != 0.0f) {
+        } else if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON && projectile->speed != 0.0f) {
             // if the mine is in explosion proximity of a drone now,
             // destroy it
             if (isOverlappingCircle(e, projectile->pos, MINE_LAUNCHER_PROXIMITY_RADIUS, PROJECTILE_SHAPE, DRONE_SHAPE, NULL)) {
@@ -1410,7 +1423,7 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
                 jointDef.localAnchorB = manifold->points[0].anchorA;
             }
             b2CreateWeldJoint(e->worldID, &jointDef);
-            projectile->lastSpeed = 0.0f;
+            projectile->setMine = true;
         }
     }
     const uint8_t maxBounces = projectile->weaponInfo->maxBounces;
@@ -1423,15 +1436,17 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
 }
 
 void handleProjectileEndContact(const entity *proj, const entity *ent) {
-    // ensure the projectile's speed doesn't change after bouncing off
-    // something
     projectileEntity *projectile = proj->entity;
+    projectile->inContact = false;
+
     if (ent != NULL && ent->type == PROJECTILE_ENTITY) {
         const projectileEntity *projectile2 = ent->entity;
-        // don't change projectile speeds if two projectiles of the same
-        // weapon type collide
+        // allow projectile speeds to change when two different
+        // projectiles collide
         if (projectile->weaponInfo->type != projectile2->weaponInfo->type) {
-            projectile->lastSpeed = b2Length(b2Body_GetLinearVelocity(projectile->bodyID));
+            projectile->velocity = b2Body_GetLinearVelocity(projectile->bodyID);
+            projectile->speed = b2Length(projectile->velocity);
+            projectile->lastSpeed = projectile->speed;
             return;
         }
     }
@@ -1439,12 +1454,17 @@ void handleProjectileEndContact(const entity *proj, const entity *ent) {
     float speed = projectile->lastSpeed;
     if (projectile->weaponInfo->type == ACCELERATOR_WEAPON) {
         speed = fminf(projectile->lastSpeed * ACCELERATOR_BOUNCE_SPEED_COEF, ACCELERATOR_MAX_SPEED);
-        projectile->lastSpeed = speed;
+        projectile->speed = speed;
     }
 
+    // ensure the projectile's speed doesn't change after bouncing off
+    // something
     const b2Vec2 velocity = b2Body_GetLinearVelocity(projectile->bodyID);
-    const b2Vec2 newVel = b2MulSV(projectile->lastSpeed, b2Normalize(velocity));
+    const b2Vec2 newVel = b2MulSV(speed, b2Normalize(velocity));
     b2Body_SetLinearVelocity(projectile->bodyID, newVel);
+    projectile->velocity = newVel;
+    projectile->speed = b2Length(newVel);
+    projectile->lastSpeed = speed;
 }
 
 void handleContactEvents(env *e) {
@@ -1552,7 +1572,7 @@ void handleProjectileBeginTouch(env *e, const entity *sensor) {
         destroyProjectile(e, projectile, true, true);
         break;
     case MINE_LAUNCHER_WEAPON:
-        if (projectile->lastSpeed != 0.0f) {
+        if (!projectile->setMine) {
             return;
         }
         destroyProjectile(e, projectile, true, true);
