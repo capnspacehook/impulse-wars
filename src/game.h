@@ -467,7 +467,7 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     projectile->inContact = false;
     projectile->setMine = false;
     projectile->needsToBeDestroyed = false;
-    cc_slist_add(e->projectiles, projectile);
+    cc_array_add(e->projectiles, projectile);
 
     entity *ent = fastCalloc(1, sizeof(entity));
     ent->type = PROJECTILE_ENTITY;
@@ -582,7 +582,7 @@ void createProjectileExplosion(env *e, projectileEntity *projectile, const bool 
     } else {
         // if we're not destroying the projectiles now, we need to remove the initial projectile
         // from the list of exploding projectiles so it's not destroyed twice
-        const enum cc_stat res = cc_array_remove(e->explodingProjectiles, projectile, NULL);
+        const enum cc_stat res = cc_array_remove_fast(e->explodingProjectiles, projectile, NULL);
         MAYBE_UNUSED(res);
         ASSERT(res == CC_OK);
     }
@@ -766,9 +766,13 @@ void destroyProjectile(env *e, projectileEntity *projectile, const bool processE
     b2DestroyBody(projectile->bodyID);
 
     if (full) {
-        const enum cc_stat res = cc_slist_remove(e->projectiles, projectile, NULL);
-        MAYBE_UNUSED(res);
-        ASSERT(res == CC_OK);
+        size_t idx = SIZE_MAX;
+        cc_array_index_of(e->projectiles, projectile, &idx);
+        ASSERT(idx != SIZE_MAX);
+        size_t lastIdx = cc_array_size(e->projectiles) - 1;
+        projectileEntity *lastProj = safe_array_get_at(e->projectiles, lastIdx);
+        cc_array_replace_at(e->projectiles, lastProj, idx, NULL);
+        cc_array_remove_at(e->projectiles, lastIdx, NULL);
     }
 
     e->stats[projectile->droneIdx].shotDistances[projectile->droneIdx] += projectile->distance;
@@ -898,7 +902,7 @@ void handleSuddenDeath(env *e) {
         const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
         if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
             // floating wall is overlapping with a wall, destroy it
-            const enum cc_stat res = cc_array_iter_remove(&floatingWallIter, NULL);
+            const enum cc_stat res = cc_array_iter_remove_fast(&floatingWallIter, NULL);
             MAYBE_UNUSED(res);
             ASSERT(res == CC_OK);
 
@@ -911,17 +915,17 @@ void handleSuddenDeath(env *e) {
     }
 
     // detroy all projectiles that are now overlapping with a newly placed wall
-    CC_SListIter projectileIter;
-    cc_slist_iter_init(&projectileIter, e->projectiles);
+    CC_ArrayIter projectileIter;
+    cc_array_iter_init(&projectileIter, e->projectiles);
     projectileEntity *projectile;
-    while (cc_slist_iter_next(&projectileIter, (void **)&projectile) != CC_ITER_END) {
+    while (cc_array_iter_next(&projectileIter, (void **)&projectile) != CC_ITER_END) {
         const int16_t cellIdx = entityPosToCellIdx(e, projectile->pos);
         if (cellIdx == -1) {
             continue;
         }
         const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
         if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
-            cc_slist_iter_remove(&projectileIter, NULL);
+            cc_array_iter_remove_fast(&projectileIter, NULL);
             destroyProjectile(e, projectile, false, false);
         }
     }
@@ -1220,10 +1224,10 @@ void droneStep(env *e, droneEntity *drone) {
 }
 
 void projectilesStep(env *e) {
-    CC_SListIter iter;
-    cc_slist_iter_init(&iter, e->projectiles);
+    CC_ArrayIter iter;
+    cc_array_iter_init(&iter, e->projectiles);
     projectileEntity *projectile;
-    while (cc_slist_iter_next(&iter, (void **)&projectile) != CC_ITER_END) {
+    while (cc_array_iter_next(&iter, (void **)&projectile) != CC_ITER_END) {
         if (projectile->needsToBeDestroyed) {
             continue;
         }
@@ -1238,7 +1242,7 @@ void projectilesStep(env *e) {
         if (projectile->distance >= maxDistance) {
             // we have to destroy the projectile using the iterator so
             // we can continue to iterate correctly
-            cc_slist_iter_remove(&iter, NULL);
+            cc_array_iter_remove_fast(&iter, NULL);
             destroyProjectile(e, projectile, true, false);
             continue;
         }
@@ -1272,7 +1276,7 @@ void weaponPickupsStep(env *e) {
 
         b2Vec2 pos;
         if (!findOpenPos(e, WEAPON_PICKUP_SHAPE, &pos, -1)) {
-            const enum cc_stat res = cc_array_iter_remove(&iter, NULL);
+            const enum cc_stat res = cc_array_iter_remove_fast(&iter, NULL);
             MAYBE_UNUSED(res);
             ASSERT(res == CC_OK);
             DEBUG_LOG("destroying weapon pickup");

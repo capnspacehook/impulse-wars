@@ -477,8 +477,8 @@ void renderDroneUI(const env *e, const droneEntity *drone) {
 
 // TODO: render projectile trails, different colors for different weapons
 void renderProjectiles(env *e) {
-    for (SNode *cur = e->projectiles->head; cur != NULL; cur = cur->next) {
-        projectileEntity *projectile = cur->data;
+    for (size_t i = 0; i < cc_array_size(e->projectiles); i++) {
+        projectileEntity *projectile = safe_array_get_at(e->projectiles, i);
         const Color projectileColor = getProjectileColor(projectile->weaponInfo->type);
         DrawCircleV(b2VecToRayVec(e, projectile->pos), e->renderScale * projectile->weaponInfo->radius, projectileColor);
     }

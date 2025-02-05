@@ -4,7 +4,6 @@
 #include "box2d/box2d.h"
 
 #include "include/cc_array.h"
-#include "include/cc_slist.h"
 
 #include "settings.h"
 
@@ -307,7 +306,7 @@ typedef struct env {
     CC_Array *floatingWalls;
     CC_Array *drones;
     CC_Array *pickups;
-    CC_SList *projectiles;
+    CC_Array *projectiles;
     CC_Array *explodingProjectiles;
 
     pathingInfo *mapPathing;

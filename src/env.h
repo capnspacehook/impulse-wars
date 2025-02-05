@@ -356,19 +356,18 @@ void computeObs(env *e) {
         computeNearMapObs(e, agentDrone, scalarObs);
 
         // compute type and location of N projectiles
-        uint8_t projIdx = 0;
-        for (SNode *cur = e->projectiles->head; cur != NULL; cur = cur->next) {
+        for (size_t i = 0; i < cc_array_size(e->projectiles); i++) {
             // TODO: handle better
-            if (projIdx == NUM_PROJECTILE_OBS) {
+            if (i == NUM_PROJECTILE_OBS) {
                 break;
             }
-            const projectileEntity *projectile = cur->data;
+            const projectileEntity *projectile = safe_array_get_at(e->projectiles, i);
 
-            scalarObsOffset = PROJECTILE_TYPES_OBS_OFFSET + projIdx;
+            scalarObsOffset = PROJECTILE_TYPES_OBS_OFFSET + i;
             ASSERTF(scalarObsOffset <= PROJECTILE_POS_OBS_OFFSET, "offset: %d", scalarObsOffset);
             scalarObs[scalarObsOffset] = projectile->weaponInfo->type + 1;
 
-            scalarObsOffset = PROJECTILE_POS_OBS_OFFSET + (projIdx * PROJECTILE_INFO_OBS_SIZE);
+            scalarObsOffset = PROJECTILE_POS_OBS_OFFSET + (i * PROJECTILE_INFO_OBS_SIZE);
             ASSERTF(scalarObsOffset <= ENEMY_DRONE_OBS_OFFSET, "offset: %d", scalarObsOffset);
             const b2Vec2 projectileRelPos = b2Sub(projectile->pos, agentDrone->pos);
             scalarObs[scalarObsOffset++] = projectile->droneIdx + 1;
@@ -376,8 +375,6 @@ void computeObs(env *e) {
             scalarObs[scalarObsOffset++] = scaleValue(projectileRelPos.y, MAX_Y_POS, false);
             scalarObs[scalarObsOffset++] = scaleValue(projectile->velocity.x, MAX_SPEED, false);
             scalarObs[scalarObsOffset] = scaleValue(projectile->velocity.y, MAX_SPEED, false);
-
-            projIdx++;
         }
 
         // compute enemy drone observations
@@ -619,7 +616,7 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
     cc_array_new(&e->floatingWalls);
     cc_array_new(&e->drones);
     cc_array_new(&e->pickups);
-    cc_slist_new(&e->projectiles);
+    cc_array_new(&e->projectiles);
     cc_array_new(&e->brakeTrailPoints);
     cc_array_new(&e->explosions);
     cc_array_new(&e->explodingProjectiles);
@@ -667,8 +664,8 @@ void clearEnv(env *e) {
         destroyWeaponPickup(e, pickup);
     }
 
-    for (SNode *cur = e->projectiles->head; cur != NULL; cur = cur->next) {
-        projectileEntity *p = cur->data;
+    for (size_t i = 0; i < cc_array_size(e->projectiles); i++) {
+        projectileEntity *p = safe_array_get_at(e->projectiles, i);
         destroyProjectile(e, p, false, false);
     }
 
@@ -685,7 +682,7 @@ void clearEnv(env *e) {
     cc_array_remove_all(e->drones);
     cc_array_remove_all(e->floatingWalls);
     cc_array_remove_all(e->pickups);
-    cc_slist_remove_all(e->projectiles);
+    cc_array_remove_all(e->projectiles);
     cc_array_remove_all(e->brakeTrailPoints);
     cc_array_remove_all(e->explosions);
 }
@@ -715,7 +712,7 @@ void destroyEnv(env *e) {
     cc_array_destroy(e->drones);
     cc_array_destroy(e->floatingWalls);
     cc_array_destroy(e->pickups);
-    cc_slist_destroy(e->projectiles);
+    cc_array_destroy(e->projectiles);
     cc_array_destroy(e->brakeTrailPoints);
     cc_array_destroy(e->explosions);
     cc_array_destroy(e->explodingProjectiles);

@@ -103,7 +103,9 @@ enum cc_stat cc_array_replace_at(CC_Array *ar, void *element, size_t index, void
 enum cc_stat cc_array_swap_at(CC_Array *ar, size_t index1, size_t index2);
 
 enum cc_stat cc_array_remove(CC_Array *ar, void *element, void **out);
+enum cc_stat cc_array_remove_fast(CC_Array *ar, void *element, void **out);
 enum cc_stat cc_array_remove_at(CC_Array *ar, size_t index, void **out);
+enum cc_stat cc_array_remove_fast_at(CC_Array *ar, size_t index, void **out);
 enum cc_stat cc_array_remove_last(CC_Array *ar, void **out);
 void cc_array_remove_all(CC_Array *ar);
 void cc_array_remove_all_free(CC_Array *ar);
@@ -135,6 +137,7 @@ enum cc_stat cc_array_filter(CC_Array *ar, bool (*predicate)(const void *), CC_A
 void cc_array_iter_init(CC_ArrayIter *iter, CC_Array *ar);
 enum cc_stat cc_array_iter_next(CC_ArrayIter *iter, void **out);
 enum cc_stat cc_array_iter_remove(CC_ArrayIter *iter, void **out);
+enum cc_stat cc_array_iter_remove_fast(CC_ArrayIter *iter, void **out);
 enum cc_stat cc_array_iter_add(CC_ArrayIter *iter, void *element);
 enum cc_stat cc_array_iter_replace(CC_ArrayIter *iter, void *element, void **out);
 size_t cc_array_iter_index(CC_ArrayIter *iter);
@@ -443,6 +446,36 @@ enum cc_stat cc_array_remove(CC_Array *ar, void *element, void **out) {
 }
 
 /**
+ * Removes a CC_Array element without preserving order and optionally sets the
+ * out parameter to the value of the removed element. The last element of the
+ * array is moved to the index of the element being removed, and the last
+ * element is removed.
+ *
+ * @param[in] ar the array whose last element is being removed
+ * @param[out] out pointer to where the removed value is stored, or NULL if it is
+ *                 to be ignored
+ *
+ * @return CC_OK if the element was successfully removed, or CC_ERR_OUT_OF_RANGE
+ * if the CC_Array is already empty.
+ */
+enum cc_stat cc_array_remove_fast(CC_Array *ar, void *element, void **out) {
+    size_t index = 0;
+    const enum cc_stat status = cc_array_index_of(ar, element, &index);
+    if (status != CC_OK) {
+        return status;
+    }
+
+    if (out) {
+        *out = ar->buffer[index];
+    }
+
+    ar->buffer[index] = ar->buffer[ar->size - 1];
+    ar->size--;
+
+    return CC_OK;
+}
+
+/**
  * Removes an CC_Array element from the specified index and optionally sets the
  * out parameter to the value of the removed element. The index must be within
  * the bounds of the array.
@@ -471,6 +504,35 @@ enum cc_stat cc_array_remove_at(CC_Array *ar, size_t index, void **out) {
                 &(ar->buffer[index + 1]),
                 block_size);
     }
+    ar->size--;
+
+    return CC_OK;
+}
+
+/**
+ * Removes a CC_Array element from the specified index and optionally sets the
+ * out parameter to the value of the removed element without preserving ordering.
+ * The last element of the array is moved to the index of the element being removed,
+ * and the last element is removed. The index must be within the bounds of the array.
+ *
+ * @param[in] ar the array from which the element is being removed
+ * @param[in] index the index of the element being removed.
+ * @param[out] out  pointer to where the removed value is stored,
+ *                  or NULL if it is to be ignored
+ *
+ * @return CC_OK if the element was successfully removed, or CC_ERR_OUT_OF_RANGE
+ * if the index was out of range.
+ */
+enum cc_stat cc_array_remove_fast_at(CC_Array *ar, size_t index, void **out) {
+    if (index >= ar->size) {
+        return CC_ERR_OUT_OF_RANGE;
+    }
+
+    if (out) {
+        *out = ar->buffer[index];
+    }
+
+    ar->buffer[index] = ar->buffer[ar->size - 1];
     ar->size--;
 
     return CC_OK;
@@ -1108,9 +1170,45 @@ enum cc_stat cc_array_iter_remove(CC_ArrayIter *iter, void **out) {
 
     if (!iter->last_removed) {
         status = cc_array_remove_at(iter->ar, iter->index - 1, out);
-        if (status == CC_OK) {
-            iter->last_removed = true;
+        if (status != CC_OK) {
+            return status;
         }
+
+        iter->last_removed = true;
+        if (iter->index > 0) {
+            iter->index--;
+        }
+    }
+    return status;
+}
+
+/**
+ * Removes the last returned element by <code>cc_array_iter_next()</code>
+ * function without invalidating the iterator and optionally sets the out
+ * parameter to the value of the removed element. The order of the array
+ * is not preserved, the last element of the array is moved to the index
+ * of the last returned element and the last element is removed.
+ *
+ * @note This function should only ever be called after a call to <code>
+ * cc_array_iter_next()</code>.
+
+ * @param[in] iter the iterator on which this operation is being performed
+ * @param[out] out pointer to where the removed element is stored, or NULL
+ *                 if it is to be ignored
+ *
+ * @return CC_OK if the element was successfully removed, or
+ * CC_ERR_VALUE_NOT_FOUND.
+ */
+enum cc_stat cc_array_iter_remove_fast(CC_ArrayIter *iter, void **out) {
+    enum cc_stat status = CC_ERR_VALUE_NOT_FOUND;
+
+    if (!iter->last_removed) {
+        status = cc_array_remove_fast_at(iter->ar, iter->index - 1, out);
+        if (status != CC_OK) {
+            return status;
+        }
+
+        iter->last_removed = true;
         if (iter->index > 0) {
             iter->index--;
         }
