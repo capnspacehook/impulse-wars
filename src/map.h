@@ -529,6 +529,7 @@ void initMaps(env *e) {
 
             uint16_t wallIdx = 0;
             nearEntity walls[map->columns * map->rows];
+            memset(walls, 0x0, map->columns * map->rows * sizeof(nearEntity));
             for (uint16_t j = 0; j < cc_array_size(e->cells); j++) {
                 const mapCell *c = safe_array_get_at(e->cells, j);
                 if (c->ent == NULL) {
@@ -569,7 +570,8 @@ void placeRandFloatingWall(env *e, const enum entityType wallType) {
     if (!findOpenPos(e, FLOATING_WALL_SHAPE, &pos, -1)) {
         ERROR("failed to find open position for floating wall");
     }
-    createWall(e, pos.x, pos.y, FLOATING_WALL_THICKNESS, FLOATING_WALL_THICKNESS, -1, wallType, true);
+    int16_t cellIdx = entityPosToCellIdx(e, pos);
+    createWall(e, pos.x, pos.y, FLOATING_WALL_THICKNESS, FLOATING_WALL_THICKNESS, cellIdx, wallType, true);
 }
 
 void placeRandFloatingWalls(env *e, const int mapIdx) {

@@ -138,7 +138,7 @@ typedef struct weaponPickupEntity {
     // how many floating walls are touching this pickup
     uint8_t floatingWallsTouching;
     b2Vec2 pos;
-    uint16_t mapCellIdx;
+    int16_t mapCellIdx;
 
     entity *ent;
     bool bodyDestroyed;
@@ -155,6 +155,7 @@ typedef struct projectileEntity {
     b2ShapeId sensorID;
     weaponInformation *weaponInfo;
     b2Vec2 pos;
+    int16_t mapCellIdx;
     b2Vec2 lastPos;
     b2Vec2 velocity;
     float speed;
@@ -219,6 +220,7 @@ typedef struct droneEntity {
     uint8_t idx;
     b2Vec2 initalPos;
     b2Vec2 pos;
+    int16_t mapCellIdx;
     b2Vec2 lastPos;
     b2Vec2 lastMove;
     b2Vec2 lastAim;

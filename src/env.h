@@ -126,15 +126,8 @@ static inline float scaleAmmo(const env *e, const droneEntity *drone) {
 // walls, floating walls, weapon pickups, and drone positions
 void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
     droneEntity *drone = safe_array_get_at(e->drones, agentIdx);
-    const int16_t droneCellIdx = entityPosToCellIdx(e, drone->pos);
-    if (droneCellIdx == -1) {
-        DEBUG_LOGF("agent drone is out of bounds at %f %f", drone->pos.x, drone->pos.y);
-        memset(e->truncations, 1, e->numAgents * sizeof(uint8_t));
-        e->needsReset = true;
-        return;
-    }
-    const uint8_t droneCellCol = droneCellIdx % e->map->columns;
-    const uint8_t droneCellRow = droneCellIdx / e->map->rows;
+    const uint8_t droneCellCol = drone->mapCellIdx % e->map->columns;
+    const uint8_t droneCellRow = drone->mapCellIdx / e->map->rows;
 
     const int8_t startCol = droneCellCol - (MAP_OBS_COLUMNS / 2);
     const int8_t startRow = droneCellRow - (MAP_OBS_ROWS / 2);
@@ -180,18 +173,11 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
     // compute discretized location of floating walls on grid
     for (size_t i = 0; i < cc_array_size(e->floatingWalls); i++) {
         const wallEntity *wall = safe_array_get_at(e->floatingWalls, i);
-        int16_t cellIdx = entityPosToCellIdx(e, wall->pos);
-        if (cellIdx == -1) {
-            DEBUG_LOGF("floating wall %zu out of bounds at position %f %f", i, wall->pos.x, wall->pos.y);
-            memset(e->truncations, 1, e->numAgents * sizeof(uint8_t));
-            e->needsReset = true;
-            return;
-        }
-        const uint8_t cellCol = cellIdx / e->map->columns;
+        const uint8_t cellCol = wall->mapCellIdx / e->map->columns;
         if (cellCol < startCol || cellCol > endCol) {
             continue;
         }
-        const uint8_t cellRow = cellIdx % e->map->rows;
+        const uint8_t cellRow = wall->mapCellIdx % e->map->rows;
         if (cellRow < startRow || cellRow > endRow) {
             continue;
         }
@@ -211,33 +197,25 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
             continue;
         }
 
-        droneEntity *otherDrone = safe_array_get_at(e->drones, i);
-        int16_t cellIdx = entityPosToCellIdx(e, otherDrone->pos);
-        if (cellIdx == -1) {
-            DEBUG_LOGF("drone %d out of bounds at position %f %f", i, otherDrone->pos.x, otherDrone->pos.y);
-            memset(e->truncations, 1, e->numAgents * sizeof(uint8_t));
-            e->needsReset = true;
-            return;
-        }
-
         // ensure drones do not share cells in the observation
+        droneEntity *otherDrone = safe_array_get_at(e->drones, i);
         if (i != 0) {
             for (uint8_t j = 0; j < i; j++) {
-                if (droneCells[j] == cellIdx) {
-                    cellIdx = findNearestCell(e, otherDrone->pos, cellIdx);
+                if (droneCells[j] == otherDrone->mapCellIdx) {
+                    otherDrone->mapCellIdx = findNearestCell(e, otherDrone->pos, otherDrone->mapCellIdx);
                     break;
                 }
             }
         }
-        const uint8_t cellCol = cellIdx / e->map->columns;
+        const uint8_t cellCol = otherDrone->mapCellIdx / e->map->columns;
         if (cellCol < startCol || cellCol > endCol) {
             continue;
         }
-        const uint8_t cellRow = cellIdx % e->map->rows;
+        const uint8_t cellRow = otherDrone->mapCellIdx % e->map->rows;
         if (cellRow < startRow || cellRow > endRow) {
             continue;
         }
-        droneCells[i] = cellIdx;
+        droneCells[i] = otherDrone->mapCellIdx;
 
         offset = startOffset + (((cellCol - startCol) * MAP_OBS_COLUMNS) + cellRow - startRow);
         ASSERTF(offset <= startOffset + MAP_OBS_SIZE, "offset: %d", offset);
@@ -261,7 +239,7 @@ void computeNearMapObs(env *e, droneEntity *drone, float *scalarObs) {
         ASSERTF(offset <= NEAR_WALL_POS_OBS_OFFSET, "offset: %d", offset);
         scalarObs[offset] = wall->type;
 
-        // DEBUG_LOGF("wall %d cell %d", i, entityPosToCellIdx(e, wall->pos));
+        // DEBUG_LOGF("wall %d cell %d", i, wall->mapCellIdx);
 
         offset = NEAR_WALL_POS_OBS_OFFSET + (i * NEAR_WALL_POS_OBS_SIZE);
         ASSERTF(offset <= FLOATING_WALL_TYPES_OBS_OFFSET, "offset: %d", offset);
@@ -299,7 +277,7 @@ void computeNearMapObs(env *e, droneEntity *drone, float *scalarObs) {
             ASSERTF(offset <= FLOATING_WALL_INFO_OBS_OFFSET, "offset: %d", offset);
             scalarObs[offset] = wall->type + 1;
 
-            // DEBUG_LOGF("floating wall %d cell %d", i, entityPosToCellIdx(e, wall->pos.pos));
+            // DEBUG_LOGF("floating wall %d cell %d", i, wall->mapCellIdx);
 
             offset = FLOATING_WALL_INFO_OBS_OFFSET + (i * FLOATING_WALL_INFO_OBS_SIZE);
             ASSERTF(offset <= WEAPON_PICKUP_TYPES_OBS_OFFSET, "offset: %d", offset);
@@ -335,7 +313,7 @@ void computeNearMapObs(env *e, droneEntity *drone, float *scalarObs) {
             ASSERTF(offset <= WEAPON_PICKUP_POS_OBS_OFFSET, "offset: %d", offset);
             scalarObs[offset] = pickup->weapon + 1;
 
-            // DEBUG_LOGF("pickup %d cell %d", i, entityPosToCellIdx(e, pickup->pos));
+            // DEBUG_LOGF("pickup %d cell %d", i, pickup->mapCellIdx);
 
             offset = WEAPON_PICKUP_POS_OBS_OFFSET + (i * WEAPON_PICKUP_POS_OBS_SIZE);
             ASSERTF(offset <= PROJECTILE_TYPES_OBS_OFFSET, "offset: %d", offset);
@@ -432,8 +410,8 @@ void computeObs(env *e) {
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneDistance, MAX_DISTANCE, true);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->velocity.x, MAX_SPEED, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->velocity.y, MAX_SPEED, false);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAccel.x, MAX_SPEED, false);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAccel.y, MAX_SPEED, false);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAccel.x, MAX_ACCEL, false);
+            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAccel.y, MAX_ACCEL, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelNormPos.x, 1.0f, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelNormPos.y, 1.0f, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->lastAim.x, 1.0f, false);
@@ -467,8 +445,8 @@ void computeObs(env *e) {
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->pos.y, MAX_Y_POS, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->velocity.x, MAX_SPEED, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->velocity.y, MAX_SPEED, false);
-        scalarObs[scalarObsOffset++] = scaleValue(agentDroneAccel.x, MAX_SPEED, false);
-        scalarObs[scalarObsOffset++] = scaleValue(agentDroneAccel.y, MAX_SPEED, false);
+        scalarObs[scalarObsOffset++] = scaleValue(agentDroneAccel.x, MAX_ACCEL, false);
+        scalarObs[scalarObsOffset++] = scaleValue(agentDroneAccel.y, MAX_ACCEL, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->lastAim.x, 1.0f, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->lastAim.y, 1.0f, false);
         scalarObs[scalarObsOffset++] = scaleAmmo(e, agentDrone);
@@ -507,6 +485,7 @@ void setupEnv(env *e) {
     DEBUG_LOGF("setting up map %d", e->mapIdx);
     setupMap(e, mapIdx);
 
+    // TODO: pre compute this
     mapBounds bounds = {.min = {.x = FLT_MAX, .y = FLT_MAX}, .max = {.x = FLT_MIN, .y = FLT_MIN}};
     for (size_t i = 0; i < cc_array_size(e->walls); i++) {
         const wallEntity *wall = safe_array_get_at(e->walls, i);
@@ -694,6 +673,7 @@ void clearEnv(env *e) {
     cc_array_remove_all(e->floatingWalls);
     cc_array_remove_all(e->pickups);
     cc_array_remove_all(e->projectiles);
+    cc_array_remove_all(e->explodingProjectiles);
     cc_array_remove_all(e->brakeTrailPoints);
     cc_array_remove_all(e->explosions);
 }
@@ -746,7 +726,7 @@ float computePushReward(const droneEntity *drone) {
 
 float computeShotReward(const droneEntity *drone, const weaponInformation *weaponInfo) {
     const float weaponForce = weaponInfo->fireMagnitude * weaponInfo->invMass;
-    const float scaledForce = (weaponForce * (weaponForce / SHOT_HIT_REWARD_DENOM)) + 0.25f;
+    const float scaledForce = (weaponForce * (weaponForce * SHOT_HIT_REWARD_COEF)) + 0.25f;
     return scaledForce + computePushReward(drone);
 }
 
@@ -893,8 +873,7 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
         if (!actions.chargingWeapon && drone->chargingWeapon) {
             actions.shoot = true;
         }
-        const float brake = tanhf(e->contActions[offset + 5]);
-        actions.brake = brake > 0.0f;
+        actions.brake = e->contActions[offset + 5] > 0.0f;
         actions.chargingBurst = e->contActions[offset + 6] > 0.0f;
         if (!actions.chargingBurst && drone->chargingBurst) {
             actions.burst = true;
@@ -1107,7 +1086,12 @@ void stepEnv(env *e) {
         // update entity info, step physics, and handle events
         b2World_Step(e->worldID, e->deltaTime, e->box2dSubSteps);
 
-        handleBodyMoveEvents(e);
+        // update dynamic body positions and velocities, reset if a body is out of the map
+        if (!handleBodyMoveEvents(e)) {
+            memset(e->truncations, 1, e->numAgents * sizeof(uint8_t));
+            e->needsReset = true;
+            return;
+        }
 
         // handle sudden death
         e->stepsLeft = fmaxf(e->stepsLeft - 1, 0.0f);

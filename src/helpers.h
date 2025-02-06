@@ -65,13 +65,13 @@
 #define ASSERTF(condition, fmt, args...)
 #endif
 
-#define ERRORF(fmt, args...)                                   \
-    fprintf(stderr, fmt " %s:%d\n", args, __FILE__, __LINE__); \
-    fflush(stderr);                                            \
+#define ERRORF(fmt, args...)                                         \
+    fprintf(stderr, fmt "FATAL: %s:%d\n", args, __FILE__, __LINE__); \
+    fflush(stderr);                                                  \
     ON_ERROR
-#define ERROR(msg)                                       \
-    fprintf(stderr, msg " %s:%d\n", __FILE__, __LINE__); \
-    fflush(stderr);                                      \
+#define ERROR(msg)                                             \
+    fprintf(stderr, msg "FATAL: %s:%d\n", __FILE__, __LINE__); \
+    fflush(stderr);                                            \
     ON_ERROR
 
 // ignore compiler warnings about unused variables for variables that are

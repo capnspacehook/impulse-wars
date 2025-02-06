@@ -16,14 +16,13 @@ int main(void) {
     uint8_t *truncations = fastCalloc(NUM_DRONES, sizeof(uint8_t));
     logBuffer *logs = createLogBuffer(LOG_BUFFER_SIZE);
 
+    rayClient *client = createRayClient();
+    e->client = client;
+
     initEnv(e, NUM_DRONES, NUM_DRONES, obs, true, contActions, discActions, rewards, terminals, truncations, logs, time(NULL), false, false);
     initMaps(e);
     setupEnv(e);
     e->humanInput = true;
-
-    rayClient *client = createRayClient();
-    e->client = client;
-    resetEnv(e);
 
     while (true) {
         if (WindowShouldClose()) {

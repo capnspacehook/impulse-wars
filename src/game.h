@@ -164,14 +164,11 @@ bool findOpenPos(env *e, const enum shapeCategory type, b2Vec2 *emptyPos, int8_t
     }
 }
 
-entity *createWall(const env *e, const float posX, const float posY, const float width, const float height, uint16_t cellIdx, const enum entityType type, const bool floating) {
+entity *createWall(const env *e, const float posX, const float posY, const float width, const float height, int16_t cellIdx, const enum entityType type, const bool floating) {
+    ASSERT(cellIdx != -1);
     ASSERT(entityTypeIsWall(type));
 
-    if (floating) {
-        cellIdx = -1;
-    }
     const b2Vec2 pos = (b2Vec2){.x = posX, .y = posY};
-
     b2BodyDef wallBodyDef = b2DefaultBodyDef();
     wallBodyDef.position = pos;
     if (floating) {
@@ -922,12 +919,7 @@ void handleSuddenDeath(env *e) {
     cc_array_iter_init(&floatingWallIter, e->floatingWalls);
     wallEntity *wall;
     while (cc_array_iter_next(&floatingWallIter, (void **)&wall) != CC_ITER_END) {
-        int16_t cellIdx = entityPosToCellIdx(e, wall->pos);
-        if (cellIdx == -1) {
-            ERRORF("floating wall is out of bounds at %f, %f", wall->pos.x, wall->pos.y);
-        }
-
-        const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
+        const mapCell *cell = safe_array_get_at(e->cells, wall->mapCellIdx);
         if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
             // floating wall is overlapping with a wall, destroy it
             const enum cc_stat res = cc_array_iter_remove_fast(&floatingWallIter, NULL);
@@ -947,11 +939,7 @@ void handleSuddenDeath(env *e) {
     cc_array_iter_init(&projectileIter, e->projectiles);
     projectileEntity *projectile;
     while (cc_array_iter_next(&projectileIter, (void **)&projectile) != CC_ITER_END) {
-        const int16_t cellIdx = entityPosToCellIdx(e, projectile->pos);
-        if (cellIdx == -1) {
-            continue;
-        }
-        const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
+        const mapCell *cell = safe_array_get_at(e->cells, projectile->mapCellIdx);
         if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
             cc_array_iter_remove_fast(&projectileIter, NULL);
             destroyProjectile(e, projectile, false, false);
@@ -1275,6 +1263,9 @@ void projectilesStep(env *e) {
             continue;
         }
     }
+    if (cc_array_size(e->explodingProjectiles) == 0) {
+        return;
+    }
 
     // destroy all other projectiles that were caught in explosions of
     // projectiles destroyed above and also exploded now that the
@@ -1314,11 +1305,11 @@ void weaponPickupsStep(env *e) {
         pickup->pos = pos;
         pickup->weapon = randWeaponPickupType(e);
 
-        DEBUG_LOGF("respawned weapon pickup at cell %d (%f, %f)", entityPosToCellIdx(e, pos), pos.x, pos.y);
         const int16_t cellIdx = entityPosToCellIdx(e, pos);
         if (cellIdx == -1) {
             ERRORF("invalid position for weapon pickup spawn: (%f, %f)", pos.x, pos.y);
         }
+        DEBUG_LOGF("respawned weapon pickup at cell %d (%f, %f)", cellIdx, pos.x, pos.y);
         pickup->mapCellIdx = cellIdx;
         createWeaponPickupBodyShape(e, pickup);
 
@@ -1329,7 +1320,7 @@ void weaponPickupsStep(env *e) {
 
 // only update positions and velocities of dynamic bodies if they moved
 // this step
-void handleBodyMoveEvents(const env *e) {
+bool handleBodyMoveEvents(const env *e) {
     b2BodyEvents events = b2World_GetBodyEvents(e->worldID);
     for (int i = 0; i < events.moveCount; i++) {
         const b2BodyMoveEvent *event = events.moveEvents + i;
@@ -1349,6 +1340,11 @@ void handleBodyMoveEvents(const env *e) {
         case DEATH_WALL_ENTITY:
             wall = ent->entity;
             wall->pos = event->transform.p;
+            wall->mapCellIdx = entityPosToCellIdx(e, wall->pos);
+            if (wall->mapCellIdx == -1) {
+                DEBUG_LOGF("invalid position for floating wall: (%f, %f) resetting", wall->pos.x, wall->pos.y);
+                return false;
+            }
             wall->rot = event->transform.q;
             wall->velocity = b2Body_GetLinearVelocity(wall->bodyID);
             break;
@@ -1356,6 +1352,11 @@ void handleBodyMoveEvents(const env *e) {
             proj = ent->entity;
             proj->lastPos = proj->pos;
             proj->pos = event->transform.p;
+            proj->mapCellIdx = entityPosToCellIdx(e, proj->pos);
+            if (proj->mapCellIdx == -1) {
+                DEBUG_LOGF("invalid position for projectile: (%f, %f) resetting", proj->pos.x, proj->pos.y);
+                return false;
+            }
             proj->velocity = b2Body_GetLinearVelocity(proj->bodyID);
             if (proj->weaponInfo->damping != 0.0f && !proj->inContact) {
                 proj->lastSpeed = proj->speed;
@@ -1366,6 +1367,11 @@ void handleBodyMoveEvents(const env *e) {
             drone = ent->entity;
             drone->lastPos = drone->pos;
             drone->pos = event->transform.p;
+            drone->mapCellIdx = entityPosToCellIdx(e, drone->pos);
+            if (drone->mapCellIdx == -1) {
+                DEBUG_LOGF("invalid position for drone: (%f, %f) resetting", drone->pos.x, drone->pos.y);
+                return false;
+            }
             drone->lastVelocity = drone->velocity;
             drone->velocity = b2Body_GetLinearVelocity(drone->bodyID);
             break;
@@ -1373,6 +1379,8 @@ void handleBodyMoveEvents(const env *e) {
             ERRORF("unknown entity type for move event %d", ent->type);
         }
     }
+
+    return true;
 }
 
 // destroy the projectile if it has traveled enough or has bounced enough
@@ -1702,11 +1710,10 @@ void handleSensorEvents(env *e) {
 }
 
 void findNearWalls(const env *e, droneEntity *drone, nearEntity nearestWalls[], const uint8_t nWalls) {
-    const int16_t droneCellIdx = entityPosToCellIdx(e, drone->pos);
     nearEntity nearWalls[MAX_NEAREST_WALLS];
 
     for (uint8_t i = 0; i < MAX_NEAREST_WALLS; ++i) {
-        const uint32_t idx = (MAX_NEAREST_WALLS * droneCellIdx) + i;
+        const uint32_t idx = (MAX_NEAREST_WALLS * drone->mapCellIdx) + i;
         const uint16_t wallIdx = e->map->nearestWalls[idx].idx;
         wallEntity *wall = safe_array_get_at(e->walls, wallIdx);
         nearWalls[i].entity = wall;

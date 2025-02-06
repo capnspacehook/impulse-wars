@@ -36,7 +36,7 @@ const uint16_t LOG_BUFFER_SIZE = 1024;
 #define DEATH_PUNISHMENT -1.5f
 #define ENERGY_EMPTY_PUNISHMENT -0.75f
 #define WEAPON_PICKUP_REWARD 0.5f
-#define SHOT_HIT_REWARD_DENOM 75000
+#define SHOT_HIT_REWARD_COEF 0.000013333f
 #define EXPLOSION_HIT_REWARD_COEF 5.0f
 #define APPROACH_REWARD 0.0f
 
@@ -95,6 +95,7 @@ uint16_t obsBytes(uint8_t numDrones) {
 #define MAX_Y_POS 150.0f
 #define MAX_DISTANCE 200.0f
 #define MAX_SPEED 500.0f
+#define MAX_ACCEL 1000.0f
 #define MAX_ANGLE (float)PI
 
 // action constants
