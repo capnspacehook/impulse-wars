@@ -141,6 +141,7 @@ typedef struct weaponPickupEntity {
     uint16_t mapCellIdx;
 
     entity *ent;
+    bool bodyDestroyed;
 } weaponPickupEntity;
 
 typedef struct droneEntity droneEntity;

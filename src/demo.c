@@ -26,11 +26,10 @@ int main(void) {
     resetEnv(e);
 
     while (true) {
-
         if (WindowShouldClose()) {
             destroyEnv(e);
             destroyMaps();
-            fastFree(obs);
+            free(obs);
             fastFree(contActions);
             fastFree(discActions);
             fastFree(rewards);

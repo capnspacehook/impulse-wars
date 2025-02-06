@@ -275,6 +275,23 @@ enum weaponType randWeaponPickupType(env *e) {
     return type;
 }
 
+void createWeaponPickupBodyShape(const env *e, weaponPickupEntity *pickup) {
+    pickup->bodyDestroyed = false;
+
+    b2BodyDef pickupBodyDef = b2DefaultBodyDef();
+    pickupBodyDef.position = pickup->pos;
+    pickupBodyDef.userData = pickup->ent;
+    pickup->bodyID = b2CreateBody(e->worldID, &pickupBodyDef);
+
+    b2ShapeDef pickupShapeDef = b2DefaultShapeDef();
+    pickupShapeDef.filter.categoryBits = WEAPON_PICKUP_SHAPE;
+    pickupShapeDef.filter.maskBits = FLOATING_WALL_SHAPE | DRONE_SHAPE;
+    pickupShapeDef.isSensor = true;
+    pickupShapeDef.userData = pickup->ent;
+    const b2Polygon pickupPolygon = b2MakeBox(PICKUP_THICKNESS / 2.0f, PICKUP_THICKNESS / 2.0f);
+    pickup->shapeID = b2CreatePolygonShape(pickup->bodyID, &pickupShapeDef, &pickupPolygon);
+}
+
 void createWeaponPickup(env *e) {
     b2Vec2 pos;
     e->lastSpawnQuad = (e->lastSpawnQuad + 1) % 4;
@@ -301,18 +318,7 @@ void createWeaponPickup(env *e) {
     mapCell *cell = safe_array_get_at(e->cells, cellIdx);
     cell->ent = ent;
 
-    b2BodyDef pickupBodyDef = b2DefaultBodyDef();
-    pickupBodyDef.position = pos;
-    pickupBodyDef.userData = pickup->ent;
-    pickup->bodyID = b2CreateBody(e->worldID, &pickupBodyDef);
-
-    b2ShapeDef pickupShapeDef = b2DefaultShapeDef();
-    pickupShapeDef.filter.categoryBits = WEAPON_PICKUP_SHAPE;
-    pickupShapeDef.filter.maskBits = FLOATING_WALL_SHAPE | DRONE_SHAPE;
-    pickupShapeDef.isSensor = true;
-    pickupShapeDef.userData = pickup->ent;
-    const b2Polygon pickupPolygon = b2MakeBox(PICKUP_THICKNESS / 2.0f, PICKUP_THICKNESS / 2.0f);
-    pickup->shapeID = b2CreatePolygonShape(pickup->bodyID, &pickupShapeDef, &pickupPolygon);
+    createWeaponPickupBodyShape(e, pickup);
 
     cc_array_add(e->pickups, pickup);
 }
@@ -323,7 +329,9 @@ void destroyWeaponPickup(const env *e, weaponPickupEntity *pickup) {
     mapCell *cell = safe_array_get_at(e->cells, pickup->mapCellIdx);
     cell->ent = NULL;
 
-    b2DestroyBody(pickup->bodyID);
+    if (!pickup->bodyDestroyed) {
+        b2DestroyBody(pickup->bodyID);
+    }
 
     fastFree(pickup);
 }
@@ -335,10 +343,12 @@ void disableWeaponPickup(env *e, weaponPickupEntity *pickup) {
     if (e->suddenDeathWallsPlaced) {
         pickup->respawnWait = SUDDEN_DEATH_PICKUP_RESPAWN_WAIT;
     }
-    b2Body_Disable(pickup->bodyID);
+    // destroy body to prevent sensor overlap checks that are not needed
+    b2DestroyBody(pickup->bodyID);
+    pickup->bodyDestroyed = true;
 
     mapCell *cell = safe_array_get_at(e->cells, pickup->mapCellIdx);
-    // ASSERT(cell->ent != NULL); // TODO: uncomment when box2d fixes sensor events on disabled bodies
+    ASSERT(cell->ent != NULL);
     cell->ent = NULL;
 
     e->spawnedWeaponPickups[pickup->weapon]--;
@@ -1302,7 +1312,6 @@ void weaponPickupsStep(env *e) {
             continue;
         }
         pickup->pos = pos;
-        b2Body_SetTransform(pickup->bodyID, pos, b2Rot_identity);
         pickup->weapon = randWeaponPickupType(e);
 
         DEBUG_LOGF("respawned weapon pickup at cell %d (%f, %f)", entityPosToCellIdx(e, pos), pos.x, pos.y);
@@ -1311,7 +1320,7 @@ void weaponPickupsStep(env *e) {
             ERRORF("invalid position for weapon pickup spawn: (%f, %f)", pos.x, pos.y);
         }
         pickup->mapCellIdx = cellIdx;
-        b2Body_Enable(pickup->bodyID);
+        createWeaponPickupBodyShape(e, pickup);
 
         mapCell *cell = safe_array_get_at(e->cells, cellIdx);
         cell->ent = pickup->ent;

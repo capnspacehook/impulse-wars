@@ -40,7 +40,7 @@ void perfTest(const uint32_t numSteps) {
     destroyEnv(e);
     destroyMaps();
 
-    fastFree(obs);
+    free(obs);
     fastFree(actions);
     fastFree(rewards);
     fastFree(terminals);
