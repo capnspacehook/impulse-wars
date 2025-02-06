@@ -70,7 +70,7 @@ void destroyRayClient(rayClient *client) {
 
 void setEnvRenderScale(env *e) {
     const float BASE_ROWS = 21.0f;
-    const float scale = e->client->scale * (BASE_ROWS / e->rows);
+    const float scale = e->client->scale * (BASE_ROWS / e->map->rows);
     e->renderScale = scale;
 }
 

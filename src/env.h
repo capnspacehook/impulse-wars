@@ -99,10 +99,10 @@ uint16_t findNearestCell(const env *e, const b2Vec2 pos, const uint16_t cellIdx)
 
     uint16_t closestCell = cellIdx;
     float minDistance = FLT_MAX;
-    const uint8_t cellCol = cellIdx % e->columns;
-    const uint8_t cellRow = cellIdx / e->columns;
+    const uint8_t cellCol = cellIdx % e->map->columns;
+    const uint8_t cellRow = cellIdx / e->map->columns;
     for (uint8_t i = 0; i < 8; i++) {
-        const uint16_t newCellIdx = (cellCol + cellOffsets[i][0]) + ((cellRow + cellOffsets[i][1]) * e->columns);
+        const uint16_t newCellIdx = (cellCol + cellOffsets[i][0]) + ((cellRow + cellOffsets[i][1]) * e->map->columns);
         const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
         if (minDistance != fminf(minDistance, b2Distance(pos, cell->pos))) {
             closestCell = newCellIdx;
@@ -133,8 +133,8 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
         e->needsReset = true;
         return;
     }
-    const uint8_t droneCellCol = droneCellIdx % e->columns;
-    const uint8_t droneCellRow = droneCellIdx / e->rows;
+    const uint8_t droneCellCol = droneCellIdx % e->map->columns;
+    const uint8_t droneCellRow = droneCellIdx / e->map->rows;
 
     const int8_t startCol = droneCellCol - (MAP_OBS_COLUMNS / 2);
     const int8_t startRow = droneCellRow - (MAP_OBS_ROWS / 2);
@@ -145,15 +145,15 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
     // compute map layout, and discretized positions of weapon pickups
     bool pastEndOfMap = false;
     uint16_t offset = startOffset;
-    for (int8_t col = startCol; col <= endCol; col++) {
+    for (int8_t row = startRow; row <= endRow; row++) {
         if (pastEndOfMap) {
             break;
         }
-        for (int8_t row = startRow; row <= endRow; row++) {
-            if (row < 0 || row >= e->rows || col < 0) {
+        for (int8_t col = startCol; col <= endCol; col++) {
+            if (row < 0 || col >= e->map->columns || col < 0) {
                 offset++;
                 continue;
-            } else if (col >= e->columns) {
+            } else if (row >= e->map->rows) {
                 pastEndOfMap = true;
                 break;
             }
@@ -187,16 +187,16 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
             e->needsReset = true;
             return;
         }
-        const uint8_t cellRow = cellIdx % e->rows;
-        if (cellRow < startRow || cellRow > endRow) {
-            continue;
-        }
-        const uint8_t cellCol = cellIdx / e->columns;
+        const uint8_t cellCol = cellIdx / e->map->columns;
         if (cellCol < startCol || cellCol > endCol) {
             continue;
         }
+        const uint8_t cellRow = cellIdx % e->map->rows;
+        if (cellRow < startRow || cellRow > endRow) {
+            continue;
+        }
 
-        offset = startOffset + (cellRow - startRow + ((cellCol - startCol) * MAP_OBS_COLUMNS));
+        offset = startOffset + (((cellCol - startCol) * MAP_OBS_COLUMNS) + cellRow - startRow);
         ASSERTF(offset <= startOffset + MAP_OBS_SIZE, "offset: %d", offset);
         e->obs[offset] = ((wall->type + 1) & TWO_BIT_MASK) << 5;
         e->obs[offset] |= 1 << 4;
@@ -229,17 +229,17 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
                 }
             }
         }
-        const uint8_t cellRow = cellIdx % e->rows;
-        if (cellRow < startRow || cellRow > endRow) {
+        const uint8_t cellCol = cellIdx / e->map->columns;
+        if (cellCol < startCol || cellCol > endCol) {
             continue;
         }
-        const uint8_t cellCol = cellIdx / e->columns;
-        if (cellCol < startCol || cellCol > endCol) {
+        const uint8_t cellRow = cellIdx % e->map->rows;
+        if (cellRow < startRow || cellRow > endRow) {
             continue;
         }
         droneCells[i] = cellIdx;
 
-        offset = startOffset + (cellRow - startRow + ((cellCol - startCol) * MAP_OBS_COLUMNS));
+        offset = startOffset + (((cellCol - startCol) * MAP_OBS_COLUMNS) + cellRow - startRow);
         ASSERTF(offset <= startOffset + MAP_OBS_SIZE, "offset: %d", offset);
         e->obs[offset] |= (newDroneIdx++ & THREE_BIT_MASK);
     }
@@ -271,7 +271,6 @@ void computeNearMapObs(env *e, droneEntity *drone, float *scalarObs) {
         scalarObs[offset++] = scaleValue(wallRelPos.x, MAX_X_POS, false);
         scalarObs[offset] = scaleValue(wallRelPos.y, MAX_Y_POS, false);
     }
-
     if (cc_array_size(e->floatingWalls) != 0) {
         // find N nearest floating walls
         nearEntity nearFloatingWalls[MAX_FLOATING_WALLS] = {0};
@@ -279,7 +278,7 @@ void computeNearMapObs(env *e, droneEntity *drone, float *scalarObs) {
             wallEntity *wall = safe_array_get_at(e->floatingWalls, i);
             const nearEntity nearEnt = {
                 .entity = wall,
-                .distance = b2Distance(wall->pos, drone->pos),
+                .distanceSquared = b2DistanceSquared(wall->pos, drone->pos),
             };
             nearFloatingWalls[i] = nearEnt;
         }
@@ -635,8 +634,6 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
     if (e->numAgents != e->numDrones) {
         e->humanDroneInput = e->numAgents;
     }
-
-    setupEnv(e);
 
     return e;
 }

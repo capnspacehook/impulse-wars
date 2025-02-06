@@ -17,6 +17,8 @@ int main(void) {
     logBuffer *logs = createLogBuffer(LOG_BUFFER_SIZE);
 
     initEnv(e, NUM_DRONES, NUM_DRONES, obs, true, contActions, discActions, rewards, terminals, truncations, logs, time(NULL), false, false);
+    initMaps(e);
+    setupEnv(e);
     e->humanInput = true;
 
     rayClient *client = createRayClient();
@@ -27,6 +29,7 @@ int main(void) {
 
         if (WindowShouldClose()) {
             destroyEnv(e);
+            destroyMaps();
             fastFree(obs);
             fastFree(contActions);
             fastFree(discActions);

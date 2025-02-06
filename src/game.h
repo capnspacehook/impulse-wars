@@ -15,14 +15,14 @@ static inline bool entityTypeIsWall(const enum entityType type) {
 }
 
 static inline int16_t cellIndex(const env *e, const int8_t col, const int8_t row) {
-    return col + (row * e->columns);
+    return col + (row * e->map->columns);
 }
 
 // discretizes an entity's position into a cell index; -1 is returned if
 // the position is out of bounds of the map
 static inline int16_t entityPosToCellIdx(const env *e, const b2Vec2 pos) {
-    const float cellX = pos.x + (((float)e->columns * WALL_THICKNESS) / 2.0f);
-    const float cellY = pos.y + (((float)e->rows * WALL_THICKNESS) / 2.0f);
+    const float cellX = pos.x + (((float)e->map->columns * WALL_THICKNESS) / 2.0f);
+    const float cellY = pos.y + (((float)e->map->rows * WALL_THICKNESS) / 2.0f);
     const int8_t cellCol = cellX / WALL_THICKNESS;
     const int8_t cellRow = cellY / WALL_THICKNESS;
     const int16_t cellIdx = cellIndex(e, cellCol, cellRow);
@@ -126,25 +126,39 @@ bool findOpenPos(env *e, const enum shapeCategory type, b2Vec2 *emptyPos, int8_t
             continue;
         }
 
-        // ensure drones don't spawn too close to walls or other drones
         if (type == WEAPON_PICKUP_SHAPE) {
-            if (isOverlappingAABB(e, cell->pos, PICKUP_SPAWN_DISTANCE, WEAPON_PICKUP_SHAPE, WEAPON_PICKUP_SHAPE, NULL)) {
+            // ensure pickups don't spawn too close to other pickups
+            bool tooClose = false;
+            for (uint8_t i = 0; i < cc_array_size(e->pickups); i++) {
+                const weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
+                if (b2DistanceSquared(cell->pos, pickup->pos) < PICKUP_SPAWN_DISTANCE_SQUARED) {
+                    tooClose = true;
+                    break;
+                }
+            }
+            if (tooClose) {
                 continue;
             }
         } else if (type == DRONE_SHAPE) {
-            const enum entityType deathWallType = DEATH_WALL_ENTITY;
-            if (isOverlappingAABB(e, cell->pos, DRONE_DEATH_WALL_SPAWN_DISTANCE, DRONE_SHAPE, WALL_SHAPE | DRONE_SHAPE, &deathWallType)) {
+            if (!e->map->droneSpawns[cellIdx]) {
                 continue;
             }
-            if (isOverlappingAABB(e, cell->pos, DRONE_WALL_SPAWN_DISTANCE, DRONE_SHAPE, WALL_SHAPE | DRONE_SHAPE, NULL)) {
-                continue;
+
+            // ensure drones don't spawn too close to other drones
+            bool tooClose = false;
+            for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
+                const droneEntity *drone = safe_array_get_at(e->drones, i);
+                if (b2DistanceSquared(cell->pos, drone->pos) < DRONE_DRONE_SPAWN_DISTANCE_SQUARED) {
+                    tooClose = true;
+                    break;
+                }
             }
-            if (isOverlappingAABB(e, cell->pos, DRONE_DRONE_SPAWN_DISTANCE, DRONE_SHAPE, DRONE_SHAPE, NULL)) {
+            if (tooClose) {
                 continue;
             }
         }
 
-        if (!isOverlappingAABB(e, cell->pos, MIN_SPAWN_DISTANCE, type, FLOATING_WALL_SHAPE | WEAPON_PICKUP_SHAPE | DRONE_SHAPE, NULL)) {
+        if (!isOverlappingAABB(e, cell->pos, MIN_SPAWN_DISTANCE, type, FLOATING_WALL_SHAPE | DRONE_SHAPE, NULL)) {
             *emptyPos = cell->pos;
             return true;
         }
@@ -168,17 +182,17 @@ entity *createWall(const env *e, const float posX, const float posY, const float
         wallBodyDef.isAwake = false;
     }
     b2BodyId wallBodyID = b2CreateBody(e->worldID, &wallBodyDef);
+
     b2Vec2 extent = {.x = width / 2.0f, .y = height / 2.0f};
     b2ShapeDef wallShapeDef = b2DefaultShapeDef();
     wallShapeDef.density = WALL_DENSITY;
     wallShapeDef.restitution = STANDARD_WALL_RESTITUTION;
     wallShapeDef.friction = STANDARD_WALL_FRICTION;
     wallShapeDef.filter.categoryBits = WALL_SHAPE;
-    wallShapeDef.filter.maskBits = FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | WEAPON_PICKUP_SHAPE | DRONE_SHAPE;
+    wallShapeDef.filter.maskBits = FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE;
     if (floating) {
         wallShapeDef.filter.categoryBits = FLOATING_WALL_SHAPE;
         wallShapeDef.filter.maskBits |= WALL_SHAPE | WEAPON_PICKUP_SHAPE;
-        wallShapeDef.enableSensorEvents = true;
     }
 
     if (type == BOUNCY_WALL_ENTITY) {
@@ -263,23 +277,13 @@ enum weaponType randWeaponPickupType(env *e) {
 }
 
 void createWeaponPickup(env *e) {
-    b2BodyDef pickupBodyDef = b2DefaultBodyDef();
-
     b2Vec2 pos;
     e->lastSpawnQuad = (e->lastSpawnQuad + 1) % 4;
     if (!findOpenPos(e, WEAPON_PICKUP_SHAPE, &pos, e->lastSpawnQuad)) {
         ERROR("no open position for weapon pickup");
     }
-    pickupBodyDef.position = pos;
-
-    b2BodyId pickupBodyID = b2CreateBody(e->worldID, &pickupBodyDef);
-    b2ShapeDef pickupShapeDef = b2DefaultShapeDef();
-    pickupShapeDef.filter.categoryBits = WEAPON_PICKUP_SHAPE;
-    pickupShapeDef.filter.maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | WEAPON_PICKUP_SHAPE | DRONE_SHAPE;
-    pickupShapeDef.isSensor = true;
 
     weaponPickupEntity *pickup = fastCalloc(1, sizeof(weaponPickupEntity));
-    pickup->bodyID = pickupBodyID;
     pickup->weapon = randWeaponPickupType(e);
     pickup->respawnWait = 0.0f;
     pickup->floatingWallsTouching = 0;
@@ -288,6 +292,7 @@ void createWeaponPickup(env *e) {
     entity *ent = fastCalloc(1, sizeof(entity));
     ent->type = WEAPON_PICKUP_ENTITY;
     ent->entity = pickup;
+    pickup->ent = ent;
 
     const int16_t cellIdx = entityPosToCellIdx(e, pos);
     if (cellIdx == -1) {
@@ -297,17 +302,24 @@ void createWeaponPickup(env *e) {
     mapCell *cell = safe_array_get_at(e->cells, cellIdx);
     cell->ent = ent;
 
-    pickupShapeDef.userData = ent;
+    b2BodyDef pickupBodyDef = b2DefaultBodyDef();
+    pickupBodyDef.position = pos;
+    pickupBodyDef.userData = pickup->ent;
+    pickup->bodyID = b2CreateBody(e->worldID, &pickupBodyDef);
+
+    b2ShapeDef pickupShapeDef = b2DefaultShapeDef();
+    pickupShapeDef.filter.categoryBits = WEAPON_PICKUP_SHAPE;
+    pickupShapeDef.filter.maskBits = FLOATING_WALL_SHAPE | DRONE_SHAPE;
+    pickupShapeDef.isSensor = true;
+    pickupShapeDef.userData = pickup->ent;
     const b2Polygon pickupPolygon = b2MakeBox(PICKUP_THICKNESS / 2.0f, PICKUP_THICKNESS / 2.0f);
-    pickup->shapeID = b2CreatePolygonShape(pickupBodyID, &pickupShapeDef, &pickupPolygon);
-    b2Body_SetUserData(pickup->bodyID, ent);
+    pickup->shapeID = b2CreatePolygonShape(pickup->bodyID, &pickupShapeDef, &pickupPolygon);
 
     cc_array_add(e->pickups, pickup);
 }
 
 void destroyWeaponPickup(const env *e, weaponPickupEntity *pickup) {
-    entity *ent = b2Shape_GetUserData(pickup->shapeID);
-    fastFree(ent);
+    fastFree(pickup->ent);
 
     mapCell *cell = safe_array_get_at(e->cells, pickup->mapCellIdx);
     cell->ent = NULL;
@@ -318,10 +330,18 @@ void destroyWeaponPickup(const env *e, weaponPickupEntity *pickup) {
 }
 
 void disableWeaponPickup(env *e, weaponPickupEntity *pickup) {
+    DEBUG_LOGF("disabling weapon pickup at cell %d (%f, %f)", pickup->mapCellIdx, pickup->pos.x, pickup->pos.y);
+
     pickup->respawnWait = PICKUP_RESPAWN_WAIT;
     if (e->suddenDeathWallsPlaced) {
         pickup->respawnWait = SUDDEN_DEATH_PICKUP_RESPAWN_WAIT;
     }
+    b2Body_Disable(pickup->bodyID);
+
+    mapCell *cell = safe_array_get_at(e->cells, pickup->mapCellIdx);
+    ASSERT(cell->ent != NULL);
+    cell->ent = NULL;
+
     e->spawnedWeaponPickups[pickup->weapon]--;
 }
 
@@ -350,7 +370,6 @@ void createDrone(env *e, const uint8_t idx) {
     droneShapeDef.filter.categoryBits = DRONE_SHAPE;
     droneShapeDef.filter.maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | WEAPON_PICKUP_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE;
     droneShapeDef.enableContactEvents = true;
-    droneShapeDef.enableSensorEvents = true;
     const b2Circle droneCircle = {.center = b2Vec2_zero, .radius = DRONE_RADIUS};
 
     droneEntity *drone = fastCalloc(1, sizeof(droneEntity));
@@ -429,7 +448,7 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     projectileBodyDef.fixedRotation = true;
     projectileBodyDef.isBullet = drone->weaponInfo->isPhysicsBullet;
     projectileBodyDef.linearDamping = drone->weaponInfo->damping;
-    projectileBodyDef.enableSleep = false;
+    projectileBodyDef.enableSleep = drone->weaponInfo->canSleep;
     float radius = drone->weaponInfo->radius;
     projectileBodyDef.position = b2MulAdd(drone->pos, 1.0f + (radius * 1.5f), normAim);
     b2BodyId projectileBodyID = b2CreateBody(e->worldID, &projectileBodyDef);
@@ -798,7 +817,7 @@ void createSuddenDeathWalls(env *e, const b2Vec2 startPos, const b2Vec2 size) {
         if (endIdx == -1) {
             ERRORF("invalid position for sudden death wall: (%f, %f)", endPos.x, endPos.y);
         }
-        indexIncrement = e->columns;
+        indexIncrement = e->map->columns;
     }
     const int16_t startIdx = entityPosToCellIdx(e, startPos);
     if (startIdx == -1) {
@@ -828,7 +847,7 @@ void handleSuddenDeath(env *e) {
 
     const float leftX = (e->suddenDeathWallCounter - 1) * WALL_THICKNESS;
     const float yOffset = (WALL_THICKNESS * (e->suddenDeathWallCounter - 1)) + (WALL_THICKNESS / 2);
-    const float xWidth = WALL_THICKNESS * (e->columns - (e->suddenDeathWallCounter * 2) - 1);
+    const float xWidth = WALL_THICKNESS * (e->map->columns - (e->suddenDeathWallCounter * 2) - 1);
 
     // top walls
     createSuddenDeathWalls(
@@ -861,18 +880,18 @@ void handleSuddenDeath(env *e) {
         },
         (b2Vec2){
             .x = WALL_THICKNESS,
-            .y = WALL_THICKNESS * (e->rows - (e->suddenDeathWallCounter * 2) - 2),
+            .y = WALL_THICKNESS * (e->map->rows - (e->suddenDeathWallCounter * 2) - 2),
         });
     // right walls
     createSuddenDeathWalls(
         e,
         (b2Vec2){
-            .x = e->bounds.min.x + ((e->columns - e->suddenDeathWallCounter - 2) * WALL_THICKNESS),
+            .x = e->bounds.min.x + ((e->map->columns - e->suddenDeathWallCounter - 2) * WALL_THICKNESS),
             .y = e->bounds.min.y + (e->suddenDeathWallCounter * WALL_THICKNESS),
         },
         (b2Vec2){
             .x = WALL_THICKNESS,
-            .y = WALL_THICKNESS * (e->rows - (e->suddenDeathWallCounter * 2) - 2),
+            .y = WALL_THICKNESS * (e->map->rows - (e->suddenDeathWallCounter * 2) - 2),
         });
 
     // mark drones as dead if they touch a newly placed wall
@@ -1283,19 +1302,20 @@ void weaponPickupsStep(env *e) {
             destroyWeaponPickup(e, pickup);
             continue;
         }
-        b2Body_SetTransform(pickup->bodyID, pos, b2Rot_identity);
         pickup->pos = pos;
+        b2Body_SetTransform(pickup->bodyID, pos, b2Rot_identity);
         pickup->weapon = randWeaponPickupType(e);
 
-        DEBUG_LOGF("respawned weapon pickup at %f, %f", pos.x, pos.y);
+        DEBUG_LOGF("respawned weapon pickup at cell %d (%f, %f)", entityPosToCellIdx(e, pos), pos.x, pos.y);
         const int16_t cellIdx = entityPosToCellIdx(e, pos);
         if (cellIdx == -1) {
             ERRORF("invalid position for weapon pickup spawn: (%f, %f)", pos.x, pos.y);
         }
         pickup->mapCellIdx = cellIdx;
+        b2Body_Enable(pickup->bodyID);
+
         mapCell *cell = safe_array_get_at(e->cells, cellIdx);
-        entity *ent = b2Shape_GetUserData(pickup->shapeID);
-        cell->ent = ent;
+        cell->ent = pickup->ent;
     }
 }
 
@@ -1536,16 +1556,15 @@ void handleContactEvents(env *e) {
 // mark the pickup as disabled if a floating wall is touching it
 void handleWeaponPickupBeginTouch(env *e, const entity *sensor, entity *visitor) {
     weaponPickupEntity *pickup = sensor->entity;
-    if (pickup->respawnWait != 0.0f || pickup->floatingWallsTouching != 0) {
+    if (pickup->floatingWallsTouching != 0) {
         return;
     }
+
+    wallEntity *wall;
 
     switch (visitor->type) {
     case DRONE_ENTITY:
         disableWeaponPickup(e, pickup);
-        mapCell *cell = safe_array_get_at(e->cells, pickup->mapCellIdx);
-        ASSERT(cell->ent != NULL);
-        cell->ent = NULL;
 
         droneEntity *drone = visitor->entity;
         drone->stepInfo.pickedUpWeapon = true;
@@ -1558,6 +1577,14 @@ void handleWeaponPickupBeginTouch(env *e, const entity *sensor, entity *visitor)
     case STANDARD_WALL_ENTITY:
     case BOUNCY_WALL_ENTITY:
     case DEATH_WALL_ENTITY:
+        wall = visitor->entity;
+        if (!wall->isFloating) {
+            if (!wall->isSuddenDeath) {
+                ERRORF("non sudden death wall type %d at cell %d touched weapon pickup", visitor->type, wall->mapCellIdx);
+            }
+            return;
+        }
+
         pickup->floatingWallsTouching++;
         break;
     default:
@@ -1593,12 +1620,19 @@ void handleWeaponPickupEndTouch(const entity *sensor, entity *visitor) {
         return;
     }
 
+    wallEntity *wall;
+
     switch (visitor->type) {
     case DRONE_ENTITY:
         break;
     case STANDARD_WALL_ENTITY:
     case BOUNCY_WALL_ENTITY:
     case DEATH_WALL_ENTITY:
+        wall = visitor->entity;
+        if (!wall->isFloating) {
+            return;
+        }
+
         pickup->floatingWallsTouching--;
         break;
     default:
@@ -1676,7 +1710,7 @@ void insertionSort(nearEntity arr[], uint8_t size) {
         nearEntity key = arr[i];
         int j = i - 1;
 
-        while (j >= 0 && arr[j].distance > key.distance) {
+        while (j >= 0 && arr[j].distanceSquared > key.distanceSquared) {
             arr[j + 1] = arr[j];
             j = j - 1;
         }
@@ -1688,8 +1722,8 @@ void insertionSort(nearEntity arr[], uint8_t size) {
 #ifndef AUTOPXD
 void findNearWallsAndPickups(const env *e, droneEntity *drone, nearEntity nearWalls[], const uint8_t nWalls, nearEntity nearPickups[], const uint8_t nPickups) {
     const int16_t droneCellIdx = entityPosToCellIdx(e, drone->pos);
-    int8_t droneCellCol = droneCellIdx % e->columns;
-    int8_t droneCellRow = droneCellIdx / e->columns;
+    int8_t droneCellCol = droneCellIdx % e->map->columns;
+    int8_t droneCellRow = droneCellIdx / e->map->columns;
 
     uint8_t foundWalls = 0;
     uint8_t foundPickups = 0;
@@ -1723,7 +1757,7 @@ void findNearWallsAndPickups(const env *e, droneEntity *drone, nearEntity nearWa
             }
         }
 
-        if (cellIdx < 0 || col < 0 || col >= e->columns || row < 0 || row >= e->rows) {
+        if (cellIdx < 0 || col < 0 || col >= e->map->columns || row < 0 || row >= e->map->rows) {
             continue;
         }
 
@@ -1734,7 +1768,7 @@ void findNearWallsAndPickups(const env *e, droneEntity *drone, nearEntity nearWa
 
         nearEntity nearEntity = {
             .entity = cell->ent->entity,
-            .distance = b2Distance(cell->pos, drone->pos),
+            .distanceSquared = b2DistanceSquared(cell->pos, drone->pos),
         };
         if (cell->ent->type != WEAPON_PICKUP_ENTITY) {
             nearWalls[foundWalls++] = nearEntity;
@@ -1760,7 +1794,7 @@ void findNearWallsAndPickups(const env *e, droneEntity *drone, nearEntity nearWa
 
             nearEntity nearEntity = {
                 .entity = pickup,
-                .distance = b2Distance(pickup->pos, drone->pos),
+                .distanceSquared = b2DistanceSquared(pickup->pos, drone->pos),
             };
             nearPickups[i] = nearEntity;
         }

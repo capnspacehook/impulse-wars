@@ -124,14 +124,14 @@ const float discAimToContAimMap[2][16] = {
 
 // weapon pickup settings
 #define PICKUP_THICKNESS 3.0f
-#define PICKUP_SPAWN_DISTANCE 10.0f
+#define PICKUP_SPAWN_DISTANCE_SQUARED SQUARED(10.0f)
 #define PICKUP_RESPAWN_WAIT 3.0f
 #define SUDDEN_DEATH_PICKUP_RESPAWN_WAIT 2.0f
 
 // drone settings
 #define DRONE_WALL_SPAWN_DISTANCE 5.0f
 #define DRONE_DEATH_WALL_SPAWN_DISTANCE 7.5f
-#define DRONE_DRONE_SPAWN_DISTANCE 10.0f
+#define DRONE_DRONE_SPAWN_DISTANCE_SQUARED SQUARED(10.0f)
 #define DRONE_RADIUS 1.0f
 #define DRONE_DENSITY 1.25f
 #define DRONE_RESTITUTION 0.3f
@@ -283,6 +283,7 @@ const float discAimToContAimMap[2][16] = {
 const weaponInformation standard = {
     .type = STANDARD_WEAPON,
     .isPhysicsBullet = true,
+    .canSleep = false,
     .numProjectiles = STANDARD_PROJECTILES,
     .fireMagnitude = STANDARD_FIRE_MAGNITUDE,
     .recoilMagnitude = STANDARD_RECOIL_MAGNITUDE,
@@ -305,6 +306,7 @@ const weaponInformation standard = {
 const weaponInformation machineGun = {
     .type = MACHINEGUN_WEAPON,
     .isPhysicsBullet = true,
+    .canSleep = false,
     .numProjectiles = MACHINEGUN_PROJECTILES,
     .fireMagnitude = MACHINEGUN_FIRE_MAGNITUDE,
     .recoilMagnitude = MACHINEGUN_RECOIL_MAGNITUDE,
@@ -327,6 +329,7 @@ const weaponInformation machineGun = {
 const weaponInformation sniper = {
     .type = SNIPER_WEAPON,
     .isPhysicsBullet = true,
+    .canSleep = false,
     .numProjectiles = SNIPER_PROJECTILES,
     .fireMagnitude = SNIPER_FIRE_MAGNITUDE,
     .recoilMagnitude = SNIPER_RECOIL_MAGNITUDE,
@@ -349,6 +352,7 @@ const weaponInformation sniper = {
 const weaponInformation shotgun = {
     .type = SHOTGUN_WEAPON,
     .isPhysicsBullet = true,
+    .canSleep = false,
     .numProjectiles = SHOTGUN_PROJECTILES,
     .fireMagnitude = SHOTGUN_FIRE_MAGNITUDE,
     .recoilMagnitude = SHOTGUN_RECOIL_MAGNITUDE,
@@ -371,6 +375,7 @@ const weaponInformation shotgun = {
 const weaponInformation imploder = {
     .type = IMPLODER_WEAPON,
     .isPhysicsBullet = false,
+    .canSleep = false,
     .numProjectiles = IMPLODER_PROJECTILES,
     .fireMagnitude = IMPLODER_FIRE_MAGNITUDE,
     .recoilMagnitude = IMPLODER_RECOIL_MAGNITUDE,
@@ -393,6 +398,7 @@ const weaponInformation imploder = {
 const weaponInformation accelerator = {
     .type = ACCELERATOR_WEAPON,
     .isPhysicsBullet = true,
+    .canSleep = false,
     .numProjectiles = ACCELERATOR_PROJECTILES,
     .fireMagnitude = ACCELERATOR_FIRE_MAGNITUDE,
     .recoilMagnitude = ACCELERATOR_RECOIL_MAGNITUDE,
@@ -415,6 +421,7 @@ const weaponInformation accelerator = {
 const weaponInformation flakCannon = {
     .type = FLAK_CANNON_WEAPON,
     .isPhysicsBullet = false,
+    .canSleep = false,
     .numProjectiles = FLAK_CANNON_PROJECTILES,
     .fireMagnitude = FLAK_CANNON_FIRE_MAGNITUDE,
     .recoilMagnitude = FLAK_CANNON_RECOIL_MAGNITUDE,
@@ -437,6 +444,7 @@ const weaponInformation flakCannon = {
 const weaponInformation mineLauncher = {
     .type = MINE_LAUNCHER_WEAPON,
     .isPhysicsBullet = false,
+    .canSleep = true,
     .numProjectiles = MINE_LAUNCHER_PROJECTILES,
     .fireMagnitude = MINE_LAUNCHER_FIRE_MAGNITUDE,
     .recoilMagnitude = MINE_LAUNCHER_RECOIL_MAGNITUDE,

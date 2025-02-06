@@ -61,6 +61,8 @@ typedef struct mapEntry {
     const bool hasSetFloatingWalls;
     const uint16_t weaponPickups;
     const enum weaponType defaultWeapon;
+
+    bool *droneSpawns;
 } mapEntry;
 
 // a cell in the map; ent will be NULL if the cell is empty
@@ -99,6 +101,9 @@ typedef struct weaponInformation {
     // tunneling through static bodies which is expensive so it's
     // only enabled for fast moving projectiles
     const bool isPhysicsBullet;
+    // can the projectile ever be stationary? if so, it should be
+    // allowed to sleep to save on physics updates
+    const bool canSleep;
     const uint8_t numProjectiles;
     const float fireMagnitude;
     const float recoilMagnitude;
@@ -127,6 +132,8 @@ typedef struct weaponPickupEntity {
     uint8_t floatingWallsTouching;
     b2Vec2 pos;
     uint16_t mapCellIdx;
+
+    entity *ent;
 } weaponPickupEntity;
 
 typedef struct droneEntity droneEntity;
@@ -227,7 +234,7 @@ typedef struct logBuffer {
 
 typedef struct nearEntity {
     void *entity;
-    float distance;
+    float distanceSquared;
 } nearEntity;
 
 typedef struct rayClient {
@@ -294,8 +301,7 @@ typedef struct env {
 
     b2WorldId worldID;
     int8_t mapIdx;
-    uint8_t columns;
-    uint8_t rows;
+    mapEntry *map;
     mapBounds bounds;
     mapBounds spawnQuads[4];
     int8_t lastSpawnQuad;

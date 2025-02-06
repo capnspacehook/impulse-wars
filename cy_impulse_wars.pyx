@@ -40,11 +40,14 @@ from impulse_wars cimport (
     MISC_OBS_SIZE,
     env,
     initEnv,
+    initMaps,
+    setupEnv,
     rayClient,
     createRayClient,
     destroyRayClient,
     resetEnv,
     stepEnv,
+    destroyMaps,
     destroyEnv,
     LOG_BUFFER_SIZE,
     logBuffer,
@@ -144,6 +147,10 @@ cdef class CyImpulseWars:
             )
             self.envs[i].humanInput = humanControl
 
+        initMaps(&self.envs[i])
+        for i in range(self.numEnvs):
+            setupEnv(&self.envs[i])
+
     cdef _initRaylib(self):
         self.rayClient = createRayClient()
         cdef int i
@@ -173,6 +180,7 @@ cdef class CyImpulseWars:
             destroyEnv(&self.envs[i])
 
         destroyLogBuffer(self.logs)
+        destroyMaps()
         free(self.envs)
 
         if self.rayClient != NULL:

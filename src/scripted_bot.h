@@ -12,15 +12,15 @@ const float WALL_DANGER_DISTANCE = 3.0f;
 const float WALL_DANGER_SPEED = 5.0f;
 
 static inline uint32_t pathOffset(const env *e, uint16_t srcCellIdx, uint16_t destCellIdx) {
-    const uint8_t srcCol = srcCellIdx % e->columns;
-    const uint8_t srcRow = srcCellIdx / e->columns;
-    const uint8_t destCol = destCellIdx % e->columns;
-    const uint8_t destRow = destCellIdx / e->columns;
-    return (destRow * e->rows * e->columns * e->rows) + (destCol * e->rows * e->columns) + (srcRow * e->columns) + srcCol;
+    const uint8_t srcCol = srcCellIdx % e->map->columns;
+    const uint8_t srcRow = srcCellIdx / e->map->columns;
+    const uint8_t destCol = destCellIdx % e->map->columns;
+    const uint8_t destRow = destCellIdx / e->map->columns;
+    return (destRow * e->map->rows * e->map->columns * e->map->rows) + (destCol * e->map->rows * e->map->columns) + (srcRow * e->map->columns) + srcCol;
 }
 
 void pathfindBFS(const env *e, uint8_t *flatPaths, uint16_t destCellIdx) {
-    uint8_t(*paths)[e->columns] = (uint8_t(*)[e->columns])flatPaths;
+    uint8_t(*paths)[e->map->columns] = (uint8_t(*)[e->map->columns])flatPaths;
     int8_t(*buffer)[3] = (int8_t(*)[3])e->mapPathing[e->mapIdx].pathBuffer;
 
     uint16_t start = 0;
@@ -30,8 +30,8 @@ void pathfindBFS(const env *e, uint8_t *flatPaths, uint16_t destCellIdx) {
     if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
         return;
     }
-    const int8_t destCol = destCellIdx % e->columns;
-    const int8_t destRow = destCellIdx / e->columns;
+    const int8_t destCol = destCellIdx % e->map->columns;
+    const int8_t destRow = destCellIdx / e->map->columns;
 
     buffer[start][0] = 8;
     buffer[start][1] = destCol;
@@ -42,7 +42,7 @@ void pathfindBFS(const env *e, uint8_t *flatPaths, uint16_t destCellIdx) {
         const int8_t startRow = buffer[start][2];
         start++;
 
-        if (startCol < 0 || startCol >= e->columns || startRow < 0 || startRow >= e->rows || paths[startRow][startCol] != UINT8_MAX) {
+        if (startCol < 0 || startCol >= e->map->columns || startRow < 0 || startRow >= e->map->rows || paths[startRow][startCol] != UINT8_MAX) {
             continue;
         }
         int16_t cellIdx = cellIndex(e, startCol, startRow);

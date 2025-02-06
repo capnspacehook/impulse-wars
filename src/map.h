@@ -33,7 +33,7 @@ const char boringLayout[] = {
     'D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D',
 };
 
-const mapEntry boringMap = {
+mapEntry boringMap = {
     .layout = boringLayout,
     .columns = 21,
     .rows = 21,
@@ -68,7 +68,7 @@ const char prototypeArenaLayout[] = {
     'D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D',
 };
 
-const mapEntry prototypeArenaMap = {
+mapEntry prototypeArenaMap = {
     .layout = prototypeArenaLayout,
     .columns = 20,
     .rows = 20,
@@ -104,7 +104,7 @@ const char snipersLayout[] = {
     'B','B','B','B','B','B','B','B','B','B','B','B','B','B','B','B','B','B','B','B','B',
 };
 
-const mapEntry snipersMap = {
+mapEntry snipersMap = {
     .layout = snipersLayout,
     .columns = 21,
     .rows = 21,
@@ -140,7 +140,7 @@ const char roomsLayout[] = {
     'D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D',
 };
 
-const mapEntry roomsMap = {
+mapEntry roomsMap = {
     .layout = roomsLayout,
     .columns = 21,
     .rows = 21,
@@ -178,7 +178,7 @@ const char xArenaLayout[] = {
     'D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D',
 };
 
-const mapEntry xArena = {
+mapEntry xArena = {
     .layout = xArenaLayout,
     .columns = 23,
     .rows = 23,
@@ -217,7 +217,7 @@ const char crossBounceLayout[] = {
     'D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D',
 };
 
-const mapEntry crossBounce = {
+mapEntry crossBounce = {
     .layout = crossBounceLayout,
     .columns = 24,
     .rows = 24,
@@ -255,7 +255,7 @@ const char asteriskArenaLayout[]= {
     'D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D','D',
 };
 
-const mapEntry asteriskArena = {
+mapEntry asteriskArena = {
     .layout = asteriskArenaLayout,
     .columns = 23,
     .rows = 23,
@@ -290,7 +290,7 @@ const char foamPitLayout[] = {
     'B','B','B','W','W','W','D','D','D','B','B','D','D','D','W','W','W','B','B','B',
 };
 
-const mapEntry foamPitMap = {
+mapEntry foamPitMap = {
     .layout = foamPitLayout,
     .columns = 20,
     .rows = 20,
@@ -329,7 +329,7 @@ const char siegeLayout[] = {
     'B','B','B','W','W','W','W','W','D','D','D','D','D','D','D','D','D','W','W','W','W','W','B','B','B',
 };
 
-const mapEntry siegeMap = {
+mapEntry siegeMap = {
     .layout = siegeLayout,
     .columns = 25,
     .rows = 24,
@@ -344,7 +344,7 @@ const mapEntry siegeMap = {
 // clang-format on
 
 #ifndef AUTOPXD
-const mapEntry *maps[] = {
+mapEntry *maps[] = {
     &boringMap,
     &prototypeArenaMap,
     &snipersMap,
@@ -441,8 +441,7 @@ void setupMap(env *e, const uint8_t mapIdx) {
     const char *layout = maps[mapIdx]->layout;
 
     e->mapIdx = mapIdx;
-    e->columns = columns;
-    e->rows = rows;
+    e->map = maps[mapIdx];
     e->defaultWeapon = weaponInfos[maps[mapIdx]->defaultWeapon];
     if (e->isTraining && randFloat(&e->randState, 0.0f, 1.0f) < 0.25f) {
         e->defaultWeapon = weaponInfos[randInt(&e->randState, 0, NUM_WEAPONS - 1)];
@@ -495,6 +494,46 @@ void setupMap(env *e, const uint8_t mapIdx) {
             }
             cellIdx++;
         }
+    }
+}
+
+void initMaps(env *e) {
+    const enum entityType deathWallType = DEATH_WALL_ENTITY;
+
+    for (uint8_t i = 0; i < NUM_MAPS; i++) {
+        setupMap(e, i);
+
+        mapEntry *map = maps[i];
+        bool *droneSpawns = fastCalloc(map->columns * map->rows, sizeof(bool));
+
+        // precompute valid cells for drones to spawn
+        for (uint16_t i = 0; i < cc_array_size(e->cells); i++) {
+            const mapCell *cell = safe_array_get_at(e->cells, i);
+
+            if (isOverlappingAABB(e, cell->pos, DRONE_DEATH_WALL_SPAWN_DISTANCE, DRONE_SHAPE, WALL_SHAPE | FLOATING_WALL_SHAPE, &deathWallType)) {
+                continue;
+            }
+            if (isOverlappingAABB(e, cell->pos, DRONE_WALL_SPAWN_DISTANCE, DRONE_SHAPE, WALL_SHAPE | FLOATING_WALL_SHAPE, NULL)) {
+                continue;
+            }
+            droneSpawns[i] = true;
+        }
+
+        map->droneSpawns = droneSpawns;
+
+        // clear floating walls from the map
+        for (uint8_t i = 0; i < cc_array_size(e->floatingWalls); i++) {
+            wallEntity *wall = safe_array_get_at(e->floatingWalls, i);
+            destroyWall(e, wall, false);
+        }
+        cc_array_remove_all(e->floatingWalls);
+    }
+}
+
+void destroyMaps() {
+    for (uint8_t i = 0; i < NUM_MAPS; i++) {
+        mapEntry *map = maps[i];
+        fastFree(map->droneSpawns);
     }
 }
 

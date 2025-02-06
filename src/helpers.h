@@ -78,6 +78,8 @@
 // only used in debug builds
 #define MAYBE_UNUSED(x) (void)x
 
+#define SQUARED(x) (x * x)
+
 #ifndef PI
 #define PI 3.14159265358979323846f
 #endif

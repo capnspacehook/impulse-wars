@@ -15,6 +15,8 @@ void perfTest(const uint32_t numSteps) {
     logBuffer *logs = createLogBuffer(1);
 
     initEnv(e, NUM_DRONES, NUM_DRONES, obs, false, actions, NULL, rewards, terminals, truncations, logs, time(NULL), false, true);
+    initMaps(e);
+    setupEnv(e);
 
     uint32_t steps = 0;
     while (steps != numSteps) {
@@ -36,6 +38,7 @@ void perfTest(const uint32_t numSteps) {
     }
 
     destroyEnv(e);
+    destroyMaps();
 
     fastFree(obs);
     fastFree(actions);

@@ -70,7 +70,7 @@ FetchContent_MakeAvailable(raylib)
 # maybe due to install prefix schenanigans?
 FetchContent_Declare(
 	box2d
-	URL https://github.com/capnspacehook/box2d/archive/refs/heads/main.zip
+	URL https://github.com/capnspacehook/box2d/archive/refs/heads/char_round1.zip
 )
 set(BOX2D_ENABLE_SIMD ON CACHE BOOL "Enable SIMD math (faster)" FORCE)
 set(BOX2D_AVX2 ON CACHE BOOL "Enable AVX2 (faster)" FORCE)
@@ -123,7 +123,7 @@ if(DEFINED BUILD_PYTHON_MODULE)
 		COMMAND "${CMAKE_COMMAND}"
 			"-DSOURCE=${CMAKE_CURRENT_BINARY_DIR}/impulse_wars.pxd.raw"
 			"-DTARGET=${CMAKE_CURRENT_BINARY_DIR}/impulse_wars.pxd"
-			-P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/fix-cython-bool.cmake"
+			-P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/fix-cython-pxd.cmake"
 		DEPENDS impulse_wars.pxd.raw
 		VERBATIM
 	)
