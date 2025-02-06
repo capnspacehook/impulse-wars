@@ -539,9 +539,7 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
     // for (size_t i = 0; i < cc_array_size(e->cells); i++) {
     //     mapCell *cell;
     //     cc_array_get_at(e->cells, i, (void **)&cell);
-    //     if (cell->ent == NULL) {
-    //         renderEmptyCell(e, cell->pos, i);
-    //     }
+    //     renderEmptyCell(e, cell->pos, i);
     // }
 
     if (!b2VecEqual(e->debugPoint, b2Vec2_zero)) {

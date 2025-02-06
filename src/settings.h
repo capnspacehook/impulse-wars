@@ -21,6 +21,8 @@
 #define MAX_FLOATING_WALLS 18
 #define MAX_WEAPON_PICKUPS 12
 
+#define MAX_NEAREST_WALLS 8
+
 #define ROUND_STEPS 30
 #define SUDDEN_DEATH_STEPS 5
 
@@ -94,8 +96,6 @@ uint16_t obsBytes(uint8_t numDrones) {
 #define MAX_DISTANCE 200.0f
 #define MAX_SPEED 500.0f
 #define MAX_ANGLE (float)PI
-
-#define MAX_NEAR_WALLS 64
 
 // action constants
 const uint8_t CONTINUOUS_ACTION_SIZE = 7;
@@ -599,6 +599,21 @@ void weaponExplosion(const enum weaponType type, b2ExplosionDef *explosionDef) {
         return;
     default:
         ERRORF("unknown weapon type %d for projectile explosion", type);
+    }
+}
+
+// insertion sort should be faster than quicksort for small arrays
+void insertionSort(nearEntity arr[], uint8_t size) {
+    for (int i = 1; i < size; i++) {
+        nearEntity key = arr[i];
+        int j = i - 1;
+
+        while (j >= 0 && arr[j].distanceSquared > key.distanceSquared) {
+            arr[j + 1] = arr[j];
+            j = j - 1;
+        }
+
+        arr[j + 1] = key;
     }
 }
 

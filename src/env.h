@@ -248,9 +248,8 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
 #ifndef AUTOPXD
 // computes observations for N nearest walls, floating walls, and weapon pickups
 void computeNearMapObs(env *e, droneEntity *drone, float *scalarObs) {
-    nearEntity nearWalls[MAX_NEAR_WALLS] = {0};
-    nearEntity nearPickups[MAX_WEAPON_PICKUPS] = {0};
-    findNearWallsAndPickups(e, drone, nearWalls, NUM_NEAR_WALL_OBS, nearPickups, NUM_WEAPON_PICKUP_OBS);
+    nearEntity nearWalls[NUM_NEAR_WALL_OBS];
+    findNearWalls(e, drone, nearWalls, NUM_NEAR_WALL_OBS);
 
     uint16_t offset;
 
@@ -262,7 +261,7 @@ void computeNearMapObs(env *e, droneEntity *drone, float *scalarObs) {
         ASSERTF(offset <= NEAR_WALL_POS_OBS_OFFSET, "offset: %d", offset);
         scalarObs[offset] = wall->type;
 
-        // DEBUG_LOGF("wall %d cell %d", i, entityPosToCellIdx(e, wall->pos.pos));
+        // DEBUG_LOGF("wall %d cell %d", i, entityPosToCellIdx(e, wall->pos));
 
         offset = NEAR_WALL_POS_OBS_OFFSET + (i * NEAR_WALL_POS_OBS_SIZE);
         ASSERTF(offset <= FLOATING_WALL_TYPES_OBS_OFFSET, "offset: %d", offset);
@@ -271,6 +270,7 @@ void computeNearMapObs(env *e, droneEntity *drone, float *scalarObs) {
         scalarObs[offset++] = scaleValue(wallRelPos.x, MAX_X_POS, false);
         scalarObs[offset] = scaleValue(wallRelPos.y, MAX_Y_POS, false);
     }
+
     if (cc_array_size(e->floatingWalls) != 0) {
         // find N nearest floating walls
         nearEntity nearFloatingWalls[MAX_FLOATING_WALLS] = {0};
@@ -311,24 +311,38 @@ void computeNearMapObs(env *e, droneEntity *drone, float *scalarObs) {
         }
     }
 
-    // compute type and location of N nearest weapon pickups
-    for (uint8_t i = 0; i < cc_array_size(e->pickups); i++) {
-        if (i == NUM_WEAPON_PICKUP_OBS) {
-            break;
+    if (cc_array_size(e->pickups) != 0) {
+        // find N nearest weapon pickups
+        nearEntity nearPickups[MAX_WEAPON_PICKUPS] = {0};
+        for (uint8_t i = 0; i < cc_array_size(e->pickups); i++) {
+            weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
+            const nearEntity nearEnt = {
+                .entity = pickup,
+                .distanceSquared = b2DistanceSquared(pickup->pos, drone->pos),
+            };
+            nearPickups[i] = nearEnt;
         }
-        const weaponPickupEntity *pickup = nearPickups[i].entity;
+        insertionSort(nearPickups, cc_array_size(e->pickups));
 
-        offset = WEAPON_PICKUP_TYPES_OBS_OFFSET + i;
-        ASSERTF(offset <= WEAPON_PICKUP_POS_OBS_OFFSET, "offset: %d", offset);
-        scalarObs[offset] = pickup->weapon + 1;
+        // compute type and location of N nearest weapon pickups
+        for (uint8_t i = 0; i < cc_array_size(e->pickups); i++) {
+            if (i == NUM_WEAPON_PICKUP_OBS) {
+                break;
+            }
+            const weaponPickupEntity *pickup = nearPickups[i].entity;
 
-        // DEBUG_LOGF("pickup %d cell %d", i, entityPosToCellIdx(e, pickup->pos));
+            offset = WEAPON_PICKUP_TYPES_OBS_OFFSET + i;
+            ASSERTF(offset <= WEAPON_PICKUP_POS_OBS_OFFSET, "offset: %d", offset);
+            scalarObs[offset] = pickup->weapon + 1;
 
-        offset = WEAPON_PICKUP_POS_OBS_OFFSET + (i * WEAPON_PICKUP_POS_OBS_SIZE);
-        ASSERTF(offset <= PROJECTILE_TYPES_OBS_OFFSET, "offset: %d", offset);
-        const b2Vec2 pickupRelPos = b2Sub(pickup->pos, drone->pos);
-        scalarObs[offset++] = scaleValue(pickupRelPos.x, MAX_X_POS, false);
-        scalarObs[offset] = scaleValue(pickupRelPos.y, MAX_Y_POS, false);
+            // DEBUG_LOGF("pickup %d cell %d", i, entityPosToCellIdx(e, pickup->pos));
+
+            offset = WEAPON_PICKUP_POS_OBS_OFFSET + (i * WEAPON_PICKUP_POS_OBS_SIZE);
+            ASSERTF(offset <= PROJECTILE_TYPES_OBS_OFFSET, "offset: %d", offset);
+            const b2Vec2 pickupRelPos = b2Sub(pickup->pos, drone->pos);
+            scalarObs[offset++] = scaleValue(pickupRelPos.x, MAX_X_POS, false);
+            scalarObs[offset] = scaleValue(pickupRelPos.y, MAX_Y_POS, false);
+        }
     }
 }
 #endif

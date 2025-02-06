@@ -497,29 +497,55 @@ void setupMap(env *e, const uint8_t mapIdx) {
     }
 }
 
-void initMaps(env *e) {
+bool posValidDroneSpawnPoint(const env *e, const b2Vec2 pos) {
     const enum entityType deathWallType = DEATH_WALL_ENTITY;
+    if (isOverlappingAABB(e, pos, DRONE_DEATH_WALL_SPAWN_DISTANCE, DRONE_SHAPE, WALL_SHAPE | FLOATING_WALL_SHAPE, &deathWallType)) {
+        return false;
+    }
+    if (isOverlappingAABB(e, pos, DRONE_WALL_SPAWN_DISTANCE, DRONE_SHAPE, WALL_SHAPE | FLOATING_WALL_SHAPE, NULL)) {
+        return false;
+    }
+    return true;
+}
 
+void initMaps(env *e) {
     for (uint8_t i = 0; i < NUM_MAPS; i++) {
         setupMap(e, i);
-
         mapEntry *map = maps[i];
-        bool *droneSpawns = fastCalloc(map->columns * map->rows, sizeof(bool));
 
-        // precompute valid cells for drones to spawn
+        bool *droneSpawns = fastCalloc(map->columns * map->rows, sizeof(bool));
+        nearEntity *nearestWalls = fastCalloc(MAX_NEAREST_WALLS * map->columns * map->rows, sizeof(nearEntity));
+
         for (uint16_t i = 0; i < cc_array_size(e->cells); i++) {
             const mapCell *cell = safe_array_get_at(e->cells, i);
 
-            if (isOverlappingAABB(e, cell->pos, DRONE_DEATH_WALL_SPAWN_DISTANCE, DRONE_SHAPE, WALL_SHAPE | FLOATING_WALL_SHAPE, &deathWallType)) {
-                continue;
-            }
-            if (isOverlappingAABB(e, cell->pos, DRONE_WALL_SPAWN_DISTANCE, DRONE_SHAPE, WALL_SHAPE | FLOATING_WALL_SHAPE, NULL)) {
-                continue;
-            }
-            droneSpawns[i] = true;
-        }
+            // precompute valid cells for drones to spawn
+            droneSpawns[i] = posValidDroneSpawnPoint(e, cell->pos);
 
+            // find nearest walls for each empty cell
+            if (cell->ent != NULL) {
+                continue;
+            }
+
+            uint16_t wallIdx = 0;
+            nearEntity walls[map->columns * map->rows];
+            for (uint16_t j = 0; j < cc_array_size(e->cells); j++) {
+                const mapCell *c = safe_array_get_at(e->cells, j);
+                if (c->ent == NULL) {
+                    continue;
+                }
+
+                walls[wallIdx].idx = wallIdx;
+                walls[wallIdx].distanceSquared = b2DistanceSquared(cell->pos, c->pos);
+                wallIdx++;
+            }
+            insertionSort(walls, wallIdx);
+
+            const uint32_t startIdx = i * MAX_NEAREST_WALLS;
+            memcpy(nearestWalls + startIdx, walls, MAX_NEAREST_WALLS * sizeof(nearEntity));
+        }
         map->droneSpawns = droneSpawns;
+        map->nearestWalls = nearestWalls;
 
         // clear floating walls from the map
         for (uint8_t i = 0; i < cc_array_size(e->floatingWalls); i++) {
@@ -534,6 +560,7 @@ void destroyMaps() {
     for (uint8_t i = 0; i < NUM_MAPS; i++) {
         mapEntry *map = maps[i];
         fastFree(map->droneSpawns);
+        fastFree(map->nearestWalls);
     }
 }
 

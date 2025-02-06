@@ -160,6 +160,8 @@ void scriptedBotShoot(droneEntity *drone, agentActions *actions) {
     }
 }
 
+#ifndef AUTOPXD
+
 // TODO: switch between personalities when episode begins:
 // - aggressive
 // - defensive
@@ -172,9 +174,8 @@ agentActions scriptedBotActions(env *e, droneEntity *drone) {
     actions.chargingWeapon = true;
 
     // find the nearest death wall or floating wall
-    nearEntity nearWalls[MAX_NEAR_WALLS] = {0};
-    nearEntity nearPickups[MAX_WEAPON_PICKUPS] = {0};
-    findNearWallsAndPickups(e, drone, nearWalls, NUM_NEAR_WALLS, nearPickups, NUM_NEAR_PICKUPS);
+    nearEntity nearWalls[MAX_NEAREST_WALLS] = {0};
+    findNearWalls(e, drone, nearWalls, NUM_NEAR_WALLS);
 
     // find the distance between the closest points on the drone and the nearest wall
     b2Vec2 nearestWallPos = b2Vec2_zero;
@@ -248,7 +249,19 @@ agentActions scriptedBotActions(env *e, droneEntity *drone) {
         }
     }
 
+    // get a weapon if the standard weapon is active
     if (drone->weaponInfo->type == STANDARD_WEAPON) {
+        nearEntity nearPickups[MAX_WEAPON_PICKUPS] = {0};
+        for (uint8_t i = 0; i < cc_array_size(e->pickups); i++) {
+            weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
+            const nearEntity nearEnt = {
+                .entity = pickup,
+                .distanceSquared = b2DistanceSquared(pickup->pos, drone->pos),
+            };
+            nearPickups[i] = nearEnt;
+        }
+        insertionSort(nearPickups, cc_array_size(e->pickups));
+
         const weaponPickupEntity *pickup = nearPickups[0].entity;
         moveTo(e, &actions, drone->pos, pickup->pos);
         return actions;
@@ -281,5 +294,7 @@ agentActions scriptedBotActions(env *e, droneEntity *drone) {
 
     return actions;
 }
+
+#endif
 
 #endif

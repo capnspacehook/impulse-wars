@@ -50,6 +50,12 @@ enum weaponType {
     MINE_LAUNCHER_WEAPON,
 };
 
+typedef struct nearEntity {
+    uint16_t idx;
+    void *entity;
+    float distanceSquared;
+} nearEntity;
+
 typedef struct mapEntry {
     const char *layout;
     const uint8_t columns;
@@ -63,6 +69,7 @@ typedef struct mapEntry {
     const enum weaponType defaultWeapon;
 
     bool *droneSpawns;
+    nearEntity *nearestWalls;
 } mapEntry;
 
 // a cell in the map; ent will be NULL if the cell is empty
@@ -231,11 +238,6 @@ typedef struct logBuffer {
     uint16_t size;
     uint16_t capacity;
 } logBuffer;
-
-typedef struct nearEntity {
-    void *entity;
-    float distanceSquared;
-} nearEntity;
 
 typedef struct rayClient {
     float scale;

@@ -27,7 +27,6 @@ static inline int16_t entityPosToCellIdx(const env *e, const b2Vec2 pos) {
     const int8_t cellRow = cellY / WALL_THICKNESS;
     const int16_t cellIdx = cellIndex(e, cellCol, cellRow);
     // set the cell to -1 if it's out of bounds
-    // TODO: this is a box2d issue, investigate more
     if (cellIdx < 0 || (uint16_t)cellIdx >= cc_array_size(e->cells)) {
         DEBUG_LOGF("invalid cell index: %d from position: (%f, %f)", cellIdx, pos.x, pos.y);
         return -1;
@@ -62,7 +61,7 @@ bool overlapCallback(b2ShapeId shapeID, void *context) {
 // a height and width of distance with shape categories specified in maskBits;
 // if type is set only entities that match a shape category in maskBits *and*
 // that have the entity type specified will be considered
-bool isOverlappingAABB(env *e, const b2Vec2 pos, const float distance, const enum shapeCategory category, const uint64_t maskBits, const enum entityType *type) {
+bool isOverlappingAABB(const env *e, const b2Vec2 pos, const float distance, const enum shapeCategory category, const uint64_t maskBits, const enum entityType *type) {
     b2AABB bounds = {
         .lowerBound = {.x = pos.x - distance, .y = pos.y - distance},
         .upperBound = {.x = pos.x + distance, .y = pos.y + distance},
@@ -80,7 +79,7 @@ bool isOverlappingAABB(env *e, const b2Vec2 pos, const float distance, const enu
 // with shape categories specified in maskBits;
 // if type is set only entities that match a shape category in maskBits *and*
 // that have the entity type specified will be considered
-bool isOverlappingCircle(env *e, const b2Vec2 pos, const float radius, const enum shapeCategory category, const uint64_t maskBits, const enum entityType *type) {
+bool isOverlappingCircle(const env *e, const b2Vec2 pos, const float radius, const enum shapeCategory category, const uint64_t maskBits, const enum entityType *type) {
     const b2Circle circle = {.center = b2Vec2_zero, .radius = radius};
     const b2Transform transform = {.p = pos, .q = b2Rot_identity};
     b2QueryFilter filter = {
@@ -339,7 +338,7 @@ void disableWeaponPickup(env *e, weaponPickupEntity *pickup) {
     b2Body_Disable(pickup->bodyID);
 
     mapCell *cell = safe_array_get_at(e->cells, pickup->mapCellIdx);
-    ASSERT(cell->ent != NULL);
+    // ASSERT(cell->ent != NULL); // TODO: uncomment when box2d fixes sensor events on disabled bodies
     cell->ent = NULL;
 
     e->spawnedWeaponPickups[pickup->weapon]--;
@@ -1693,115 +1692,19 @@ void handleSensorEvents(env *e) {
     }
 }
 
-const uint8_t searchDirections[8][2] = {
-    {0, -1},
-    {1, -1},
-    {1, 0},
-    {1, 1},
-    {0, 1},
-    {-1, 1},
-    {-1, 0},
-    {-1, -1},
-};
-
-// insertion sort should be faster than quicksort for small arrays
-void insertionSort(nearEntity arr[], uint8_t size) {
-    for (int i = 1; i < size; i++) {
-        nearEntity key = arr[i];
-        int j = i - 1;
-
-        while (j >= 0 && arr[j].distanceSquared > key.distanceSquared) {
-            arr[j + 1] = arr[j];
-            j = j - 1;
-        }
-
-        arr[j + 1] = key;
-    }
-}
-
-#ifndef AUTOPXD
-void findNearWallsAndPickups(const env *e, droneEntity *drone, nearEntity nearWalls[], const uint8_t nWalls, nearEntity nearPickups[], const uint8_t nPickups) {
+void findNearWalls(const env *e, droneEntity *drone, nearEntity nearestWalls[], const uint8_t nWalls) {
     const int16_t droneCellIdx = entityPosToCellIdx(e, drone->pos);
-    int8_t droneCellCol = droneCellIdx % e->map->columns;
-    int8_t droneCellRow = droneCellIdx / e->map->columns;
+    nearEntity nearWalls[MAX_NEAREST_WALLS];
 
-    uint8_t foundWalls = 0;
-    uint8_t foundPickups = 0;
-    int8_t xDirection = 1;
-    int8_t yDirection = 0;
-    int8_t col = droneCellCol;
-    int8_t row = droneCellRow;
-    uint8_t segmentLen = 1;
-    uint8_t segmentPassed = 0;
-    uint8_t segmentsCompleted = 0;
-
-    // search for near walls and pickups in a spiral; pickups may be
-    // scattered, so if we don't find them all here we'll just sort all
-    // pickups by distance later
-    while (segmentsCompleted % 5 != 0 || foundWalls < nWalls) {
-        col += xDirection;
-        row += yDirection;
-        const int16_t cellIdx = cellIndex(e, col, row);
-        segmentPassed++;
-
-        if (segmentPassed == segmentLen) {
-            // if we have completed a segment, change direction
-            segmentsCompleted++;
-            segmentPassed = 0;
-            uint8_t temp = xDirection;
-            xDirection = -yDirection;
-            yDirection = temp;
-            if (yDirection == 0) {
-                // increase the segment length if necessary
-                segmentLen++;
-            }
-        }
-
-        if (cellIdx < 0 || col < 0 || col >= e->map->columns || row < 0 || row >= e->map->rows) {
-            continue;
-        }
-
-        const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
-        if (cell->ent == NULL || (cell->ent->type != WEAPON_PICKUP_ENTITY && !entityTypeIsWall(cell->ent->type))) {
-            continue;
-        }
-
-        nearEntity nearEntity = {
-            .entity = cell->ent->entity,
-            .distanceSquared = b2DistanceSquared(cell->pos, drone->pos),
-        };
-        if (cell->ent->type != WEAPON_PICKUP_ENTITY) {
-            nearWalls[foundWalls++] = nearEntity;
-        } else if (cell->ent->type == WEAPON_PICKUP_ENTITY) {
-            nearPickups[foundPickups++] = nearEntity;
-        }
+    for (uint8_t i = 0; i < MAX_NEAREST_WALLS; ++i) {
+        const uint32_t idx = (MAX_NEAREST_WALLS * droneCellIdx) + i;
+        const uint16_t wallIdx = e->map->nearestWalls[idx].idx;
+        wallEntity *wall = safe_array_get_at(e->walls, wallIdx);
+        nearWalls[i].entity = wall;
+        nearWalls[i].distanceSquared = b2DistanceSquared(drone->pos, wall->pos);
     }
-
-    ASSERTF(foundWalls >= nWalls, "foundWalls: %d", foundWalls);
-    insertionSort(nearWalls, foundWalls);
-
-    // if we didn't find enough pickups, add the rest of the pickups
-    // and sort them by distance
-    if (foundPickups < nPickups) {
-        for (uint8_t i = 0; i < cc_array_size(e->pickups); i++) {
-            weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
-            if (i < foundPickups) {
-                const weaponPickupEntity *nearPickup = nearPickups[i].entity;
-                if (nearPickup == pickup) {
-                    continue;
-                }
-            }
-
-            nearEntity nearEntity = {
-                .entity = pickup,
-                .distanceSquared = b2DistanceSquared(pickup->pos, drone->pos),
-            };
-            nearPickups[i] = nearEntity;
-        }
-        foundPickups = cc_array_size(e->pickups);
-    }
-    insertionSort(nearPickups, foundPickups);
+    insertionSort(nearWalls, MAX_NEAREST_WALLS);
+    memcpy(nearestWalls, nearWalls, nWalls * sizeof(nearEntity));
 }
-#endif
 
 #endif
