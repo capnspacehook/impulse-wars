@@ -404,7 +404,6 @@ void computeObs(env *e) {
             scalarObs[enemyDroneObsOffset] = enemyDrone->weaponInfo->type + 1;
 
             scalarObsOffset = ENEMY_DRONE_OBS_OFFSET + (e->numDrones - 1) + (processedDrones * (ENEMY_DRONE_OBS_SIZE - 1));
-            scalarObs[scalarObsOffset++] = (float)agentDrone->inLineOfSight[i];
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.x, MAX_X_POS, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.y, MAX_Y_POS, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneDistance, MAX_DISTANCE, true);
@@ -1045,7 +1044,6 @@ void stepEnv(env *e) {
         for (uint8_t i = 0; i < e->numDrones; i++) {
             droneEntity *drone = safe_array_get_at(e->drones, i);
             memset(&drone->stepInfo, 0x0, sizeof(droneStepInfo));
-            memset(&drone->inLineOfSight, 0x0, sizeof(drone->inLineOfSight));
             if (drone->dead) {
                 drone->diedThisStep = false;
             }

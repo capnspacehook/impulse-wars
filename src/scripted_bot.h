@@ -160,6 +160,44 @@ void scriptedBotShoot(droneEntity *drone, agentActions *actions) {
     }
 }
 
+bool shouldShootAtAgent(const env *e, const droneEntity *drone, const droneEntity *agentDrone, const b2Vec2 agentDroneDirection) {
+    const b2Vec2 invAgentDroneDirection = b2MulSV(-1.0f, agentDroneDirection);
+
+    float shotWait;
+    if (drone->ammo > 1) {
+        shotWait = ((drone->weaponInfo->coolDown + drone->weaponInfo->charge) / e->deltaTime) * 1.5f;
+    } else {
+        shotWait = ((e->defaultWeapon->coolDown + e->defaultWeapon->charge) / e->deltaTime) * 1.5f;
+    }
+    const float recoilDistance = shotRecoilDistance(e, drone, drone->velocity, invAgentDroneDirection, shotWait);
+    const bool safeShot = safeToFire(e, drone->pos, invAgentDroneDirection, recoilDistance);
+    // e->debugPoint = b2MulAdd(pos, recoilDistance, invAgentDroneDirection);
+    if (!safeShot) {
+        return false;
+    }
+
+    // cast a circle that's the size of a projectile of the current weapon
+    const float agentDroneDistance = b2Distance(agentDrone->pos, drone->pos);
+    const b2Vec2 castEnd = b2MulAdd(drone->pos, agentDroneDistance, agentDroneDirection);
+    const b2Vec2 translation = b2Sub(castEnd, drone->pos);
+    const b2Circle projCircle = {.center = b2Vec2_zero, .radius = drone->weaponInfo->radius};
+    const b2Transform projTransform = {.p = drone->pos, .q = b2Rot_identity};
+    const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | DRONE_SHAPE};
+
+    castCircleCtx ctx = {0};
+    b2World_CastCircle(e->worldID, &projCircle, projTransform, translation, filter, castCircleCallback, &ctx);
+    if (!ctx.hit) {
+        return false;
+    }
+    ASSERT(b2Shape_IsValid(ctx.shapeID));
+    const entity *ent = b2Shape_GetUserData(ctx.shapeID);
+    if (ent == NULL || ent->type != DRONE_ENTITY) {
+        return false;
+    }
+
+    return true;
+}
+
 #ifndef AUTOPXD
 
 // TODO: switch between personalities when episode begins:
@@ -222,11 +260,10 @@ agentActions scriptedBotActions(env *e, droneEntity *drone) {
     }
 
     // move away from a death wall if we're too close
-    const b2Vec2 vel = b2Body_GetLinearVelocity(drone->bodyID);
     const b2Vec2 wallDirection = b2Normalize(b2Sub(nearestWallPos, drone->pos));
     const b2Vec2 invWallDirection = b2MulSV(-1.0f, wallDirection);
     if (nearestWallDistance <= WALL_AVOID_DISTANCE) {
-        const float speedToWall = b2Dot(vel, wallDirection);
+        const float speedToWall = b2Dot(drone->velocity, wallDirection);
         DEBUG_LOGF("speedToWall: %f", speedToWall);
         if (nearestWallDistance <= WALL_DANGER_DISTANCE || speedToWall > 0.1f) {
             actions.move = invWallDirection;
@@ -238,7 +275,7 @@ agentActions scriptedBotActions(env *e, droneEntity *drone) {
             } else {
                 shotWait = ((e->defaultWeapon->coolDown + e->defaultWeapon->charge) / e->deltaTime) * 1.5f;
             }
-            const float recoilDistance = shotRecoilDistance(e, drone, vel, invWallDirection, shotWait);
+            const float recoilDistance = shotRecoilDistance(e, drone, drone->velocity, invWallDirection, shotWait);
             const bool safeShot = safeToFire(e, drone->pos, invWallDirection, recoilDistance);
             // e->debugPoint = b2MulAdd(pos, recoilDistance, invWallDirection);
             if (safeShot) {
@@ -269,20 +306,7 @@ agentActions scriptedBotActions(env *e, droneEntity *drone) {
 
     droneEntity *agentDrone = safe_array_get_at(e->drones, 0);
     const b2Vec2 agentDroneDirection = b2Normalize(b2Sub(agentDrone->pos, drone->pos));
-    const b2Vec2 invAgentDroneDirection = b2MulSV(-1.0f, agentDroneDirection);
-
-    float shotWait;
-    if (drone->ammo > 1) {
-        shotWait = ((drone->weaponInfo->coolDown + drone->weaponInfo->charge) / e->deltaTime) * 1.5f;
-    } else {
-        shotWait = ((e->defaultWeapon->coolDown + e->defaultWeapon->charge) / e->deltaTime) * 1.5f;
-    }
-    const float recoilDistance = shotRecoilDistance(e, drone, vel, invAgentDroneDirection, shotWait);
-    const bool safeShot = safeToFire(e, drone->pos, invAgentDroneDirection, recoilDistance);
-
-    // e->debugPoint = b2MulAdd(pos, recoilDistance, invAgentDroneDirection);
-
-    if (drone->inLineOfSight[0] && safeShot) {
+    if (shouldShootAtAgent(e, drone, agentDrone, agentDroneDirection)) {
         actions.move.x += agentDroneDirection.x;
         actions.move.y += agentDroneDirection.y;
         actions.move = b2Normalize(actions.move);

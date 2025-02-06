@@ -406,7 +406,6 @@ void createDrone(env *e, const uint8_t idx) {
     drone->lastVelocity = b2Vec2_zero;
     drone->dead = false;
     memset(&drone->stepInfo, 0x0, sizeof(droneStepInfo));
-    memset(&drone->inLineOfSight, 0x0, sizeof(drone->inLineOfSight));
 
     entity *ent = fastCalloc(1, sizeof(entity));
     ent->type = DRONE_ENTITY;
@@ -1205,38 +1204,6 @@ void droneStep(env *e, droneEntity *drone) {
 
     const float distance = b2Distance(drone->lastPos, drone->pos);
     e->stats[drone->idx].distanceTraveled += distance;
-
-    // update line of sight info for this drone
-    for (uint8_t i = 0; i < e->numDrones; i++) {
-        if (i == drone->idx || drone->inLineOfSight[i]) {
-            continue;
-        }
-
-        // cast a circle that's the size of a projectile of the current weapon
-        droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
-        const float enemyDistance = b2Distance(enemyDrone->pos, drone->pos);
-        const b2Vec2 enemyDirection = b2Normalize(b2Sub(enemyDrone->pos, drone->pos));
-        const b2Vec2 castEnd = b2MulAdd(drone->pos, enemyDistance, enemyDirection);
-        const b2Vec2 translation = b2Sub(castEnd, drone->pos);
-        const b2Circle projCircle = {.center = b2Vec2_zero, .radius = drone->weaponInfo->radius};
-        const b2Transform projTransform = {.p = drone->pos, .q = b2Rot_identity};
-        const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | DRONE_SHAPE};
-
-        castCircleCtx ctx = {0};
-        b2World_CastCircle(e->worldID, &projCircle, projTransform, translation, filter, castCircleCallback, &ctx);
-        if (!ctx.hit) {
-            continue;
-        }
-        ASSERT(b2Shape_IsValid(ctx.shapeID));
-        const entity *ent = b2Shape_GetUserData(ctx.shapeID);
-        if (ent != NULL && ent->type == DRONE_ENTITY) {
-            // get the drone entity in case another drone is between the
-            // current drone and the enemy drone
-            droneEntity *closestDrone = ent->entity;
-            closestDrone->inLineOfSight[drone->idx] = true;
-            drone->inLineOfSight[closestDrone->idx] = true;
-        }
-    }
 }
 
 void projectilesStep(env *e) {
