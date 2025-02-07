@@ -50,6 +50,11 @@ enum weaponType {
     MINE_LAUNCHER_WEAPON,
 };
 
+typedef struct mapBounds {
+    b2Vec2 min;
+    b2Vec2 max;
+} mapBounds;
+
 typedef struct nearEntity {
     uint16_t idx;
     void *entity;
@@ -68,6 +73,8 @@ typedef struct mapEntry {
     const uint16_t weaponPickups;
     const enum weaponType defaultWeapon;
 
+    mapBounds bounds;
+    mapBounds spawnQuads[4];
     bool *droneSpawns;
     nearEntity *nearestWalls;
 } mapEntry;
@@ -77,16 +84,6 @@ typedef struct mapCell {
     entity *ent;
     b2Vec2 pos;
 } mapCell;
-
-typedef struct mapBounds {
-    b2Vec2 min;
-    b2Vec2 max;
-} mapBounds;
-
-typedef struct quadBounds {
-    float min;
-    float max;
-} quadBounds;
 
 typedef struct wallEntity {
     b2BodyId bodyID;
@@ -306,8 +303,6 @@ typedef struct env {
     b2WorldId worldID;
     int8_t mapIdx;
     mapEntry *map;
-    mapBounds bounds;
-    mapBounds spawnQuads[4];
     int8_t lastSpawnQuad;
     uint8_t spawnedWeaponPickups[_NUM_WEAPONS];
     weaponInformation *defaultWeapon;

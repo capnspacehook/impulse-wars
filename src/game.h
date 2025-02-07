@@ -106,10 +106,10 @@ bool findOpenPos(env *e, const enum shapeCategory type, b2Vec2 *emptyPos, int8_t
         if (quad == -1) {
             cellIdx = randInt(&e->randState, 0, nCells - 1);
         } else {
-            const float minX = e->spawnQuads[quad].min.x;
-            const float minY = e->spawnQuads[quad].min.y;
-            const float maxX = e->spawnQuads[quad].max.x;
-            const float maxY = e->spawnQuads[quad].max.y;
+            const float minX = e->map->spawnQuads[quad].min.x;
+            const float minY = e->map->spawnQuads[quad].min.y;
+            const float maxX = e->map->spawnQuads[quad].max.x;
+            const float maxY = e->map->spawnQuads[quad].max.y;
 
             b2Vec2 randPos = {.x = randFloat(&e->randState, minX, maxX), .y = randFloat(&e->randState, minY, maxY)};
             cellIdx = entityPosToCellIdx(e, randPos);
@@ -448,14 +448,32 @@ void killDrone(env *e, droneEntity *drone) {
 void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     ASSERT_VEC_NORMALIZED(normAim);
 
+    const float radius = drone->weaponInfo->radius;
+    // spawn the projectile just outside the drone so they don't
+    // immediately collide
+    b2Vec2 pos = b2MulAdd(drone->pos, DRONE_RADIUS + (radius * 1.5f), normAim);
+    int16_t cellIdx = entityPosToCellIdx(e, pos);
+    // if the projectile is inside a wall, move the projectile to be
+    // just outside the wall
+    const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
+    if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
+        const b2Vec2 rayEnd = b2MulAdd(drone->pos, DRONE_RADIUS + (radius * 2.5f), normAim);
+        const b2Vec2 translation = b2Sub(rayEnd, drone->pos);
+        const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE};
+        const b2RayResult rayRes = b2World_CastRayClosest(e->worldID, drone->pos, translation, filter);
+        if (rayRes.hit) {
+            const b2Vec2 invNormAim = b2MulSV(-1.0f, normAim);
+            pos = b2MulAdd(rayRes.point, radius * 1.5f, invNormAim);
+        }
+    }
+
     b2BodyDef projectileBodyDef = b2DefaultBodyDef();
     projectileBodyDef.type = b2_dynamicBody;
     projectileBodyDef.fixedRotation = true;
     projectileBodyDef.isBullet = drone->weaponInfo->isPhysicsBullet;
     projectileBodyDef.linearDamping = drone->weaponInfo->damping;
     projectileBodyDef.enableSleep = drone->weaponInfo->canSleep;
-    float radius = drone->weaponInfo->radius;
-    projectileBodyDef.position = b2MulAdd(drone->pos, 1.0f + (radius * 1.5f), normAim);
+    projectileBodyDef.position = pos;
     b2BodyId projectileBodyID = b2CreateBody(e->worldID, &projectileBodyDef);
     b2ShapeDef projectileShapeDef = b2DefaultShapeDef();
     projectileShapeDef.enableContactEvents = true;
@@ -630,7 +648,6 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
 
     const explosionCtx *ctx = context;
     const entity *entity = b2Shape_GetUserData(shapeID);
-    DEBUG_LOGF("exploding entity type %d", entity->type);
     droneEntity *drone = NULL;
     wallEntity *wall = NULL;
     projectileEntity *projectile = NULL;
@@ -858,8 +875,8 @@ void handleSuddenDeath(env *e) {
     createSuddenDeathWalls(
         e,
         (b2Vec2){
-            .x = e->bounds.min.x + leftX,
-            .y = e->bounds.min.y + yOffset,
+            .x = e->map->bounds.min.x + leftX,
+            .y = e->map->bounds.min.y + yOffset,
         },
         (b2Vec2){
             .x = xWidth,
@@ -869,8 +886,8 @@ void handleSuddenDeath(env *e) {
     createSuddenDeathWalls(
         e,
         (b2Vec2){
-            .x = e->bounds.min.x + leftX,
-            .y = e->bounds.max.y - yOffset,
+            .x = e->map->bounds.min.x + leftX,
+            .y = e->map->bounds.max.y - yOffset,
         },
         (b2Vec2){
             .x = xWidth,
@@ -880,8 +897,8 @@ void handleSuddenDeath(env *e) {
     createSuddenDeathWalls(
         e,
         (b2Vec2){
-            .x = e->bounds.min.x + leftX,
-            .y = e->bounds.min.y + (e->suddenDeathWallCounter * WALL_THICKNESS),
+            .x = e->map->bounds.min.x + leftX,
+            .y = e->map->bounds.min.y + (e->suddenDeathWallCounter * WALL_THICKNESS),
         },
         (b2Vec2){
             .x = WALL_THICKNESS,
@@ -891,8 +908,8 @@ void handleSuddenDeath(env *e) {
     createSuddenDeathWalls(
         e,
         (b2Vec2){
-            .x = e->bounds.min.x + ((e->map->columns - e->suddenDeathWallCounter - 2) * WALL_THICKNESS),
-            .y = e->bounds.min.y + (e->suddenDeathWallCounter * WALL_THICKNESS),
+            .x = e->map->bounds.min.x + ((e->map->columns - e->suddenDeathWallCounter - 2) * WALL_THICKNESS),
+            .y = e->map->bounds.min.y + (e->suddenDeathWallCounter * WALL_THICKNESS),
         },
         (b2Vec2){
             .x = WALL_THICKNESS,
@@ -1015,7 +1032,6 @@ void droneShoot(env *e, droneEntity *drone, const b2Vec2 aim, const bool chargin
         createProjectile(e, drone, normAim);
 
         e->stats[drone->idx].shotsFired[drone->weaponInfo->type]++;
-        DEBUG_LOGF("drone %d fired %d weapon", drone->idx, drone->weaponInfo->type);
     }
     drone->stepInfo.firedShot = true;
 
@@ -1287,7 +1303,7 @@ void weaponPickupsStep(env *e) {
 
 // only update positions and velocities of dynamic bodies if they moved
 // this step
-bool handleBodyMoveEvents(const env *e) {
+bool handleBodyMoveEvents(env *e) {
     b2BodyEvents events = b2World_GetBodyEvents(e->worldID);
     for (int i = 0; i < events.moveCount; i++) {
         const b2BodyMoveEvent *event = events.moveEvents + i;
@@ -1301,6 +1317,8 @@ bool handleBodyMoveEvents(const env *e) {
         projectileEntity *proj;
         droneEntity *drone;
 
+        // if the new position is out of bounds, destroy the entity unless
+        // a drone is out of bounds, then just reset
         switch (ent->type) {
         case STANDARD_WALL_ENTITY:
         case BOUNCY_WALL_ENTITY:
@@ -1309,8 +1327,10 @@ bool handleBodyMoveEvents(const env *e) {
             wall->pos = event->transform.p;
             wall->mapCellIdx = entityPosToCellIdx(e, wall->pos);
             if (wall->mapCellIdx == -1) {
-                DEBUG_LOGF("invalid position for floating wall: (%f, %f) resetting", wall->pos.x, wall->pos.y);
-                return false;
+                DEBUG_LOGF("invalid position for floating wall: (%f, %f) destroying", wall->pos.x, wall->pos.y);
+                cc_array_remove_fast(e->floatingWalls, wall, NULL);
+                destroyWall(e, wall, false);
+                continue;
             }
             wall->rot = event->transform.q;
             wall->velocity = b2Body_GetLinearVelocity(wall->bodyID);
@@ -1321,8 +1341,9 @@ bool handleBodyMoveEvents(const env *e) {
             proj->pos = event->transform.p;
             proj->mapCellIdx = entityPosToCellIdx(e, proj->pos);
             if (proj->mapCellIdx == -1) {
-                DEBUG_LOGF("invalid position for projectile: (%f, %f) resetting", proj->pos.x, proj->pos.y);
-                return false;
+                DEBUG_LOGF("invalid position for projectile: (%f, %f) destroying", proj->pos.x, proj->pos.y);
+                destroyProjectile(e, proj, false, true);
+                continue;
             }
             proj->velocity = b2Body_GetLinearVelocity(proj->bodyID);
             if (proj->weaponInfo->damping != 0.0f && !proj->inContact) {

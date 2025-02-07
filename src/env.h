@@ -484,53 +484,6 @@ void setupEnv(env *e) {
     DEBUG_LOGF("setting up map %d", e->mapIdx);
     setupMap(e, mapIdx);
 
-    // TODO: pre compute this
-    mapBounds bounds = {.min = {.x = FLT_MAX, .y = FLT_MAX}, .max = {.x = FLT_MIN, .y = FLT_MIN}};
-    for (size_t i = 0; i < cc_array_size(e->walls); i++) {
-        const wallEntity *wall = safe_array_get_at(e->walls, i);
-        bounds.min.x = fminf(wall->pos.x - wall->extent.x + WALL_THICKNESS, bounds.min.x);
-        bounds.min.y = fminf(wall->pos.y - wall->extent.y + WALL_THICKNESS, bounds.min.y);
-        bounds.max.x = fmaxf(wall->pos.x + wall->extent.x - WALL_THICKNESS, bounds.max.x);
-        bounds.max.y = fmaxf(wall->pos.y + wall->extent.y - WALL_THICKNESS, bounds.max.y);
-    }
-    e->bounds = bounds;
-    e->spawnQuads[0] = (mapBounds){
-        .min = (b2Vec2){
-            .x = e->bounds.min.x + WALL_THICKNESS,
-            .y = e->bounds.min.y + WALL_THICKNESS,
-        },
-        .max = (b2Vec2){
-            .x = 0.0f,
-            .y = 0.0f,
-        }};
-    e->spawnQuads[1] = (mapBounds){
-        .min = (b2Vec2){
-            .x = 0.0f,
-            .y = e->bounds.min.y + WALL_THICKNESS,
-        },
-        .max = (b2Vec2){
-            .x = e->bounds.max.x - WALL_THICKNESS,
-            .y = 0.0f,
-        }};
-    e->spawnQuads[2] = (mapBounds){
-        .min = (b2Vec2){
-            .x = e->bounds.min.x + WALL_THICKNESS,
-            .y = 0.0f,
-        },
-        .max = (b2Vec2){
-            .x = 0.0f,
-            .y = e->bounds.max.y - WALL_THICKNESS,
-        }};
-    e->spawnQuads[3] = (mapBounds){
-        .min = (b2Vec2){
-            .x = 0.0f,
-            .y = 0.0f,
-        },
-        .max = (b2Vec2){
-            .x = e->bounds.max.x - WALL_THICKNESS,
-            .y = e->bounds.max.y - WALL_THICKNESS,
-        }};
-
     DEBUG_LOG("creating drones");
     for (uint8_t i = 0; i < e->numDrones; i++) {
         createDrone(e, i);
