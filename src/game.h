@@ -590,13 +590,18 @@ float getShapeProjectedPerimeter(const b2ShapeId shapeID, const b2Vec2 line) {
 
 // explodes projectile and ensures any other projectiles that are caught
 // in the explosion are also destroyed if necessary
-void createProjectileExplosion(env *e, projectileEntity *projectile, const bool initalProjectile, const bool destroyProjectiles) {
+void createProjectileExplosion(env *e, projectileEntity *projectile, const bool initalProjectile) {
+    if (projectile->needsToBeDestroyed) {
+        return;
+    }
+    projectile->needsToBeDestroyed = true;
+    cc_array_add(e->explodingProjectiles, projectile);
+
     b2ExplosionDef explosion;
     weaponExplosion(projectile->weaponInfo->type, &explosion);
     explosion.position = projectile->pos;
     explosion.maskBits = FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE;
     droneEntity *parentDrone = safe_array_get_at(e->drones, projectile->droneIdx);
-    cc_array_add(e->explodingProjectiles, projectile);
     createExplosion(e, parentDrone, &projectile->weaponInfo->type, &explosion);
 
     if (e->client != NULL) {
@@ -605,29 +610,15 @@ void createProjectileExplosion(env *e, projectileEntity *projectile, const bool 
         explInfo->renderSteps = UINT16_MAX;
         cc_array_add(e->explosions, explInfo);
     }
-
     if (!initalProjectile) {
         return;
     }
-    // destroy all other projectiles that were caught in the explosion
-    // and also exploded now that the initial projectile has been destroyed
-    for (uint8_t i = 1; i < cc_array_size(e->explodingProjectiles); i++) {
-        projectileEntity *proj = safe_array_get_at(e->explodingProjectiles, i);
-        if (destroyProjectiles) {
-            destroyProjectile(e, proj, false, true);
-        } else {
-            proj->needsToBeDestroyed = true;
-        }
-    }
-    if (destroyProjectiles) {
-        cc_array_remove_all(e->explodingProjectiles);
-    } else {
-        // if we're not destroying the projectiles now, we need to remove the initial projectile
-        // from the list of exploding projectiles so it's not destroyed twice
-        const enum cc_stat res = cc_array_remove_fast(e->explodingProjectiles, projectile, NULL);
-        MAYBE_UNUSED(res);
-        ASSERT(res == CC_OK);
-    }
+
+    // if we're not destroying the projectiles now, we need to remove the initial projectile
+    // from the list of exploding projectiles so it's not destroyed twice
+    const enum cc_stat res = cc_array_remove_fast(e->explodingProjectiles, projectile, NULL);
+    MAYBE_UNUSED(res);
+    ASSERT(res == CC_OK);
 }
 
 typedef struct explosionCtx {
@@ -750,9 +741,7 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
             // mine launcher projectiles explode when caught in another
             // explosion, explode this mine only once
             if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON && ctx->def->impulsePerLength > 0.0f) {
-                if (!cc_array_contains(ctx->e->explodingProjectiles, projectile)) {
-                    createProjectileExplosion(ctx->e, projectile, false, false);
-                }
+                createProjectileExplosion(ctx->e, projectile, false);
                 break;
             }
 
@@ -798,7 +787,7 @@ void createExplosion(env *e, droneEntity *drone, const enum weaponType *type, co
 void destroyProjectile(env *e, projectileEntity *projectile, const bool processExplosions, const bool full) {
     // explode projectile if necessary
     if (processExplosions && projectile->weaponInfo->explosive) {
-        createProjectileExplosion(e, projectile, true, full);
+        createProjectileExplosion(e, projectile, true);
     }
 
     entity *ent = b2Shape_GetUserData(projectile->shapeID);
@@ -807,18 +796,34 @@ void destroyProjectile(env *e, projectileEntity *projectile, const bool processE
     b2DestroyBody(projectile->bodyID);
 
     if (full) {
-        size_t idx = SIZE_MAX;
-        cc_array_index_of(e->projectiles, projectile, &idx);
-        ASSERT(idx != SIZE_MAX);
-        size_t lastIdx = cc_array_size(e->projectiles) - 1;
-        projectileEntity *lastProj = safe_array_get_at(e->projectiles, lastIdx);
-        cc_array_replace_at(e->projectiles, lastProj, idx, NULL);
-        cc_array_remove_at(e->projectiles, lastIdx, NULL);
+        enum cc_stat res = cc_array_remove_fast(e->projectiles, projectile, NULL);
+        MAYBE_UNUSED(res);
+        ASSERT(res == CC_OK);
     }
 
     e->stats[projectile->droneIdx].shotDistances[projectile->droneIdx] += projectile->distance;
 
     fastFree(projectile);
+}
+
+// destroy projectiles that were caught in an explosion; projectiles
+// can't be destroyed in explodeCallback because box2d assumes all shapes
+// and bodies are valid for the lifetime of an AABB query
+static inline void destroyExplodedProjectiles(env *e) {
+    if (cc_array_size(e->explodingProjectiles) == 0) {
+        return;
+    }
+
+    CC_ArrayIter iter;
+    cc_array_iter_init(&iter, e->explodingProjectiles);
+    projectileEntity *projectile;
+    while (cc_array_iter_next(&iter, (void **)&projectile) != CC_ITER_END) {
+        destroyProjectile(e, projectile, false, false);
+        const enum cc_stat res = cc_array_remove_fast(e->projectiles, projectile, NULL);
+        MAYBE_UNUSED(res);
+        ASSERT(res == CC_OK);
+    }
+    cc_array_remove_all(e->explodingProjectiles);
 }
 
 void createSuddenDeathWalls(env *e, const b2Vec2 startPos, const b2Vec2 size) {
@@ -1118,6 +1123,7 @@ void droneBurst(env *e, droneEntity *drone) {
         .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE,
     };
     createExplosion(e, drone, NULL, &explosion);
+    destroyExplodedProjectiles(e);
 
     drone->chargingBurst = false;
     drone->burstCharge = 0.0f;
@@ -1241,23 +1247,15 @@ void projectilesStep(env *e) {
         if (projectile->distance >= maxDistance) {
             // we have to destroy the projectile using the iterator so
             // we can continue to iterate correctly
-            cc_array_iter_remove_fast(&iter, NULL);
             destroyProjectile(e, projectile, true, false);
+            enum cc_stat res = cc_array_iter_remove_fast(&iter, NULL);
+            MAYBE_UNUSED(res);
+            ASSERT(res == CC_OK);
             continue;
         }
     }
-    if (cc_array_size(e->explodingProjectiles) == 0) {
-        return;
-    }
 
-    // destroy all other projectiles that were caught in explosions of
-    // projectiles destroyed above and also exploded now that the
-    // initial projectiles have been destroyed
-    for (uint8_t i = 0; i < cc_array_size(e->explodingProjectiles); i++) {
-        projectileEntity *proj = safe_array_get_at(e->explodingProjectiles, i);
-        destroyProjectile(e, proj, false, true);
-    }
-    cc_array_remove_all(e->explodingProjectiles);
+    destroyExplodedProjectiles(e);
 }
 
 void weaponPickupsStep(env *e) {
@@ -1303,7 +1301,7 @@ void weaponPickupsStep(env *e) {
 
 // only update positions and velocities of dynamic bodies if they moved
 // this step
-bool handleBodyMoveEvents(env *e) {
+void handleBodyMoveEvents(env *e) {
     b2BodyEvents events = b2World_GetBodyEvents(e->worldID);
     for (int i = 0; i < events.moveCount; i++) {
         const b2BodyMoveEvent *event = events.moveEvents + i;
@@ -1357,8 +1355,9 @@ bool handleBodyMoveEvents(env *e) {
             drone->pos = event->transform.p;
             drone->mapCellIdx = entityPosToCellIdx(e, drone->pos);
             if (drone->mapCellIdx == -1) {
-                DEBUG_LOGF("invalid position for drone: (%f, %f) resetting", drone->pos.x, drone->pos.y);
-                return false;
+                DEBUG_LOGF("invalid position for drone: (%f, %f) killing it", drone->pos.x, drone->pos.y);
+                killDrone(e, drone);
+                continue;
             }
             drone->lastVelocity = drone->velocity;
             drone->velocity = b2Body_GetLinearVelocity(drone->bodyID);
@@ -1367,8 +1366,6 @@ bool handleBodyMoveEvents(env *e) {
             ERRORF("unknown entity type for move event %d", ent->type);
         }
     }
-
-    return true;
 }
 
 // destroy the projectile if it has traveled enough or has bounced enough
@@ -1391,6 +1388,7 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
                 }
             }
             destroyProjectile(e, projectile, true, true);
+            destroyExplodedProjectiles(e);
             return numDestroyed;
         }
 
@@ -1422,6 +1420,7 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
 
             if (projectile->weaponInfo->destroyedOnDroneHit) {
                 destroyProjectile(e, projectile, projectile->weaponInfo->explodesOnDroneHit, true);
+                destroyExplodedProjectiles(e);
                 return 1;
             }
         } else if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON && projectile->speed != 0.0f) {
@@ -1429,6 +1428,7 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
             // destroy it
             if (isOverlappingCircle(e, projectile->pos, MINE_LAUNCHER_PROXIMITY_RADIUS, PROJECTILE_SHAPE, DRONE_SHAPE, NULL)) {
                 destroyProjectile(e, projectile, true, true);
+                destroyExplodedProjectiles(e);
                 return 1;
             }
 
@@ -1457,6 +1457,7 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
     const uint8_t maxBounces = projectile->weaponInfo->maxBounces;
     if (projectile->bounces == maxBounces) {
         destroyProjectile(e, projectile, true, true);
+        destroyExplodedProjectiles(e);
         return 1;
     }
 
@@ -1466,6 +1467,13 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
 void handleProjectileEndContact(const entity *proj, const entity *ent) {
     projectileEntity *projectile = proj->entity;
     projectile->inContact = false;
+
+    // mines stick to walls, explode when hitting another projectile
+    // and are destroyed when hitting a drone so no matter what we don't
+    // need to do anything here
+    if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON) {
+        return;
+    }
 
     if (ent != NULL && ent->type == PROJECTILE_ENTITY) {
         const projectileEntity *projectile2 = ent->entity;
@@ -1605,12 +1613,14 @@ void handleProjectileBeginTouch(env *e, const entity *sensor) {
             return;
         }
         destroyProjectile(e, projectile, true, true);
+        destroyExplodedProjectiles(e);
         break;
     case MINE_LAUNCHER_WEAPON:
         if (!projectile->setMine) {
             return;
         }
         destroyProjectile(e, projectile, true, true);
+        destroyExplodedProjectiles(e);
         break;
     default:
         ERRORF("invalid projectile type %d for begin touch event", sensor->type);

@@ -330,7 +330,9 @@ void computeObs(env *e) {
 
     for (uint8_t agentIdx = 0; agentIdx < e->numAgents; agentIdx++) {
         droneEntity *agentDrone = safe_array_get_at(e->drones, agentIdx);
-        if (agentDrone->dead && !agentDrone->diedThisStep) {
+        // if the drone is dead, only compute observations if it died
+        // this step and it isn't out of bounds
+        if (agentDrone->dead && (!agentDrone->diedThisStep || agentDrone->mapCellIdx == -1)) {
             continue;
         }
 
@@ -1034,15 +1036,14 @@ void stepEnv(env *e) {
             }
         }
 
-        // update entity info, step physics, and handle events
         b2World_Step(e->worldID, e->deltaTime, e->box2dSubSteps);
 
-        // update dynamic body positions and velocities, reset if a body is out of the map
-        if (!handleBodyMoveEvents(e)) {
-            memset(e->truncations, 1, e->numAgents * sizeof(uint8_t));
-            e->needsReset = true;
-            return;
-        }
+        // update dynamic body positions and velocities
+        handleBodyMoveEvents(e);
+
+        // handle collisions
+        handleContactEvents(e);
+        handleSensorEvents(e);
 
         // handle sudden death
         e->stepsLeft = fmaxf(e->stepsLeft - 1, 0.0f);
@@ -1056,9 +1057,6 @@ void stepEnv(env *e) {
         }
 
         projectilesStep(e);
-
-        handleContactEvents(e);
-        handleSensorEvents(e);
 
         int8_t lastAlive = -1;
         uint8_t deadDrones = 0;
