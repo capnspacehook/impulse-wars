@@ -452,11 +452,19 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     // spawn the projectile just outside the drone so they don't
     // immediately collide
     b2Vec2 pos = b2MulAdd(drone->pos, DRONE_RADIUS + (radius * 1.5f), normAim);
+    // if the projectile is inside a wall or out of the map, move the
+    // projectile to be just outside the wall
+    bool projectileInWall = false;
     int16_t cellIdx = entityPosToCellIdx(e, pos);
-    // if the projectile is inside a wall, move the projectile to be
-    // just outside the wall
-    const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
-    if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
+    if (cellIdx == -1) {
+        projectileInWall = true;
+    } else {
+        const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
+        if (cell->ent != NULL && entityTypeIsWall(cell->ent->type)) {
+            projectileInWall = true;
+        }
+    }
+    if (projectileInWall) {
         const b2Vec2 rayEnd = b2MulAdd(drone->pos, DRONE_RADIUS + (radius * 2.5f), normAim);
         const b2Vec2 translation = b2Sub(rayEnd, drone->pos);
         const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE};
