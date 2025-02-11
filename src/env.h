@@ -22,7 +22,6 @@ typedef struct Vector2 {
 } Vector2;
 #endif
 
-const uint8_t TWO_BIT_MASK = 0x3;
 const uint8_t THREE_BIT_MASK = 0x7;
 const uint8_t FOUR_BIT_MASK = 0xf;
 
@@ -99,12 +98,20 @@ uint16_t findNearestCell(const env *e, const b2Vec2 pos, const uint16_t cellIdx)
 
     uint16_t closestCell = cellIdx;
     float minDistance = FLT_MAX;
-    const uint8_t cellCol = cellIdx % e->map->columns;
-    const uint8_t cellRow = cellIdx / e->map->columns;
+    const uint8_t cellCol = cellIdx / e->map->columns;
+    const uint8_t cellRow = cellIdx % e->map->columns;
     for (uint8_t i = 0; i < 8; i++) {
-        const uint16_t newCellIdx = (cellCol + cellOffsets[i][0]) + ((cellRow + cellOffsets[i][1]) * e->map->columns);
-        const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
-        if (minDistance != fminf(minDistance, b2Distance(pos, cell->pos))) {
+        const int8_t newCellCol = cellCol + cellOffsets[i][0];
+        if (newCellCol < 0 || newCellCol >= e->map->columns) {
+            continue;
+        }
+        const int8_t newCellRow = cellRow + cellOffsets[i][1];
+        if (newCellRow < 0 || newCellRow >= e->map->rows) {
+            continue;
+        }
+        const int16_t newCellIdx = cellIndex(e, newCellCol, newCellRow);
+        const mapCell *cell = safe_array_get_at(e->cells, newCellIdx);
+        if (minDistance != fminf(minDistance, b2DistanceSquared(pos, cell->pos))) {
             closestCell = newCellIdx;
         }
     }
@@ -124,65 +131,96 @@ static inline float scaleAmmo(const env *e, const droneEntity *drone) {
 
 // fills a small 2D grid centered around the agent with discretized
 // walls, floating walls, weapon pickups, and drone positions
-void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
+void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t obsStartOffset) {
     droneEntity *drone = safe_array_get_at(e->drones, agentIdx);
     const uint8_t droneCellCol = drone->mapCellIdx % e->map->columns;
-    const uint8_t droneCellRow = drone->mapCellIdx / e->map->rows;
+    const uint8_t droneCellRow = drone->mapCellIdx / e->map->columns;
 
-    const int8_t startCol = droneCellCol - (MAP_OBS_COLUMNS / 2);
-    const int8_t startRow = droneCellRow - (MAP_OBS_ROWS / 2);
+    const int8_t obsStartCol = droneCellCol - (MAP_OBS_COLUMNS / 2);
+    const int8_t startCol = max(obsStartCol, 0);
+    const int8_t obsStartRow = droneCellRow - (MAP_OBS_ROWS / 2);
+    const int8_t startRow = max(obsStartRow, 0);
 
-    const int8_t endCol = droneCellCol + (MAP_OBS_COLUMNS / 2);
-    const int8_t endRow = droneCellRow + (MAP_OBS_ROWS / 2);
+    const int8_t obsEndCol = droneCellCol + (MAP_OBS_COLUMNS / 2);
+    const int8_t endCol = min(obsEndCol, e->map->columns - 1);
+    const int8_t endRow = min(droneCellRow + (MAP_OBS_ROWS / 2), e->map->rows - 1);
+
+    const int8_t obsColOffset = startCol - obsStartCol;
+    const int8_t obsRowOffset = startRow - obsStartRow;
+    uint16_t startOffset = obsStartOffset;
+    if (obsColOffset == 0 && obsRowOffset != 0) {
+        startOffset += obsRowOffset * MAP_OBS_COLUMNS;
+    } else if (obsColOffset != 0 && obsRowOffset == 0) {
+        startOffset += obsColOffset;
+    } else if (obsColOffset != 0 && obsRowOffset != 0) {
+        startOffset += obsColOffset + (obsRowOffset * MAP_OBS_COLUMNS);
+    }
+    uint16_t offset = startOffset;
 
     // compute map layout, and discretized positions of weapon pickups
-    bool pastEndOfMap = false;
-    uint16_t offset = startOffset;
-    for (int8_t row = startRow; row <= endRow; row++) {
-        if (pastEndOfMap) {
-            break;
+    if (!e->suddenDeathWallsPlaced) {
+        // copy precomputed map layout if sudden death walls haven't been placed
+        const int8_t numCols = endCol - startCol + 1;
+        for (int8_t row = startRow; row <= endRow; row++) {
+            const int16_t cellIdx = cellIndex(e, startCol, row);
+            memcpy(e->obs + offset, e->map->packedLayout + cellIdx, numCols * sizeof(uint8_t));
+            offset += MAP_OBS_COLUMNS;
         }
-        for (int8_t col = startCol; col <= endCol; col++) {
-            if (row < 0 || col >= e->map->columns || col < 0) {
-                offset++;
-                continue;
-            } else if (row >= e->map->rows) {
-                pastEndOfMap = true;
-                break;
-            }
 
-            const int16_t cellIdx = cellIndex(e, col, row);
-            const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
-            if (cell->ent == NULL) {
-                offset++;
+        // compute discretized location of weapon pickups on grid
+        for (size_t i = 0; i < cc_array_size(e->pickups); i++) {
+            const weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
+            const uint8_t cellCol = pickup->mapCellIdx % e->map->columns;
+            if (cellCol < startCol || cellCol > endCol) {
                 continue;
             }
-
-            if (entityTypeIsWall(cell->ent->type)) {
-                e->obs[offset] = ((cell->ent->type + 1) & TWO_BIT_MASK) << 5;
-            } else if (cell->ent->type == WEAPON_PICKUP_ENTITY) {
-                e->obs[offset] |= 1 << 3;
+            const uint8_t cellRow = pickup->mapCellIdx / e->map->columns;
+            if (cellRow < startRow || cellRow > endRow) {
+                continue;
             }
 
-            offset++;
+            offset = startOffset + ((cellCol - startCol) + ((cellRow - startRow) * MAP_OBS_COLUMNS));
+            ASSERTF(offset <= startOffset + MAP_OBS_SIZE, "offset: %d", offset);
+            e->obs[offset] |= 1 << 3;
         }
+    } else {
+        // sudden death walls have been placed so compute may layout manually
+        const int8_t colPadding = obsColOffset + (obsEndCol - endCol);
+        for (int8_t row = startRow; row <= endRow; row++) {
+            for (int8_t col = startCol; col <= endCol; col++) {
+                const int16_t cellIdx = cellIndex(e, col, row);
+                const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
+                if (cell->ent == NULL) {
+                    offset++;
+                    continue;
+                }
+
+                if (entityTypeIsWall(cell->ent->type)) {
+                    e->obs[offset] = ((cell->ent->type + 1) & TWO_BIT_MASK) << 5;
+                } else if (cell->ent->type == WEAPON_PICKUP_ENTITY) {
+                    e->obs[offset] |= 1 << 3;
+                }
+
+                offset++;
+            }
+            offset += colPadding;
+        }
+        ASSERTF(offset <= startOffset + MAP_OBS_SIZE, "offset %u startOffset %u", offset, startOffset);
     }
-    ASSERTF(!pastEndOfMap || offset <= startOffset + MAP_OBS_SIZE, "offset %u startOffset %u", offset, startOffset);
-    ASSERTF(pastEndOfMap || offset == startOffset + MAP_OBS_SIZE, "offset %u startOffset %u", offset, startOffset);
 
-    // compute discretized location of floating walls on grid
+    // compute discretized locations of floating walls on grid
     for (size_t i = 0; i < cc_array_size(e->floatingWalls); i++) {
         const wallEntity *wall = safe_array_get_at(e->floatingWalls, i);
-        const uint8_t cellCol = wall->mapCellIdx / e->map->columns;
+        const uint8_t cellCol = wall->mapCellIdx % e->map->columns;
         if (cellCol < startCol || cellCol > endCol) {
             continue;
         }
-        const uint8_t cellRow = wall->mapCellIdx % e->map->rows;
+        const uint8_t cellRow = wall->mapCellIdx / e->map->columns;
         if (cellRow < startRow || cellRow > endRow) {
             continue;
         }
 
-        offset = startOffset + (((cellCol - startCol) * MAP_OBS_COLUMNS) + cellRow - startRow);
+        offset = startOffset + ((cellCol - startCol) + ((cellRow - startRow) * MAP_OBS_COLUMNS));
         ASSERTF(offset <= startOffset + MAP_OBS_SIZE, "offset: %d", offset);
         e->obs[offset] = ((wall->type + 1) & TWO_BIT_MASK) << 5;
         e->obs[offset] |= 1 << 4;
@@ -207,17 +245,17 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t startOffset) {
                 }
             }
         }
-        const uint8_t cellCol = otherDrone->mapCellIdx / e->map->columns;
+        const uint8_t cellCol = otherDrone->mapCellIdx % e->map->columns;
         if (cellCol < startCol || cellCol > endCol) {
             continue;
         }
-        const uint8_t cellRow = otherDrone->mapCellIdx % e->map->rows;
+        const uint8_t cellRow = otherDrone->mapCellIdx / e->map->columns;
         if (cellRow < startRow || cellRow > endRow) {
             continue;
         }
         droneCells[i] = otherDrone->mapCellIdx;
 
-        offset = startOffset + (((cellCol - startCol) * MAP_OBS_COLUMNS) + cellRow - startRow);
+        offset = startOffset + ((cellCol - startCol) + ((cellRow - startRow) * MAP_OBS_COLUMNS));
         ASSERTF(offset <= startOffset + MAP_OBS_SIZE, "offset: %d", offset);
         e->obs[offset] |= (newDroneIdx++ & THREE_BIT_MASK);
     }
@@ -326,8 +364,6 @@ void computeNearMapObs(env *e, droneEntity *drone, float *scalarObs) {
 #endif
 
 void computeObs(env *e) {
-    memset(e->obs, 0x0, e->obsBytes * e->numAgents);
-
     for (uint8_t agentIdx = 0; agentIdx < e->numAgents; agentIdx++) {
         droneEntity *agentDrone = safe_array_get_at(e->drones, agentIdx);
         // if the drone is dead, only compute observations if it died
@@ -338,6 +374,7 @@ void computeObs(env *e) {
 
         // compute discrete map observations
         uint16_t mapObsOffset = e->obsBytes * agentIdx;
+        memset(e->obs + mapObsOffset, 0x0, e->obsBytes);
         const uint16_t mapObsStart = mapObsOffset;
         computeMapObs(e, agentIdx, mapObsOffset);
 

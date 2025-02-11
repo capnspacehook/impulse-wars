@@ -5,6 +5,7 @@
 #include "types.h"
 
 #define INFINITE -1
+const uint8_t TWO_BIT_MASK = 0x3;
 
 // general settings
 #define TRAINING_ACTIONS_PER_SECOND 10

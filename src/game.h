@@ -399,6 +399,7 @@ void createDrone(env *e, const uint8_t idx) {
     drone->idx = idx;
     drone->initalPos = droneBodyDef.position;
     drone->pos = droneBodyDef.position;
+    drone->mapCellIdx = entityPosToCellIdx(e, droneBodyDef.position);
     drone->lastPos = b2Vec2_zero;
     drone->lastMove = b2Vec2_zero;
     drone->lastAim = (b2Vec2){.x = 0.0f, .y = -1.0f};

@@ -76,6 +76,7 @@ typedef struct mapEntry {
     mapBounds bounds;
     mapBounds spawnQuads[4];
     bool *droneSpawns;
+    uint8_t *packedLayout;
     nearEntity *nearestWalls;
 } mapEntry;
 

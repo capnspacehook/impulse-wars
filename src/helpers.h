@@ -159,6 +159,22 @@ static inline float logBasef(const float v, const float b) {
     return log2f(v) / log2(b);
 }
 
+#ifndef AUTOPXD
+#define min(a, b)               \
+    ({                          \
+        __typeof__(a) _a = (a); \
+        __typeof__(b) _b = (b); \
+        _a < _b ? _a : _b;      \
+    })
+
+#define max(a, b)               \
+    ({                          \
+        __typeof__(a) _a = (a); \
+        __typeof__(b) _b = (b); \
+        _a > _b ? _a : _b;      \
+    })
+#endif
+
 // clamps between 0 and 1
 static inline float clamp(float f) {
     return fminf(fmaxf(f, 0.0f), 1.0f);
