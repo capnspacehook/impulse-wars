@@ -15,7 +15,7 @@ const uint8_t TWO_BIT_MASK = 0x3;
 #define EVAL_FRAME_RATE 120
 #define EVAL_BOX2D_SUBSTEPS 4
 
-#define NUM_MAPS 9
+const uint8_t NUM_MAPS = 9;
 #define _MAX_MAP_COLUMNS 25
 #define _MAX_MAP_ROWS 25
 #define MAX_CELLS _MAX_MAP_COLUMNS *_MAX_MAP_ROWS + 1

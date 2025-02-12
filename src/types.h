@@ -302,6 +302,7 @@ typedef struct env {
     droneStats stats[_MAX_DRONES];
 
     b2WorldId worldID;
+    int8_t pinnedMapIdx;
     int8_t mapIdx;
     mapEntry *map;
     int8_t lastSpawnQuad;

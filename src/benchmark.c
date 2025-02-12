@@ -1,5 +1,21 @@
 #include "env.h"
 
+void randActions(env *e) {
+    // e->lastRandState = e->randState;
+    uint8_t actionOffset = 0;
+    for (uint8_t i = 0; i < e->numDrones; i++) {
+        e->contActions[actionOffset + 0] = randFloat(&e->randState, -1.0f, 1.0f);
+        e->contActions[actionOffset + 1] = randFloat(&e->randState, -1.0f, 1.0f);
+        e->contActions[actionOffset + 2] = randFloat(&e->randState, -1.0f, 1.0f);
+        e->contActions[actionOffset + 3] = randFloat(&e->randState, -1.0f, 1.0f);
+        e->contActions[actionOffset + 4] = randFloat(&e->randState, -1.0f, 1.0f);
+        e->contActions[actionOffset + 5] = randFloat(&e->randState, -1.0f, 1.0f);
+        e->contActions[actionOffset + 6] = randFloat(&e->randState, -1.0f, 1.0f);
+
+        actionOffset += CONTINUOUS_ACTION_SIZE;
+    }
+}
+
 void perfTest(const uint32_t numSteps) {
     const uint8_t NUM_DRONES = 2;
 
@@ -14,25 +30,20 @@ void perfTest(const uint32_t numSteps) {
     uint8_t *truncations = fastCalloc(NUM_DRONES, sizeof(uint8_t));
     logBuffer *logs = createLogBuffer(1);
 
-    initEnv(e, NUM_DRONES, NUM_DRONES, obs, false, actions, NULL, rewards, terminals, truncations, logs, time(NULL), false, true);
+    // rayClient *client = createRayClient();
+    // e->client = client;
+
+    time_t seed = time(NULL);
+    initEnv(e, NUM_DRONES, NUM_DRONES, obs, false, actions, NULL, rewards, terminals, truncations, logs, -1, seed, false, true);
     initMaps(e);
+
+    randActions(e);
     setupEnv(e);
+    stepEnv(e);
 
     uint32_t steps = 0;
     while (steps != numSteps) {
-        uint8_t actionOffset = 0;
-        for (uint8_t i = 0; i < e->numDrones; i++) {
-            e->contActions[actionOffset + 0] = randFloat(&e->randState, -1.0f, 1.0f);
-            e->contActions[actionOffset + 1] = randFloat(&e->randState, -1.0f, 1.0f);
-            e->contActions[actionOffset + 2] = randFloat(&e->randState, -1.0f, 1.0f);
-            e->contActions[actionOffset + 3] = randFloat(&e->randState, -1.0f, 1.0f);
-            e->contActions[actionOffset + 4] = randFloat(&e->randState, -1.0f, 1.0f);
-            e->contActions[actionOffset + 5] = randFloat(&e->randState, -1.0f, 1.0f);
-            e->contActions[actionOffset + 6] = randFloat(&e->randState, -1.0f, 1.0f);
-
-            actionOffset += CONTINUOUS_ACTION_SIZE;
-        }
-
+        randActions(e);
         stepEnv(e);
         steps++;
     }

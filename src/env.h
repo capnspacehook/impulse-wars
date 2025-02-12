@@ -514,13 +514,16 @@ void setupEnv(env *e) {
 
     e->lastSpawnQuad = -1;
 
-    uint8_t firstMap = 0;
-    // don't evaluate on the boring empty map
-    if (!e->isTraining) {
-        firstMap = 1;
+    int8_t mapIdx = e->pinnedMapIdx;
+    if (e->pinnedMapIdx == -1) {
+        uint8_t firstMap = 0;
+        // don't evaluate on the boring empty map
+        if (!e->isTraining) {
+            firstMap = 1;
+        }
+        mapIdx = randInt(&e->randState, firstMap, NUM_MAPS - 1);
     }
-    const int mapIdx = randInt(&e->randState, firstMap, NUM_MAPS - 1);
-    DEBUG_LOGF("setting up map %d", e->mapIdx);
+    DEBUG_LOGF("setting up map %d", mapIdx);
     setupMap(e, mapIdx);
 
     DEBUG_LOG("creating drones");
@@ -557,7 +560,7 @@ void setEnvFrameRate(env *e, uint8_t frameRate) {
     e->totalSuddenDeathSteps = SUDDEN_DEATH_STEPS * frameRate;
 }
 
-env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool discretizeActions, float *contActions, int32_t *discActions, float *rewards, uint8_t *terminals, uint8_t *truncations, logBuffer *logs, uint64_t seed, bool sittingDuck, bool isTraining) {
+env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool discretizeActions, float *contActions, int32_t *discActions, float *rewards, uint8_t *terminals, uint8_t *truncations, logBuffer *logs, int8_t mapIdx, uint64_t seed, bool sittingDuck, bool isTraining) {
     e->numDrones = numDrones;
     e->numAgents = numAgents;
     e->sittingDuck = sittingDuck;
@@ -592,6 +595,7 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
     b2WorldDef worldDef = b2DefaultWorldDef();
     worldDef.gravity = (b2Vec2){.x = 0.0f, .y = 0.0f};
     e->worldID = b2CreateWorld(&worldDef);
+    e->pinnedMapIdx = mapIdx;
     e->mapIdx = -1;
 
     cc_array_new(&e->cells);
