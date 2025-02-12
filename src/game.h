@@ -290,6 +290,7 @@ void createWeaponPickupBodyShape(const env *e, weaponPickupEntity *pickup) {
 }
 
 void createWeaponPickup(env *e) {
+    // ensure weapon pickups are initially spawned somewhat uniformly
     b2Vec2 pos;
     e->lastSpawnQuad = (e->lastSpawnQuad + 1) % 4;
     if (!findOpenPos(e, WEAPON_PICKUP_SHAPE, &pos, e->lastSpawnQuad)) {
@@ -355,14 +356,7 @@ void createDrone(env *e, const uint8_t idx) {
     b2BodyDef droneBodyDef = b2DefaultBodyDef();
     droneBodyDef.type = b2_dynamicBody;
 
-    // spawn drones in diagonal quadrants from each other so that they're
-    // more likely to be further apart
-    int8_t spawnQuad = 3 - e->lastSpawnQuad;
-    if (e->lastSpawnQuad == -1) {
-        spawnQuad = randInt(&e->randState, 0, 3);
-        e->lastSpawnQuad = spawnQuad;
-    }
-    if (!findOpenPos(e, DRONE_SHAPE, &droneBodyDef.position, spawnQuad)) {
+    if (!findOpenPos(e, DRONE_SHAPE, &droneBodyDef.position, -1)) {
         ERROR("no open position for drone");
     }
 
