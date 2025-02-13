@@ -1068,7 +1068,7 @@ void droneBrake(env *e, droneEntity *drone, const bool brake) {
     if (brake) {
         if (!drone->braking) {
             drone->braking = true;
-            b2Body_SetLinearDamping(drone->bodyID, DRONE_LINEAR_DAMPING * DRONE_BRAKE_COEF);
+            b2Body_SetLinearDamping(drone->bodyID, DRONE_LINEAR_DAMPING * DRONE_BRAKE_DAMPING_COEF);
         }
         drone->energyLeft = fmaxf(drone->energyLeft - (DRONE_BRAKE_DRAIN_RATE * e->deltaTime), 0.0f);
         e->stats[drone->idx].brakeTime += e->deltaTime;

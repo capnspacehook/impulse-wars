@@ -3,7 +3,7 @@
 
 #include "game.h"
 #include "map.h"
-#include "scripted_bot.h"
+#include "scripted_agent.h"
 #include "settings.h"
 #include "types.h"
 
@@ -1021,8 +1021,8 @@ void stepEnv(env *e) {
         if (i < e->numAgents) {
             stepActions[i] = computeActions(e, drone, NULL);
         } else {
-            const agentActions botActions = scriptedBotActions(e, drone);
-            stepActions[i] = computeActions(e, drone, &botActions);
+            const agentActions scriptedActions = scriptedAgentActions(e, drone);
+            stepActions[i] = computeActions(e, drone, &scriptedActions);
         }
     }
 

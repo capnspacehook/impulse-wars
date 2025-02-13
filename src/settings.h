@@ -144,7 +144,7 @@ const float discAimToContAimMap[2][16] = {
 #define DRONE_MOVE_AIM_DIVISOR 10.0f
 
 #define DRONE_ENERGY_MAX 1.0f
-#define DRONE_BRAKE_COEF 2.5f
+#define DRONE_BRAKE_DAMPING_COEF 2.5f
 #define DRONE_BRAKE_DRAIN_RATE 0.5f
 #define DRONE_ENERGY_REFILL_WAIT 1.0f
 #define DRONE_ENERGY_REFILL_EMPTY_WAIT 3.0f
@@ -296,6 +296,7 @@ const weaponInformation standard = {
     .radius = STANDARD_RADIUS,
     .density = STANDARD_DENSITY,
     .invMass = STANDARD_INV_MASS,
+    .initialSpeed = STANDARD_FIRE_MAGNITUDE * STANDARD_INV_MASS,
     .maxBounces = STANDARD_BOUNCE + 1,
     .explosive = false,
     .destroyedOnDroneHit = false,
@@ -319,6 +320,7 @@ const weaponInformation machineGun = {
     .radius = MACHINEGUN_RADIUS,
     .density = MACHINEGUN_DENSITY,
     .invMass = MACHINEGUN_INV_MASS,
+    .initialSpeed = MACHINEGUN_FIRE_MAGNITUDE * MACHINEGUN_INV_MASS,
     .maxBounces = MACHINEGUN_BOUNCE + 1,
     .explosive = false,
     .destroyedOnDroneHit = false,
@@ -342,6 +344,7 @@ const weaponInformation sniper = {
     .radius = SNIPER_RADIUS,
     .density = SNIPER_DENSITY,
     .invMass = SNIPER_INV_MASS,
+    .initialSpeed = SNIPER_FIRE_MAGNITUDE * SNIPER_INV_MASS,
     .maxBounces = SNIPER_BOUNCE + 1,
     .explosive = false,
     .destroyedOnDroneHit = true,
@@ -365,6 +368,7 @@ const weaponInformation shotgun = {
     .radius = SHOTGUN_RADIUS,
     .density = SHOTGUN_DENSITY,
     .invMass = SHOTGUN_INV_MASS,
+    .initialSpeed = SHOTGUN_FIRE_MAGNITUDE * SHOTGUN_INV_MASS,
     .maxBounces = SHOTGUN_BOUNCE + 1,
     .explosive = false,
     .destroyedOnDroneHit = false,
@@ -388,6 +392,7 @@ const weaponInformation imploder = {
     .radius = IMPLODER_RADIUS,
     .density = IMPLODER_DENSITY,
     .invMass = IMPLODER_INV_MASS,
+    .initialSpeed = IMPLODER_FIRE_MAGNITUDE * IMPLODER_INV_MASS,
     .maxBounces = IMPLODER_BOUNCE + 1,
     .explosive = true,
     .destroyedOnDroneHit = true,
@@ -411,6 +416,7 @@ const weaponInformation accelerator = {
     .radius = ACCELERATOR_RADIUS,
     .density = ACCELERATOR_DENSITY,
     .invMass = ACCELERATOR_INV_MASS,
+    .initialSpeed = ACCELERATOR_FIRE_MAGNITUDE * ACCELERATOR_INV_MASS,
     .maxBounces = ACCELERATOR_BOUNCE + 1,
     .explosive = false,
     .destroyedOnDroneHit = true,
@@ -434,6 +440,7 @@ const weaponInformation flakCannon = {
     .radius = FLAK_CANNON_RADIUS,
     .density = FLAK_CANNON_DENSITY,
     .invMass = FLAK_CANNON_INV_MASS,
+    .initialSpeed = FLAK_CANNON_FIRE_MAGNITUDE * FLAK_CANNON_INV_MASS,
     .maxBounces = FLAK_CANNON_BOUNCE + 1,
     .explosive = true,
     .destroyedOnDroneHit = false,
@@ -457,6 +464,7 @@ const weaponInformation mineLauncher = {
     .radius = MINE_LAUNCHER_RADIUS,
     .density = MINE_LAUNCHER_DENSITY,
     .invMass = MINE_LAUNCHER_INV_MASS,
+    .initialSpeed = MINE_LAUNCHER_FIRE_MAGNITUDE * MINE_LAUNCHER_INV_MASS,
     .maxBounces = MINE_LAUNCHER_BOUNCE + 1,
     .explosive = true,
     .destroyedOnDroneHit = true,

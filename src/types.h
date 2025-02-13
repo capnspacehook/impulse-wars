@@ -119,6 +119,7 @@ typedef struct weaponInformation {
     const float radius;
     const float density;
     const float invMass;
+    const float initialSpeed;
     const uint8_t maxBounces;
     const bool explosive;
     const bool destroyedOnDroneHit;
