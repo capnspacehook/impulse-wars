@@ -155,7 +155,9 @@ if __name__ == "__main__":
         choices="train eval playtest autotune sweep".split(),
     )
     parser.add_argument("--sweep-child", action="store_true")
-    parser.add_argument("--model-path", type=str, default=None, help="Path to model to evaluate or resume training")
+    parser.add_argument(
+        "--model-path", type=str, default=None, help="Path to model to evaluate or resume training"
+    )
     parser.add_argument("--seed", type=int, default=-1)
     parser.add_argument("--render", action="store_true", help="Enable rendering")
     parser.add_argument("--cell-id", type=int, default=0)

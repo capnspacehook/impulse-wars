@@ -1,4 +1,4 @@
-from libc.stdint cimport int32_t, uint8_t, uint16_t, uint64_t
+from libc.stdint cimport int8_t, int32_t, uint8_t, uint16_t, uint64_t
 from libc.stdlib cimport calloc, free
 
 import pufferlib
@@ -129,7 +129,11 @@ cdef class CyImpulseWars:
 
         cdef int inc = numAgents
         cdef int i
+        cdef int8_t mapIdx = -1
         for i in range(self.numEnvs):
+            if isTraining:
+                mapIdx = i % NUM_MAPS
+
             initEnv(
                 &self.envs[i],
                 numDrones,
@@ -142,7 +146,7 @@ cdef class CyImpulseWars:
                 &terminals[i * inc],
                 &truncations[i * inc],
                 self.logs,
-                i % NUM_MAPS,
+                mapIdx,
                 seed + i,
                 sittingDuck,
                 isTraining,

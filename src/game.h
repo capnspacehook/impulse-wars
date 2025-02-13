@@ -1308,7 +1308,10 @@ void handleBodyMoveEvents(env *e) {
     b2BodyEvents events = b2World_GetBodyEvents(e->worldID);
     for (int i = 0; i < events.moveCount; i++) {
         const b2BodyMoveEvent *event = events.moveEvents + i;
-        ASSERT(b2Body_IsValid(event->bodyId));
+        if (!b2Body_IsValid(event->bodyId)) {
+            continue;
+        }
+        ASSERT(b2IsValidVec2(event->transform.p));
         entity *ent = event->userData;
         if (ent == NULL) {
             continue;
