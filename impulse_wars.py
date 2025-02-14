@@ -15,7 +15,10 @@ from cy_impulse_wars import (
 
 
 def transformRawLog(numDrones: int, rawLog: Dict[str, float]):
-    log = {"length": rawLog["length"]}
+    log = {
+        "length": rawLog["length"],
+        "ties": rawLog["ties"],
+    }
 
     count = 0
     for i, stats in enumerate(rawLog["stats"]):

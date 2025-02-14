@@ -75,6 +75,8 @@ FetchContent_Declare(
 set(BOX2D_ENABLE_SIMD ON CACHE BOOL "Enable SIMD math (faster)" FORCE)
 set(BOX2D_AVX2 ON CACHE BOOL "Enable AVX2 (faster)" FORCE)
 FetchContent_MakeAvailable(box2d)
+# this is set to off by box2d to enable cross platform determinism, but
+# I don't care about that and want the small speedup instead
 target_compile_options(box2d PRIVATE "-ffp-contract=fast")
 
 function(configure_target target_name)
@@ -101,7 +103,7 @@ if(DEFINED BUILD_PYTHON_MODULE)
 
 	# add all project headers as a dependency to the autopxd command so
 	# the PXD file will be regenerated if any of the headers change
-	file(GLOB_RECURSE HEADERS RELATIVE ${CMAKE_SOURCE_DIR} "src/*.h")
+	file(GLOB_RECURSE IMPULSE_WARS_HEADERS RELATIVE ${CMAKE_SOURCE_DIR} "src/*.h")
 
 	add_custom_command(
 		OUTPUT impulse_wars.pxd.raw
@@ -113,7 +115,7 @@ if(DEFINED BUILD_PYTHON_MODULE)
 			-I "${raylib_SOURCE_DIR}/src"
 			-D AUTOPXD
 			"${CMAKE_CURRENT_SOURCE_DIR}/src/env.h" impulse_wars.pxd.raw
-		DEPENDS "${HEADERS}"
+		DEPENDS "${IMPULSE_WARS_HEADERS}"
 		VERBATIM
 	)
 
@@ -157,6 +159,7 @@ if(DEFINED BUILD_PYTHON_MODULE)
 
 	configure_target(cy_impulse_wars)
 	# disable false positive warnings for generated Cython source file
+	# but keep other warnings enabled just in case something crazy is generated
 	set_source_files_properties(impulse_wars.c PROPERTIES COMPILE_FLAGS "-Wno-pedantic")
 
 	install(TARGETS cy_impulse_wars DESTINATION .)

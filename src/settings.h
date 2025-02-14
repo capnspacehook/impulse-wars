@@ -24,7 +24,7 @@ const uint8_t NUM_MAPS = 9;
 
 #define MAX_NEAREST_WALLS 8
 
-#define ROUND_STEPS 30
+#define ROUND_STEPS 60
 #define SUDDEN_DEATH_STEPS 5
 
 const uint8_t MAX_DRONES = _MAX_DRONES;

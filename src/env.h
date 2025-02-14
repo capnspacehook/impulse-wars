@@ -57,6 +57,7 @@ logEntry aggregateAndClearLogBuffer(uint8_t numDrones, logBuffer *logs) {
     const float logSize = logs->size;
     for (uint16_t i = 0; i < logs->size; i++) {
         log.length += logs->logs[i].length / logSize;
+        log.ties += logs->logs[i].ties / logSize;
 
         for (uint8_t j = 0; j < numDrones; j++) {
             log.stats[j].reward += logs->logs[i].stats[j].reward / logSize;
@@ -1122,6 +1123,9 @@ void stepEnv(env *e) {
         if (e->numDrones != e->numAgents && e->stepsLeft == 0) {
             roundOver = true;
         }
+        if (roundOver && deadDrones < e->numDrones - 1) {
+            lastAlive = -1;
+        }
         computeRewards(e, roundOver, lastAlive);
 
         if (e->client != NULL) {
@@ -1137,8 +1141,12 @@ void stepEnv(env *e) {
                 memset(e->terminals, 1, e->numAgents * sizeof(uint8_t));
             }
 
+            logEntry log = {0};
+            log.length = e->episodeLength;
             if (lastAlive != -1) {
                 e->stats[lastAlive].wins = 1.0f;
+            } else {
+                log.ties = 1.0f;
             }
 
             // set absolute distance traveled of agent drones
@@ -1147,8 +1155,6 @@ void stepEnv(env *e) {
                 e->stats[i].absDistanceTraveled = b2Distance(drone->initalPos, drone->pos);
             }
 
-            logEntry log = {0};
-            log.length = e->episodeLength;
             memcpy(log.stats, e->stats, sizeof(e->stats));
             addLogEntry(e->logs, &log);
 

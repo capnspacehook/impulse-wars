@@ -52,7 +52,7 @@ class Policy(nn.Module):
 
         self.weaponTypeEmbedding = nn.Embedding(self.obsInfo.weaponTypes, weaponTypeEmbeddingDims)
 
-        # each byte in the map observation contains 3 values:
+        # each byte in the map observation contains 4 values:
         # - 2 bits for wall type
         # - 1 bit for is floating wall
         # - 1 bit for is weapon pickup

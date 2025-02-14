@@ -231,6 +231,7 @@ typedef struct droneEntity {
 
 typedef struct logEntry {
     float length;
+    float ties;
     droneStats stats[_MAX_DRONES];
 } logEntry;
 
