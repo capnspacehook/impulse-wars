@@ -391,6 +391,10 @@ void createDrone(env *e, const uint8_t idx) {
     drone->shotThisStep = false;
     drone->diedThisStep = false;
     drone->idx = idx;
+    drone->team = idx;
+    if (e->teamsEnabled) {
+        drone->team = idx / (e->numDrones / 2);
+    }
     drone->initalPos = droneBodyDef.position;
     drone->pos = droneBodyDef.position;
     drone->mapCellIdx = entityPosToCellIdx(e, droneBodyDef.position);
@@ -438,6 +442,15 @@ void killDrone(env *e, droneEntity *drone) {
     drone->chargingBurst = false;
     drone->energyFullyDepleted = false;
     drone->shotThisStep = false;
+}
+
+void droneAddEnergy(droneEntity *drone, float energy) {
+    // if a burst is charging, add the energy to the burst charge
+    if (drone->chargingBurst) {
+        drone->burstCharge = clamp(drone->burstCharge + energy);
+    } else {
+        drone->energyLeft = clamp(drone->energyLeft + energy);
+    }
 }
 
 void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
@@ -525,6 +538,14 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
         projectile->sensorID = weaponSensor(projectile->bodyID, projectile->weaponInfo->type);
         b2Shape_SetUserData(projectile->sensorID, ent);
     }
+}
+
+// compute value generally from 0-1 based off of how much a projectile(s)
+// or explosion(s) caused the hit drone to change velocity
+float computeHitStrength(const droneEntity *hitDrone) {
+    const float prevSpeed = b2Length(hitDrone->lastVelocity);
+    const float curSpeed = b2Length(hitDrone->velocity);
+    return fabsf(curSpeed - prevSpeed) / MAX_SPEED;
 }
 
 b2ShapeProxy makeDistanceProxyFromType(const enum entityType type, bool *isCircle) {
@@ -755,6 +776,13 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
         case DRONE_ENTITY:
             drone->lastVelocity = drone->velocity;
             drone->velocity = b2Body_GetLinearVelocity(drone->bodyID);
+
+            // add energy to the drone that fired the projectile that is
+            // currently exploding if it hit another drone
+            if (!ctx->isBurst && drone->team != ctx->parentDrone->team) {
+                const float energyRefill = computeHitStrength(drone) * EXPLOSION_ENERGY_REFILL_COEF;
+                droneAddEnergy(ctx->parentDrone, energyRefill);
+            }
             break;
         default:
             ERRORF("unknown entity type for burst impulse %d", entity->type);
@@ -1147,15 +1175,6 @@ void droneBurst(env *e, droneEntity *drone) {
     }
 }
 
-void droneAddEnergy(droneEntity *drone, float energy) {
-    // if a burst is charging, add the energy to the burst charge
-    if (drone->chargingBurst) {
-        drone->burstCharge = clamp(drone->burstCharge + energy);
-    } else {
-        drone->energyLeft = clamp(drone->energyLeft + energy);
-    }
-}
-
 void droneDiscardWeapon(env *e, droneEntity *drone) {
     if (drone->weaponInfo->type == e->defaultWeapon->type || (drone->energyFullyDepleted && !drone->chargingBurst)) {
         return;
@@ -1410,7 +1429,9 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
             if (projectile->droneIdx != hitDrone->idx) {
                 droneEntity *shooterDrone = safe_array_get_at(e->drones, projectile->droneIdx);
 
-                droneAddEnergy(shooterDrone, projectile->weaponInfo->energyRefill);
+                if (shooterDrone->team != hitDrone->team) {
+                    droneAddEnergy(shooterDrone, projectile->weaponInfo->energyRefill);
+                }
                 // add 1 so we can differentiate between no weapon and weapon 0
                 shooterDrone->stepInfo.shotHit[hitDrone->idx] = projectile->weaponInfo->type + 1;
                 e->stats[shooterDrone->idx].shotsHit[projectile->weaponInfo->type]++;

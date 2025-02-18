@@ -168,7 +168,7 @@ void renderTimer(const env *e, const char *timerStr, const Color color) {
     DrawText(timerStr, posX, e->client->scale, fontSize, color);
 }
 
-void renderUI(const env *e, const bool starting, const bool ending, const int8_t winner) {
+void renderUI(const env *e, const bool starting, const bool ending, const int8_t winner, const int8_t winningTeam) {
     // render human control message
     if (e->humanInput) {
         const char *msg = "Human input: drone %d";
@@ -185,14 +185,21 @@ void renderUI(const env *e, const bool starting, const bool ending, const int8_t
         renderTimer(e, "GO!", WHITE);
         return;
     } else if (ending) {
-        if (winner == -1) {
+        if (winner == -1 && winningTeam == -1) {
             renderTimer(e, "Tie", WHITE);
             return;
         }
         const int bufferSize = 16;
         char winStr[bufferSize];
-        snprintf(winStr, bufferSize, "Player %d wins!", winner + 1);
-        renderTimer(e, winStr, getDroneColor(winner));
+        Color color;
+        if (e->teamsEnabled) {
+            snprintf(winStr, bufferSize, "Team %d wins!", winningTeam + 1);
+            color = RAYWHITE;
+        } else {
+            snprintf(winStr, bufferSize, "Player %d wins!", winner + 1);
+            color = getDroneColor(winner);
+        }
+        renderTimer(e, winStr, color);
         return;
     } else if (e->stepsLeft == 0) {
         renderTimer(e, "SUDDEN DEATH", WHITE);
@@ -484,13 +491,13 @@ void renderProjectiles(env *e) {
     }
 }
 
-void _renderEnv(env *e, const bool starting, const bool ending, const int8_t winner) {
+void _renderEnv(env *e, const bool starting, const bool ending, const int8_t winner, const int8_t winningTeam) {
     BeginDrawing();
 
     ClearBackground(BLACK);
     DrawFPS(e->renderScale, e->renderScale);
 
-    renderUI(e, starting, ending, winner);
+    renderUI(e, starting, ending, winner, winningTeam);
 
     renderExplosions(e, ending);
 
@@ -549,17 +556,17 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
     EndDrawing();
 }
 
-void renderEnv(env *e, const bool starting, const bool ending, const int8_t winner) {
+void renderEnv(env *e, const bool starting, const bool ending, const int8_t winner, const int8_t winningTeam) {
     if (starting) {
         for (uint16_t i = 0; i < (uint16_t)(START_READY_TIME * e->frameRate); i++) {
-            _renderEnv(e, starting, ending, winner);
+            _renderEnv(e, starting, ending, winner, winningTeam);
         }
     } else if (ending) {
         for (uint16_t i = 0; i < (uint16_t)(END_WAIT_TIME * e->frameRate); i++) {
-            _renderEnv(e, starting, ending, winner);
+            _renderEnv(e, starting, ending, winner, winningTeam);
         }
     } else {
-        _renderEnv(e, starting, ending, winner);
+        _renderEnv(e, starting, ending, winner, winningTeam);
     }
 }
 

@@ -50,6 +50,7 @@ class ImpulseWars(pufferlib.PufferEnv):
         num_envs: int,
         num_drones: int = 2,
         num_agents: int = 2,
+        enable_teams: bool = False,
         sitting_duck: bool = False,
         discretize_actions: bool = False,
         is_training: bool = True,
@@ -63,6 +64,8 @@ class ImpulseWars(pufferlib.PufferEnv):
             raise ValueError(f"num_drones must greater than 0 and less than or equal to {maxDrones()}")
         if num_agents > num_drones or num_agents <= 0:
             raise ValueError("num_agents must greater than 0 and less than or equal to num_drones")
+        if enable_teams and (num_drones % 2 != 0 or num_drones <= 2):
+            raise ValueError("enable_teams is only supported for even numbers of drones greater than 2")
 
         self.numDrones = num_drones
         self.num_agents = num_agents * num_envs
@@ -118,10 +121,12 @@ class ImpulseWars(pufferlib.PufferEnv):
             continuousActions,
             discreteActions,
             self.rewards,
+            self.masks,
             self.terminals,
             self.truncations,
             seed,
             render,
+            enable_teams,
             sitting_duck,
             is_training,
             human_control,

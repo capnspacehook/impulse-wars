@@ -444,6 +444,7 @@ void computeObs(env *e) {
             scalarObs[enemyDroneObsOffset] = enemyDrone->weaponInfo->type + 1;
 
             scalarObsOffset = ENEMY_DRONE_OBS_OFFSET + (e->numDrones - 1) + (processedDrones * (ENEMY_DRONE_OBS_SIZE - 1));
+            scalarObs[scalarObsOffset++] = enemyDrone->team;
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.x, MAX_X_POS, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.y, MAX_Y_POS, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneDistance, MAX_DISTANCE, true);
@@ -480,6 +481,7 @@ void computeObs(env *e) {
         }
 
         scalarObs[scalarObsOffset++] = agentDrone->weaponInfo->type + 1;
+        scalarObs[scalarObsOffset++] = agentDrone->team;
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->pos.x, MAX_X_POS, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->pos.y, MAX_Y_POS, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->velocity.x, MAX_SPEED, false);
@@ -544,7 +546,7 @@ void setupEnv(env *e) {
 
     if (e->client != NULL) {
         setEnvRenderScale(e);
-        renderEnv(e, true, false, -1);
+        renderEnv(e, true, false, -1, -1);
     }
 
     computeObs(e);
@@ -561,9 +563,14 @@ void setEnvFrameRate(env *e, uint8_t frameRate) {
     e->totalSuddenDeathSteps = SUDDEN_DEATH_STEPS * frameRate;
 }
 
-env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool discretizeActions, float *contActions, int32_t *discActions, float *rewards, uint8_t *terminals, uint8_t *truncations, logBuffer *logs, int8_t mapIdx, uint64_t seed, bool sittingDuck, bool isTraining) {
+env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool discretizeActions, float *contActions, int32_t *discActions, float *rewards, uint8_t *masks, uint8_t *terminals, uint8_t *truncations, logBuffer *logs, int8_t mapIdx, uint64_t seed, bool enableTeams, bool sittingDuck, bool isTraining) {
     e->numDrones = numDrones;
     e->numAgents = numAgents;
+    e->teamsEnabled = enableTeams;
+    e->numTeams = numDrones;
+    if (e->teamsEnabled) {
+        e->numTeams = 2;
+    }
     e->sittingDuck = sittingDuck;
     e->isTraining = isTraining;
 
@@ -576,6 +583,7 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
     e->discActions = discActions;
 
     e->rewards = rewards;
+    e->masks = masks;
     e->terminals = terminals;
     e->truncations = truncations;
 
@@ -627,6 +635,7 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
 
 void clearEnv(env *e) {
     // rewards get cleared in stepEnv every step
+    memset(e->masks, 1, e->numAgents * sizeof(uint8_t));
     memset(e->terminals, 0x0, e->numAgents * sizeof(uint8_t));
     memset(e->truncations, 0x0, e->numAgents * sizeof(uint8_t));
 
@@ -710,22 +719,14 @@ void resetEnv(env *e) {
     setupEnv(e);
 }
 
-float computePushReward(const droneEntity *drone) {
-    // compute reward based off of how much the projectile(s) or explosion(s)
-    // caused the drone to change velocity
-    const float prevSpeed = b2Length(drone->lastVelocity);
-    const float curSpeed = b2Length(drone->velocity);
-    return scaleValue(fabsf(curSpeed - prevSpeed), MAX_SPEED, true);
-}
-
 float computeShotReward(const droneEntity *drone, const weaponInformation *weaponInfo) {
     const float weaponForce = weaponInfo->fireMagnitude * weaponInfo->invMass;
     const float scaledForce = (weaponForce * (weaponForce * SHOT_HIT_REWARD_COEF)) + 0.25f;
-    return scaledForce + computePushReward(drone);
+    return scaledForce + computeHitStrength(drone);
 }
 
 float computeExplosionReward(const droneEntity *drone) {
-    return computePushReward(drone) * EXPLOSION_HIT_REWARD_COEF;
+    return computeHitStrength(drone) * EXPLOSION_HIT_REWARD_COEF;
 }
 
 float computeReward(env *e, droneEntity *drone) {
@@ -748,30 +749,33 @@ float computeReward(env *e, droneEntity *drone) {
             continue;
         }
         droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
+        const bool onTeam = drone->team == enemyDrone->team;
 
-        if (drone->stepInfo.shotHit[i] != 0) {
+        if (drone->stepInfo.shotHit[i] != 0 && !onTeam) {
             // subtract 1 from the weapon type because 1 is added so we
             // can use 0 as no shot was hit
             const weaponInformation *weaponInfo = weaponInfos[drone->stepInfo.shotHit[i] - 1];
             reward += computeShotReward(enemyDrone, weaponInfo);
         }
-        if (drone->stepInfo.explosionHit[i]) {
+        if (drone->stepInfo.explosionHit[i] && !onTeam) {
             reward += computeExplosionReward(enemyDrone);
         }
 
-        if (e->numAgents > 1) {
-            if (drone->stepInfo.shotTaken[i] != 0) {
+        if (e->numAgents == e->numDrones) {
+            if (drone->stepInfo.shotTaken[i] != 0 && !onTeam) {
                 const weaponInformation *weaponInfo = weaponInfos[drone->stepInfo.shotTaken[i] - 1];
                 reward -= computeShotReward(drone, weaponInfo) * 0.5f;
             }
-            if (drone->stepInfo.explosionTaken[i]) {
+            if (drone->stepInfo.explosionTaken[i] && !onTeam) {
                 reward -= computeExplosionReward(drone) * 0.5f;
             }
         }
 
-        if (enemyDrone->dead) {
-            if (enemyDrone->diedThisStep) {
-                reward += KILL_REWARD;
+        if (enemyDrone->dead && enemyDrone->diedThisStep) {
+            if (!onTeam) {
+                reward += ENEMY_DEATH_REWARD;
+            } else {
+                reward += TEAMMATE_DEATH_PUNISHMENT;
             }
             continue;
         }
@@ -793,7 +797,7 @@ float computeReward(env *e, droneEntity *drone) {
 
 const float REWARD_EPS = 1.0e-6f;
 
-void computeRewards(env *e, const bool roundOver, const int8_t winner) {
+void computeRewards(env *e, const bool roundOver, const int8_t winner, const int8_t winningTeam) {
     if (roundOver && winner != -1 && winner < e->numAgents) {
         e->rewards[winner] += WIN_REWARD;
     }
@@ -803,7 +807,10 @@ void computeRewards(env *e, const bool roundOver, const int8_t winner) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
         if (!drone->dead) {
             reward = computeReward(e, drone);
-        } else if (drone->diedThisStep && e->numAgents > 1) {
+            if (roundOver && winningTeam == drone->team) {
+                reward += WIN_REWARD;
+            }
+        } else if (drone->diedThisStep) {
             reward = DEATH_PUNISHMENT;
         }
         if (i < e->numAgents) {
@@ -1128,15 +1135,27 @@ void stepEnv(env *e) {
         projectilesStep(e);
 
         int8_t lastAlive = -1;
+        int8_t lastAliveTeam = -1;
+        bool allAliveOnSameTeam = false;
         uint8_t deadDrones = 0;
         for (uint8_t i = 0; i < e->numDrones; i++) {
             droneEntity *drone = safe_array_get_at(e->drones, i);
             if (!drone->dead) {
                 droneStep(e, drone);
                 lastAlive = i;
+
+                if (e->teamsEnabled) {
+                    if (lastAliveTeam == -1) {
+                        lastAliveTeam = drone->team;
+                        allAliveOnSameTeam = true;
+                    } else if (drone->team != lastAliveTeam) {
+                        allAliveOnSameTeam = false;
+                    }
+                }
             } else {
                 deadDrones++;
                 if (i < e->numAgents) {
+                    e->masks[i] = 0;
                     e->terminals[i] = 1;
                 }
             }
@@ -1145,6 +1164,10 @@ void stepEnv(env *e) {
         weaponPickupsStep(e);
 
         bool roundOver = deadDrones >= e->numDrones - 1;
+        if (e->teamsEnabled && allAliveOnSameTeam) {
+            roundOver = true;
+            lastAlive = -1;
+        }
         // if the enemy drone(s) are scripted don't enable sudden death
         // so that the agent has to work for victories
         if (e->numDrones != e->numAgents && e->stepsLeft == 0) {
@@ -1153,10 +1176,10 @@ void stepEnv(env *e) {
         if (roundOver && deadDrones < e->numDrones - 1) {
             lastAlive = -1;
         }
-        computeRewards(e, roundOver, lastAlive);
+        computeRewards(e, roundOver, lastAlive, lastAliveTeam);
 
         if (e->client != NULL) {
-            renderEnv(e, false, roundOver, lastAlive);
+            renderEnv(e, false, roundOver, lastAlive, lastAliveTeam);
         }
 
         if (roundOver) {
@@ -1172,13 +1195,16 @@ void stepEnv(env *e) {
             log.length = e->episodeLength;
             if (lastAlive != -1) {
                 e->stats[lastAlive].wins = 1.0f;
-            } else {
+            } else if (!e->teamsEnabled || (e->teamsEnabled && lastAliveTeam == -1)) {
                 log.ties = 1.0f;
             }
 
-            // set absolute distance traveled of agent drones
             for (uint8_t i = 0; i < e->numDrones; i++) {
                 const droneEntity *drone = safe_array_get_at(e->drones, i);
+                if (!drone->dead && e->teamsEnabled && drone->team == lastAliveTeam) {
+                    e->stats[i].wins = 1.0f;
+                }
+                // set absolute distance traveled of agent drones
                 e->stats[i].absDistanceTraveled = b2Distance(drone->initalPos, drone->pos);
             }
 

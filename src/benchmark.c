@@ -26,7 +26,8 @@ void perfTest(const uint32_t numSteps) {
 
     float *rewards = fastCalloc(NUM_DRONES, sizeof(float));
     float *actions = fastCalloc(NUM_DRONES * CONTINUOUS_ACTION_SIZE, sizeof(float));
-    uint8_t *terminals = (unsigned char *)fastCalloc(NUM_DRONES, sizeof(uint8_t));
+    uint8_t *masks = fastCalloc(NUM_DRONES, sizeof(uint8_t));
+    uint8_t *terminals = fastCalloc(NUM_DRONES, sizeof(uint8_t));
     uint8_t *truncations = fastCalloc(NUM_DRONES, sizeof(uint8_t));
     logBuffer *logs = createLogBuffer(1);
 
@@ -34,7 +35,7 @@ void perfTest(const uint32_t numSteps) {
     // e->client = client;
 
     time_t seed = time(NULL);
-    initEnv(e, NUM_DRONES, NUM_DRONES, obs, false, actions, NULL, rewards, terminals, truncations, logs, -1, seed, false, true);
+    initEnv(e, NUM_DRONES, NUM_DRONES, obs, false, actions, NULL, rewards, masks, terminals, truncations, logs, -1, seed, false, false, true);
     initMaps(e);
 
     randActions(e);
@@ -54,6 +55,7 @@ void perfTest(const uint32_t numSteps) {
     free(obs);
     fastFree(actions);
     fastFree(rewards);
+    fastFree(masks);
     fastFree(terminals);
     fastFree(truncations);
     destroyLogBuffer(logs);

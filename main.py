@@ -49,6 +49,7 @@ def train(args) -> Deque[Dict[str, Any]] | None:
         env_kwargs=dict(
             num_drones=args.env.num_drones,
             num_agents=args.env.num_agents,
+            enable_teams=args.env.enable_teams,
             sitting_duck=args.env.sitting_duck,
             discretize_actions=args.env.discretize_actions,
             is_training=True,
@@ -205,6 +206,7 @@ if __name__ == "__main__":
         default=1,
         help="Number of agents controlling drones, if this is less than --train.num-drones the other drones will be scripted",
     )
+    parser.add_argument("--env.enable-teams", action="store_true", help="Split drones into 2 teams")
     parser.add_argument("--env.human-control", action="store_true", help="Enable human control by default")
     parser.add_argument("--env.sitting-duck", action="store_true", help="Scripted drones will do nothing")
 
@@ -257,6 +259,7 @@ if __name__ == "__main__":
             env_kwargs=dict(
                 num_drones=args.env.num_drones,
                 num_agents=args.env.num_agents,
+                enable_teams=args.env.enable_teams,
                 sitting_duck=args.env.sitting_duck,
                 discretize_actions=args.env.discretize_actions,
                 is_training=False,

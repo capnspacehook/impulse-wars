@@ -217,6 +217,7 @@ typedef struct droneEntity {
     bool diedThisStep;
 
     uint8_t idx;
+    uint8_t team;
     b2Vec2 initalPos;
     b2Vec2 pos;
     int16_t mapCellIdx;
@@ -278,6 +279,8 @@ typedef struct pathingInfo {
 typedef struct env {
     uint8_t numDrones;
     uint8_t numAgents;
+    uint8_t numTeams;
+    bool teamsEnabled;
     bool sittingDuck;
     bool isTraining;
 
@@ -289,6 +292,7 @@ typedef struct env {
     bool discretizeActions;
     float *contActions;
     int32_t *discActions;
+    uint8_t *masks;
     uint8_t *terminals;
     uint8_t *truncations;
 
