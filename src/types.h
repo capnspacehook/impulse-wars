@@ -338,6 +338,7 @@ typedef struct env {
     b2Vec2 debugPoint;
     bool humanInput;
     uint8_t humanDroneInput;
+    uint8_t connectedControllers;
 } env;
 
 #endif

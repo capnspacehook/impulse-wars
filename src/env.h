@@ -620,9 +620,7 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
 
     e->humanInput = false;
     e->humanDroneInput = 0;
-    if (e->numAgents != e->numDrones) {
-        e->humanDroneInput = e->numAgents;
-    }
+    e->connectedControllers = 0;
 
     return e;
 }
@@ -910,15 +908,40 @@ agentActions computeActions(env *e, droneEntity *drone, const agentActions *manu
     return actions;
 }
 
+void updateConnectedControllers(env *e) {
+    for (uint8_t i = 0; i < e->numDrones; i++) {
+        if (IsGamepadAvailable(i)) {
+            e->connectedControllers++;
+        }
+    }
+}
+
 void updateHumanInputToggle(env *e) {
     if (IsKeyPressed(KEY_LEFT_CONTROL)) {
         e->humanInput = !e->humanInput;
+        if (!e->humanInput) {
+            e->connectedControllers = 0;
+        }
     }
+    if (e->humanInput && e->connectedControllers == 0) {
+        updateConnectedControllers(e);
+    }
+    if (e->connectedControllers > 1) {
+        e->humanDroneInput = e->numDrones - e->connectedControllers;
+        return;
+    }
+
     if (IsKeyPressed(KEY_ONE) || IsKeyPressed(KEY_KP_1)) {
         e->humanDroneInput = 0;
     }
     if (IsKeyPressed(KEY_TWO) || IsKeyPressed(KEY_KP_2)) {
         e->humanDroneInput = 1;
+    }
+    if (e->numDrones >= 3 && (IsKeyPressed(KEY_THREE) || IsKeyPressed(KEY_KP_3))) {
+        e->humanDroneInput = 2;
+    }
+    if (e->numDrones >= 4 && (IsKeyPressed(KEY_FOUR) || IsKeyPressed(KEY_KP_4))) {
+        e->humanDroneInput = 3;
     }
 }
 
@@ -928,9 +951,6 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, uint8_t gamepadIdx) {
     bool controllerConnected = false;
     if (IsGamepadAvailable(gamepadIdx)) {
         controllerConnected = true;
-    } else if (e->numAgents == 1 && IsGamepadAvailable(0)) {
-        controllerConnected = true;
-        gamepadIdx = 0;
     }
     if (controllerConnected) {
         float lStickX = GetGamepadAxisMovement(gamepadIdx, GAMEPAD_AXIS_LEFT_X);
@@ -1003,6 +1023,13 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, uint8_t gamepadIdx) {
     return computeActions(e, drone, &actions);
 }
 
+bool droneControlledByHuman(const env *e, uint8_t i) {
+    if (!e->humanInput) {
+        return false;
+    }
+    return (e->connectedControllers > 1 && i >= e->humanDroneInput) || (e->connectedControllers <= 1 && i == e->humanDroneInput);
+}
+
 void stepEnv(env *e) {
     if (e->needsReset) {
         DEBUG_LOG("Resetting environment");
@@ -1015,7 +1042,7 @@ void stepEnv(env *e) {
     // preprocess agent actions for the next frameSkip steps
     for (uint8_t i = 0; i < e->numDrones; i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
-        if (drone->dead) {
+        if (drone->dead || droneControlledByHuman(e, i)) {
             continue;
         }
 
@@ -1054,8 +1081,8 @@ void stepEnv(env *e) {
 
             agentActions actions;
             // take inputs from humans every frame
-            if (e->humanInput && (e->numAgents > 1 || e->humanDroneInput == i)) {
-                actions = getPlayerInputs(e, drone, i);
+            if (droneControlledByHuman(e, i)) {
+                actions = getPlayerInputs(e, drone, i - e->humanDroneInput);
             } else {
                 actions = stepActions[i];
             }
