@@ -8,12 +8,12 @@
 const uint8_t TWO_BIT_MASK = 0x3;
 
 // general settings
-#define TRAINING_ACTIONS_PER_SECOND 10
-#define TRAINING_FRAME_RATE TRAINING_ACTIONS_PER_SECOND
-#define TRAINING_BOX2D_SUBSTEPS 1
+const uint8_t TRAINING_ACTIONS_PER_SECOND = 10;
+const uint8_t TRAINING_FRAME_RATE = TRAINING_ACTIONS_PER_SECOND;
+const uint8_t TRAINING_BOX2D_SUBSTEPS = 1;
 
-#define EVAL_FRAME_RATE 120
-#define EVAL_BOX2D_SUBSTEPS 4
+const uint8_t EVAL_FRAME_RATE = 120;
+const uint8_t EVAL_BOX2D_SUBSTEPS = 4;
 
 const uint8_t NUM_MAPS = 9;
 #define _MAX_MAP_COLUMNS 25
@@ -24,25 +24,25 @@ const uint8_t NUM_MAPS = 9;
 
 #define MAX_NEAREST_WALLS 8
 
-#define ROUND_STEPS 60
-#define SUDDEN_DEATH_STEPS 5
+const uint8_t ROUND_STEPS = 60;
+const uint8_t SUDDEN_DEATH_STEPS = 5;
 
 const uint8_t MAX_DRONES = _MAX_DRONES;
 
 const uint16_t LOG_BUFFER_SIZE = 1024;
 
 // reward settings
-#define WIN_REWARD 1.5f
-#define ENEMY_DEATH_REWARD 1.5f
-#define TEAMMATE_DEATH_PUNISHMENT -1.0f
-#define DEATH_PUNISHMENT -1.5f
-#define ENERGY_EMPTY_PUNISHMENT -0.75f
-#define WEAPON_PICKUP_REWARD 0.5f
-#define SHOT_HIT_REWARD_COEF 0.000013333f
-#define EXPLOSION_HIT_REWARD_COEF 5.0f
-#define APPROACH_REWARD 0.0f
+const float WIN_REWARD = 1.5f;
+const float ENEMY_DEATH_REWARD = 1.5f;
+const float TEAMMATE_DEATH_PUNISHMENT = -1.0f;
+const float DEATH_PUNISHMENT = -1.5f;
+const float ENERGY_EMPTY_PUNISHMENT = -0.75f;
+const float WEAPON_PICKUP_REWARD = 0.5f;
+const float SHOT_HIT_REWARD_COEF = 0.000013333f;
+const float EXPLOSION_HIT_REWARD_COEF = 5.0f;
+const float APPROACH_REWARD = 0.0f;
 
-#define DISTANCE_CUTOFF 15.0f
+const uint8_t DISTANCE_CUTOFF = 15.0f;
 
 // observation constants
 const uint8_t MAP_OBS_ROWS = 11;
@@ -93,12 +93,12 @@ uint16_t obsBytes(uint8_t numDrones) {
     return alignedSize((MAP_OBS_SIZE * sizeof(uint8_t)) + (scalarObsSize(numDrones) * sizeof(float)), sizeof(float));
 }
 
-#define MAX_X_POS 150.0f
-#define MAX_Y_POS 150.0f
-#define MAX_DISTANCE 200.0f
-#define MAX_SPEED 500.0f
-#define MAX_ACCEL 1000.0f
-#define MAX_ANGLE (float)PI
+const float MAX_X_POS = 150.0f;
+const float MAX_Y_POS = 150.0f;
+const float MAX_DISTANCE = 200.0f;
+const float MAX_SPEED = 500.0f;
+const float MAX_ACCEL = 1000.0f;
+const float MAX_ANGLE = PI;
 
 // action constants
 const uint8_t CONTINUOUS_ACTION_SIZE = 7;
@@ -114,54 +114,54 @@ const float discAimToContAimMap[2][16] = {
     {0.0f, 0.382683f, 0.707107f, 0.92388f, 1.0f, 0.92388f, 0.707107f, 0.382683f, 0.0f, -0.382683f, -0.707107f, -0.92388f, -1.0f, -0.92388f, -0.707107f, -0.382683f},
 };
 
-#define MIN_SPAWN_DISTANCE 6.0f
+const float MIN_SPAWN_DISTANCE = 6.0f;
 
 // wall settings
-#define WALL_THICKNESS 4.0f
-#define FLOATING_WALL_THICKNESS 3.0f
-#define FLOATING_WALL_DAMPING 0.75f
-#define STANDARD_WALL_RESTITUTION 0.01f
-#define STANDARD_WALL_FRICTION 0.3f
-#define BOUNCY_WALL_RESTITUTION 1.0f
-#define WALL_DENSITY 4.0f
+const float WALL_THICKNESS = 4.0f;
+const float FLOATING_WALL_THICKNESS = 3.0f;
+const float FLOATING_WALL_DAMPING = 0.75f;
+const float STANDARD_WALL_RESTITUTION = 0.01f;
+const float STANDARD_WALL_FRICTION = 0.3f;
+const float BOUNCY_WALL_RESTITUTION = 1.0f;
+const float WALL_DENSITY = 4.0f;
 
 // weapon pickup settings
-#define PICKUP_THICKNESS 3.0f
-#define PICKUP_SPAWN_DISTANCE_SQUARED SQUARED(10.0f)
-#define PICKUP_RESPAWN_WAIT 3.0f
-#define SUDDEN_DEATH_PICKUP_RESPAWN_WAIT 2.0f
+const float PICKUP_THICKNESS = 3.0f;
+const float PICKUP_SPAWN_DISTANCE_SQUARED = SQUARED(10.0f);
+const float PICKUP_RESPAWN_WAIT = 3.0f;
+const float SUDDEN_DEATH_PICKUP_RESPAWN_WAIT = 2.0f;
 
 // drone settings
-#define DRONE_WALL_SPAWN_DISTANCE 5.0f
-#define DRONE_DEATH_WALL_SPAWN_DISTANCE 7.5f
-#define DRONE_DRONE_SPAWN_DISTANCE_SQUARED SQUARED(10.0f)
+const float DRONE_WALL_SPAWN_DISTANCE = 5.0f;
+const float DRONE_DEATH_WALL_SPAWN_DISTANCE = 7.5f;
+const float DRONE_DRONE_SPAWN_DISTANCE_SQUARED = SQUARED(10.0f);
 #define DRONE_RADIUS 1.0f
 #define DRONE_DENSITY 1.25f
-#define DRONE_RESTITUTION 0.3f
-#define DRONE_FRICTION 0.1f
+const float DRONE_RESTITUTION = 0.3f;
+const float DRONE_FRICTION = 0.1f;
 #define DRONE_INV_MASS INV_MASS(DRONE_DENSITY, DRONE_RADIUS)
-#define DRONE_MOVE_MAGNITUDE 35.0f
-#define DRONE_LINEAR_DAMPING 1.0f
-#define DRONE_MOVE_AIM_DIVISOR 10.0f
+const float DRONE_MOVE_MAGNITUDE = 35.0f;
+const float DRONE_LINEAR_DAMPING = 1.0f;
+const float DRONE_MOVE_AIM_COEF = 0.1f;
 
-#define DRONE_ENERGY_MAX 1.0f
-#define DRONE_BRAKE_DAMPING_COEF 2.5f
-#define DRONE_BRAKE_DRAIN_RATE 0.5f
-#define DRONE_ENERGY_REFILL_WAIT 1.0f
-#define DRONE_ENERGY_REFILL_EMPTY_WAIT 3.0f
-#define DRONE_ENERGY_REFILL_RATE 0.03f
+const float DRONE_ENERGY_MAX = 1.0f;
+const float DRONE_BRAKE_DAMPING_COEF = 2.5f;
+const float DRONE_BRAKE_DRAIN_RATE = 0.5f;
+const float DRONE_ENERGY_REFILL_WAIT = 1.0f;
+const float DRONE_ENERGY_REFILL_EMPTY_WAIT = 3.0f;
+const float DRONE_ENERGY_REFILL_RATE = 0.03f;
 
-#define DRONE_BURST_BASE_COST 0.1f
-#define DRONE_BURST_CHARGE_RATE 0.6f
-#define DRONE_BURST_RADIUS_BASE 4.0f
-#define DRONE_BURST_RADIUS_MIN 3.0f
-#define DRONE_BURST_IMPACT_BASE 125.0f
-#define DRONE_BURST_IMPACT_MIN 25.0f
-#define DRONE_BURST_COOLDOWN 0.5f
+const float DRONE_BURST_BASE_COST = 0.1f;
+const float DRONE_BURST_CHARGE_RATE = 0.6f;
+const float DRONE_BURST_RADIUS_BASE = 4.0f;
+const float DRONE_BURST_RADIUS_MIN = 3.0f;
+const float DRONE_BURST_IMPACT_BASE = 125.0f;
+const float DRONE_BURST_IMPACT_MIN = 25.0f;
+const float DRONE_BURST_COOLDOWN = 0.5f;
 
 #define PROJECTILE_ENERGY_REFILL_COEF 0.001f
-#define EXPLOSION_ENERGY_REFILL_COEF 1.75f
-#define WEAPON_DISCARD_COST 0.2f
+const float EXPLOSION_ENERGY_REFILL_COEF = 1.75f;
+const float WEAPON_DISCARD_COST = 0.2f;
 
 // weapon projectile settings
 #define STANDARD_AMMO INFINITE

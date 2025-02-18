@@ -408,7 +408,7 @@ void resetMap(env *e) {
             }
 
             const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
-            createWall(e, cell->pos.x, cell->pos.y, FLOATING_WALL_THICKNESS, FLOATING_WALL_THICKNESS, cellIdx, wallType, true);
+            createWall(e, cell->pos, FLOATING_WALL_THICKNESS, FLOATING_WALL_THICKNESS, cellIdx, wallType, true);
             cellIdx++;
         }
     }
@@ -489,7 +489,7 @@ void setupMap(env *e, const uint8_t mapIdx) {
                 ERRORF("unknown map layout cell %c", cellType);
             }
 
-            entity *ent = createWall(e, x, y, thickness, thickness, cellIdx, wallType, floating);
+            entity *ent = createWall(e, pos, thickness, thickness, cellIdx, wallType, floating);
             if (!floating) {
                 cell->ent = ent;
             }
@@ -629,7 +629,7 @@ void placeRandFloatingWall(env *e, const enum entityType wallType) {
         ERROR("failed to find open position for floating wall");
     }
     int16_t cellIdx = entityPosToCellIdx(e, pos);
-    createWall(e, pos.x, pos.y, FLOATING_WALL_THICKNESS, FLOATING_WALL_THICKNESS, cellIdx, wallType, true);
+    createWall(e, pos, FLOATING_WALL_THICKNESS, FLOATING_WALL_THICKNESS, cellIdx, wallType, true);
 }
 
 void placeRandFloatingWalls(env *e, const int mapIdx) {

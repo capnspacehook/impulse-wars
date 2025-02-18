@@ -11,7 +11,8 @@ void destroyProjectile(env *e, projectileEntity *projectile, const bool processE
 void createExplosion(env *e, droneEntity *drone, const enum weaponType *type, const b2ExplosionDef *def);
 
 static inline bool entityTypeIsWall(const enum entityType type) {
-    return type == STANDARD_WALL_ENTITY || type == BOUNCY_WALL_ENTITY || type == DEATH_WALL_ENTITY;
+    // walls are the first 3 entity types
+    return type <= DEATH_WALL_ENTITY;
 }
 
 static inline int16_t cellIndex(const env *e, const int8_t col, const int8_t row) {
@@ -92,8 +93,11 @@ bool isOverlappingCircle(const env *e, const b2Vec2 pos, const float radius, con
 }
 
 // returns true and sets emptyPos to the position of an empty cell
-// that is an appropriate distance away from other entities if one exists
-bool findOpenPos(env *e, const enum shapeCategory type, b2Vec2 *emptyPos, int8_t quad) {
+// that is an appropriate distance away from other entities if one exists;
+// if quad is set to -1 a random valid position from anywhere on the map
+// will be returned, otherwise a position within the specified quadrant
+// will be returned
+bool findOpenPos(env *e, const enum shapeCategory shapeType, b2Vec2 *emptyPos, int8_t quad) {
     uint8_t checkedCells[BITNSLOTS(MAX_CELLS)] = {0};
     const size_t nCells = cc_array_size(e->cells);
     uint16_t attempts = 0;
@@ -102,6 +106,7 @@ bool findOpenPos(env *e, const enum shapeCategory type, b2Vec2 *emptyPos, int8_t
         if (attempts == nCells) {
             return false;
         }
+
         uint16_t cellIdx;
         if (quad == -1) {
             cellIdx = randInt(&e->randState, 0, nCells - 1);
@@ -125,7 +130,7 @@ bool findOpenPos(env *e, const enum shapeCategory type, b2Vec2 *emptyPos, int8_t
             continue;
         }
 
-        if (type == WEAPON_PICKUP_SHAPE) {
+        if (shapeType == WEAPON_PICKUP_SHAPE) {
             // ensure pickups don't spawn too close to other pickups
             bool tooClose = false;
             for (uint8_t i = 0; i < cc_array_size(e->pickups); i++) {
@@ -138,7 +143,7 @@ bool findOpenPos(env *e, const enum shapeCategory type, b2Vec2 *emptyPos, int8_t
             if (tooClose) {
                 continue;
             }
-        } else if (type == DRONE_SHAPE) {
+        } else if (shapeType == DRONE_SHAPE) {
             if (!e->map->droneSpawns[cellIdx]) {
                 continue;
             }
@@ -157,18 +162,17 @@ bool findOpenPos(env *e, const enum shapeCategory type, b2Vec2 *emptyPos, int8_t
             }
         }
 
-        if (!isOverlappingAABB(e, cell->pos, MIN_SPAWN_DISTANCE, type, FLOATING_WALL_SHAPE | DRONE_SHAPE, NULL)) {
+        if (!isOverlappingAABB(e, cell->pos, MIN_SPAWN_DISTANCE, shapeType, FLOATING_WALL_SHAPE | DRONE_SHAPE, NULL)) {
             *emptyPos = cell->pos;
             return true;
         }
     }
 }
 
-entity *createWall(const env *e, const float posX, const float posY, const float width, const float height, int16_t cellIdx, const enum entityType type, const bool floating) {
+entity *createWall(const env *e, const b2Vec2 pos, const float width, const float height, int16_t cellIdx, const enum entityType type, const bool floating) {
     ASSERT(cellIdx != -1);
     ASSERT(entityTypeIsWall(type));
 
-    const b2Vec2 pos = (b2Vec2){.x = posX, .y = posY};
     b2BodyDef wallBodyDef = b2DefaultBodyDef();
     wallBodyDef.position = pos;
     if (floating) {
@@ -334,6 +338,11 @@ void destroyWeaponPickup(const env *e, weaponPickupEntity *pickup) {
     fastFree(pickup);
 }
 
+// destroys the pickup body and shape while the pickup is waiting to
+// respawn to avoid spurious sensor overlap checks; enabling/disabling
+// a body is almost as expensive and creating a new body in box2d, and
+// manually moving (teleporting) it is expensive as well so destroying
+// the body now and re-creating it later is the fastest
 void disableWeaponPickup(env *e, weaponPickupEntity *pickup) {
     DEBUG_LOGF("disabling weapon pickup at cell %d (%f, %f)", pickup->mapCellIdx, pickup->pos.x, pickup->pos.y);
 
@@ -341,7 +350,6 @@ void disableWeaponPickup(env *e, weaponPickupEntity *pickup) {
     if (e->suddenDeathWallsPlaced) {
         pickup->respawnWait = SUDDEN_DEATH_PICKUP_RESPAWN_WAIT;
     }
-    // destroy body to prevent sensor overlap checks that are not needed
     b2DestroyBody(pickup->bodyID);
     pickup->bodyDestroyed = true;
 
@@ -433,6 +441,7 @@ void killDrone(env *e, droneEntity *drone) {
 
     drone->dead = true;
     drone->diedThisStep = true;
+    // if there are 2 drones total the episode is over
     if (e->numDrones == 2) {
         return;
     }
@@ -505,7 +514,7 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     // add lateral drone velocity to projectile
     b2Vec2 forwardVel = b2MulSV(b2Dot(drone->velocity, normAim), normAim);
     b2Vec2 lateralVel = b2Sub(drone->velocity, forwardVel);
-    lateralVel = b2MulSV(projectileShapeDef.density / DRONE_MOVE_AIM_DIVISOR, lateralVel);
+    lateralVel = b2MulSV(projectileShapeDef.density * DRONE_MOVE_AIM_COEF, lateralVel);
     b2Vec2 aim = weaponAdjustAim(&e->randState, drone->weaponInfo->type, drone->heat, normAim);
     b2Vec2 fire = b2MulAdd(lateralVel, weaponFire(&e->randState, drone->weaponInfo->type), aim);
     b2Body_ApplyLinearImpulseToCenter(projectileBodyID, fire, true);
@@ -534,6 +543,7 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     b2Body_SetUserData(projectile->bodyID, ent);
     b2Shape_SetUserData(projectile->shapeID, ent);
 
+    // create a sensor shape if needed
     if (projectile->weaponInfo->proximityDetonates) {
         projectile->sensorID = weaponSensor(projectile->bodyID, projectile->weaponInfo->type);
         b2Shape_SetUserData(projectile->sensorID, ent);
@@ -717,7 +727,7 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
 
     b2SimplexCache cache = {0};
     const b2DistanceOutput output = b2ShapeDistance(&cache, &input, NULL, 0);
-    // don't consider for static walls so burst pushback isn't as
+    // don't consider falloff for static walls so burst pushback isn't as
     // surprising to players
     if (output.distance > ctx->def->radius + ctx->def->falloff || (isStaticWall && output.distance > ctx->def->radius)) {
         return true;
@@ -891,7 +901,7 @@ void createSuddenDeathWalls(env *e, const b2Vec2 startPos, const b2Vec2 size) {
                 continue;
             }
         }
-        entity *ent = createWall(e, cell->pos.x, cell->pos.y, WALL_THICKNESS, WALL_THICKNESS, i, DEATH_WALL_ENTITY, false);
+        entity *ent = createWall(e, cell->pos, WALL_THICKNESS, WALL_THICKNESS, i, DEATH_WALL_ENTITY, false);
         cell->ent = ent;
     }
 }
@@ -953,15 +963,16 @@ void handleSuddenDeath(env *e) {
         });
 
     // mark drones as dead if they touch a newly placed wall
-    bool droneDead = false;
+    uint8_t deadDrones = 0;
     for (uint8_t i = 0; i < e->numDrones; i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
         if (isOverlappingAABB(e, drone->pos, DRONE_RADIUS, DRONE_SHAPE, WALL_SHAPE, NULL)) {
             killDrone(e, drone);
-            droneDead = true;
+            deadDrones++;
         }
     }
-    if (droneDead && e->numDrones == 2) {
+    // if all but one or all drones are dead, the episode is over
+    if (deadDrones >= e->numDrones - 1) {
         return;
     }
 
@@ -1013,7 +1024,7 @@ void droneMove(droneEntity *drone, b2Vec2 direction) {
 }
 
 void droneChangeWeapon(const env *e, droneEntity *drone, const enum weaponType newWeapon) {
-    // only top up ammo if the weapon is the same
+    // top up ammo but change nothing else if the weapon is the same
     if (drone->weaponInfo->type != newWeapon) {
         drone->weaponCooldown = 0.0f;
         drone->weaponCharge = 0.0f;
@@ -1341,7 +1352,7 @@ void handleBodyMoveEvents(env *e) {
         droneEntity *drone;
 
         // if the new position is out of bounds, destroy the entity unless
-        // a drone is out of bounds, then just reset
+        // a drone is out of bounds, then just kill it
         switch (ent->type) {
         case STANDARD_WALL_ENTITY:
         case BOUNCY_WALL_ENTITY:
@@ -1491,6 +1502,7 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
     return 0;
 }
 
+// ensure speed is maintained when a projectile hits a dynamic body
 void handleProjectileEndContact(const entity *proj, const entity *ent) {
     projectileEntity *projectile = proj->entity;
     projectile->inContact = false;
@@ -1502,15 +1514,21 @@ void handleProjectileEndContact(const entity *proj, const entity *ent) {
         return;
     }
 
-    if (ent != NULL && ent->type == PROJECTILE_ENTITY) {
-        const projectileEntity *projectile2 = ent->entity;
-        // allow projectile speeds to change when two different
-        // projectiles collide
-        if (projectile->weaponInfo->type != projectile2->weaponInfo->type) {
-            projectile->velocity = b2Body_GetLinearVelocity(projectile->bodyID);
-            projectile->speed = b2Length(projectile->velocity);
-            projectile->lastSpeed = projectile->speed;
+    if (ent != NULL) {
+        if (entityTypeIsWall(ent->type)) {
+            // if the projectile hit a wall it's speed won't be changed,
+            // nothing to do
             return;
+        } else if (ent->type == PROJECTILE_ENTITY) {
+            const projectileEntity *projectile2 = ent->entity;
+            // allow projectile speeds to change when two different
+            // projectiles collide
+            if (projectile->weaponInfo->type != projectile2->weaponInfo->type) {
+                projectile->velocity = b2Body_GetLinearVelocity(projectile->bodyID);
+                projectile->speed = b2Length(projectile->velocity);
+                projectile->lastSpeed = projectile->speed;
+                return;
+            }
         }
     }
 
@@ -1631,6 +1649,7 @@ void handleWeaponPickupBeginTouch(env *e, const entity *sensor, entity *visitor)
     }
 }
 
+// explode proximity detonating projectiles
 void handleProjectileBeginTouch(env *e, const entity *sensor) {
     projectileEntity *projectile = sensor->entity;
 
