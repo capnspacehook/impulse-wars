@@ -79,7 +79,7 @@ const uint16_t PROJECTILE_POS_OBS_OFFSET = PROJECTILE_TYPES_OBS_OFFSET + NUM_PRO
 const uint16_t ENEMY_DRONE_OBS_OFFSET = PROJECTILE_POS_OBS_OFFSET + (NUM_PROJECTILE_OBS * PROJECTILE_INFO_OBS_SIZE);
 const uint8_t ENEMY_DRONE_OBS_SIZE = 24;
 
-const uint8_t DRONE_OBS_SIZE = 22;
+const uint8_t DRONE_OBS_SIZE = 21;
 
 const uint8_t MISC_OBS_SIZE = 1;
 
@@ -520,6 +520,7 @@ b2ShapeId weaponSensor(const b2BodyId bodyID, const enum weaponType type) {
     b2ShapeDef sensorShapeDef = b2DefaultShapeDef();
     sensorShapeDef.density = 0.0f;
     sensorShapeDef.isSensor = true;
+    sensorShapeDef.enableSensorEvents = true;
     b2Circle sensorCircle = {.center = b2Vec2_zero};
 
     switch (type) {

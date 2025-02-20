@@ -288,6 +288,7 @@ void createWeaponPickupBodyShape(const env *e, weaponPickupEntity *pickup) {
     pickupShapeDef.filter.categoryBits = WEAPON_PICKUP_SHAPE;
     pickupShapeDef.filter.maskBits = FLOATING_WALL_SHAPE | DRONE_SHAPE;
     pickupShapeDef.isSensor = true;
+    pickupShapeDef.enableSensorEvents = true;
     pickupShapeDef.userData = pickup->ent;
     const b2Polygon pickupPolygon = b2MakeBox(PICKUP_THICKNESS / 2.0f, PICKUP_THICKNESS / 2.0f);
     pickup->shapeID = b2CreatePolygonShape(pickup->bodyID, &pickupShapeDef, &pickupPolygon);
@@ -378,6 +379,7 @@ void createDrone(env *e, const uint8_t idx) {
     droneShapeDef.filter.categoryBits = DRONE_SHAPE;
     droneShapeDef.filter.maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | WEAPON_PICKUP_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE;
     droneShapeDef.enableContactEvents = true;
+    droneShapeDef.enableSensorEvents = true;
     const b2Circle droneCircle = {.center = b2Vec2_zero, .radius = DRONE_RADIUS};
 
     droneEntity *drone = fastCalloc(1, sizeof(droneEntity));

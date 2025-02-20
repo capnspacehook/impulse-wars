@@ -444,7 +444,7 @@ void computeObs(env *e) {
             scalarObs[enemyDroneObsOffset] = enemyDrone->weaponInfo->type + 1;
 
             scalarObsOffset = ENEMY_DRONE_OBS_OFFSET + (e->numDrones - 1) + (processedDrones * (ENEMY_DRONE_OBS_SIZE - 1));
-            scalarObs[scalarObsOffset++] = enemyDrone->team;
+            scalarObs[scalarObsOffset++] = enemyDrone->team == agentDrone->team;
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.x, MAX_X_POS, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.y, MAX_Y_POS, false);
             scalarObs[scalarObsOffset++] = scaleValue(enemyDroneDistance, MAX_DISTANCE, true);
@@ -481,7 +481,6 @@ void computeObs(env *e) {
         }
 
         scalarObs[scalarObsOffset++] = agentDrone->weaponInfo->type + 1;
-        scalarObs[scalarObsOffset++] = agentDrone->team;
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->pos.x, MAX_X_POS, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->pos.y, MAX_Y_POS, false);
         scalarObs[scalarObsOffset++] = scaleValue(agentDrone->velocity.x, MAX_SPEED, false);
