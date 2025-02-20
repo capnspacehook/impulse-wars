@@ -285,7 +285,7 @@ typedef struct env {
     bool isTraining;
 
     uint16_t obsBytes;
-    uint16_t mapObsBytes;
+    uint16_t discreteObsBytes;
 
     uint8_t *obs;
     float *rewards;

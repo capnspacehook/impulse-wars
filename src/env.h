@@ -264,7 +264,7 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t obsStartOffset
 
 #ifndef AUTOPXD
 // computes observations for N nearest walls, floating walls, and weapon pickups
-void computeNearMapObs(env *e, droneEntity *drone, float *scalarObs) {
+void computeNearObs(env *e, const droneEntity *drone, const uint16_t discreteObsStart, float *scalarObs) {
     nearEntity nearWalls[NUM_NEAR_WALL_OBS];
     findNearWalls(e, drone, nearWalls, NUM_NEAR_WALL_OBS);
 
@@ -274,14 +274,14 @@ void computeNearMapObs(env *e, droneEntity *drone, float *scalarObs) {
     for (uint8_t i = 0; i < NUM_NEAR_WALL_OBS; i++) {
         const wallEntity *wall = nearWalls[i].entity;
 
-        offset = NEAR_WALL_TYPES_OBS_OFFSET + i;
-        ASSERTF(offset <= NEAR_WALL_POS_OBS_OFFSET, "offset: %d", offset);
-        scalarObs[offset] = wall->type;
+        offset = discreteObsStart + NEAR_WALL_TYPES_OBS_OFFSET + i;
+        ASSERTF(offset <= discreteObsStart + FLOATING_WALL_TYPES_OBS_OFFSET, "offset: %d", offset);
+        e->obs[offset] = wall->type;
 
         // DEBUG_LOGF("wall %d cell %d", i, wall->mapCellIdx);
 
         offset = NEAR_WALL_POS_OBS_OFFSET + (i * NEAR_WALL_POS_OBS_SIZE);
-        ASSERTF(offset <= FLOATING_WALL_TYPES_OBS_OFFSET, "offset: %d", offset);
+        ASSERTF(offset <= FLOATING_WALL_INFO_OBS_OFFSET, "offset: %d", offset);
         const b2Vec2 wallRelPos = b2Sub(wall->pos, drone->pos);
 
         scalarObs[offset++] = scaleValue(wallRelPos.x, MAX_X_POS, false);
@@ -312,14 +312,14 @@ void computeNearMapObs(env *e, droneEntity *drone, float *scalarObs) {
             const b2Vec2 wallRelPos = b2Sub(wallTransform.p, drone->pos);
             const float angle = b2Rot_GetAngle(wallTransform.q);
 
-            offset = FLOATING_WALL_TYPES_OBS_OFFSET + i;
-            ASSERTF(offset <= FLOATING_WALL_INFO_OBS_OFFSET, "offset: %d", offset);
-            scalarObs[offset] = wall->type + 1;
+            offset = discreteObsStart + FLOATING_WALL_TYPES_OBS_OFFSET + i;
+            ASSERTF(offset <= discreteObsStart + PROJECTILE_DRONE_OBS_OFFSET, "offset: %d", offset);
+            e->obs[offset] = wall->type + 1;
 
             // DEBUG_LOGF("floating wall %d cell %d", i, wall->mapCellIdx);
 
             offset = FLOATING_WALL_INFO_OBS_OFFSET + (i * FLOATING_WALL_INFO_OBS_SIZE);
-            ASSERTF(offset <= WEAPON_PICKUP_TYPES_OBS_OFFSET, "offset: %d", offset);
+            ASSERTF(offset <= WEAPON_PICKUP_POS_OBS_OFFSET, "offset: %d", offset);
             scalarObs[offset++] = scaleValue(wallRelPos.x, MAX_X_POS, false);
             scalarObs[offset++] = scaleValue(wallRelPos.y, MAX_Y_POS, false);
             scalarObs[offset++] = scaleValue(angle, MAX_ANGLE, false);
@@ -348,14 +348,14 @@ void computeNearMapObs(env *e, droneEntity *drone, float *scalarObs) {
             }
             const weaponPickupEntity *pickup = nearPickups[i].entity;
 
-            offset = WEAPON_PICKUP_TYPES_OBS_OFFSET + i;
-            ASSERTF(offset <= WEAPON_PICKUP_POS_OBS_OFFSET, "offset: %d", offset);
-            scalarObs[offset] = pickup->weapon + 1;
+            offset = discreteObsStart + WEAPON_PICKUP_WEAPONS_OBS_OFFSET + i;
+            ASSERTF(offset <= discreteObsStart + ENEMY_DRONE_WEAPONS_OBS_OFFSET, "offset: %d", offset);
+            e->obs[offset] = pickup->weapon + 1;
 
             // DEBUG_LOGF("pickup %d cell %d", i, pickup->mapCellIdx);
 
             offset = WEAPON_PICKUP_POS_OBS_OFFSET + (i * WEAPON_PICKUP_POS_OBS_SIZE);
-            ASSERTF(offset <= PROJECTILE_TYPES_OBS_OFFSET, "offset: %d", offset);
+            ASSERTF(offset <= PROJECTILE_INFO_OBS_OFFSET, "offset: %d", offset);
             const b2Vec2 pickupRelPos = b2Sub(pickup->pos, drone->pos);
             scalarObs[offset++] = scaleValue(pickupRelPos.x, MAX_X_POS, false);
             scalarObs[offset] = scaleValue(pickupRelPos.y, MAX_Y_POS, false);
@@ -374,17 +374,17 @@ void computeObs(env *e) {
         }
 
         // compute discrete map observations
-        uint16_t mapObsOffset = e->obsBytes * agentIdx;
-        memset(e->obs + mapObsOffset, 0x0, e->obsBytes);
-        const uint16_t mapObsStart = mapObsOffset;
-        computeMapObs(e, agentIdx, mapObsOffset);
+        const uint16_t discreteObsStart = e->obsBytes * agentIdx;
+        memset(e->obs + discreteObsStart, 0x0, e->obsBytes);
+        computeMapObs(e, agentIdx, discreteObsStart);
 
-        // compute continuous scalar observations
-        uint16_t scalarObsOffset = 0;
-        const uint16_t scalarObsStart = mapObsStart + e->mapObsBytes;
+        // compute continuous observations
+        uint16_t discreteObsOffset;
+        uint16_t continuousObsOffset;
+        const uint16_t scalarObsStart = discreteObsStart + e->discreteObsBytes;
         float *scalarObs = (float *)(e->obs + scalarObsStart);
 
-        computeNearMapObs(e, agentDrone, scalarObs);
+        computeNearObs(e, agentDrone, discreteObsStart, scalarObs);
 
         // compute type and location of N projectiles
         for (size_t i = 0; i < cc_array_size(e->projectiles); i++) {
@@ -394,18 +394,21 @@ void computeObs(env *e) {
             }
             const projectileEntity *projectile = safe_array_get_at(e->projectiles, i);
 
-            scalarObsOffset = PROJECTILE_TYPES_OBS_OFFSET + i;
-            ASSERTF(scalarObsOffset <= PROJECTILE_POS_OBS_OFFSET, "offset: %d", scalarObsOffset);
-            scalarObs[scalarObsOffset] = projectile->weaponInfo->type + 1;
+            discreteObsOffset = discreteObsStart + PROJECTILE_DRONE_OBS_OFFSET + i;
+            ASSERTF(discreteObsOffset <= discreteObsStart + PROJECTILE_WEAPONS_OBS_OFFSET, "offset: %d", discreteObsOffset);
+            e->obs[discreteObsOffset] = projectile->droneIdx + 1;
 
-            scalarObsOffset = PROJECTILE_POS_OBS_OFFSET + (i * PROJECTILE_INFO_OBS_SIZE);
-            ASSERTF(scalarObsOffset <= ENEMY_DRONE_OBS_OFFSET, "offset: %d", scalarObsOffset);
+            discreteObsOffset = discreteObsStart + PROJECTILE_WEAPONS_OBS_OFFSET + i;
+            ASSERTF(discreteObsOffset <= discreteObsStart + WEAPON_PICKUP_WEAPONS_OBS_OFFSET, "offset: %d", discreteObsOffset);
+            e->obs[discreteObsOffset] = projectile->weaponInfo->type + 1;
+
+            continuousObsOffset = PROJECTILE_INFO_OBS_OFFSET + (i * PROJECTILE_INFO_OBS_SIZE);
+            ASSERTF(continuousObsOffset <= ENEMY_DRONE_OBS_OFFSET, "offset: %d", continuousObsOffset);
             const b2Vec2 projectileRelPos = b2Sub(projectile->pos, agentDrone->pos);
-            scalarObs[scalarObsOffset++] = projectile->droneIdx + 1;
-            scalarObs[scalarObsOffset++] = scaleValue(projectileRelPos.x, MAX_X_POS, false);
-            scalarObs[scalarObsOffset++] = scaleValue(projectileRelPos.y, MAX_Y_POS, false);
-            scalarObs[scalarObsOffset++] = scaleValue(projectile->velocity.x, MAX_SPEED, false);
-            scalarObs[scalarObsOffset] = scaleValue(projectile->velocity.y, MAX_SPEED, false);
+            scalarObs[continuousObsOffset++] = scaleValue(projectileRelPos.x, MAX_X_POS, false);
+            scalarObs[continuousObsOffset++] = scaleValue(projectileRelPos.y, MAX_Y_POS, false);
+            scalarObs[continuousObsOffset++] = scaleValue(projectile->velocity.x, MAX_SPEED, false);
+            scalarObs[continuousObsOffset] = scaleValue(projectile->velocity.y, MAX_SPEED, false);
         }
 
         // compute enemy drone observations
@@ -440,70 +443,72 @@ void computeObs(env *e) {
                 enemyDroneBraking = 1.0f;
             }
 
-            const uint16_t enemyDroneObsOffset = ENEMY_DRONE_OBS_OFFSET + processedDrones;
-            scalarObs[enemyDroneObsOffset] = enemyDrone->weaponInfo->type + 1;
+            discreteObsOffset = discreteObsStart + ENEMY_DRONE_WEAPONS_OBS_OFFSET + processedDrones;
+            e->obs[discreteObsOffset] = enemyDrone->weaponInfo->type + 1;
 
-            scalarObsOffset = ENEMY_DRONE_OBS_OFFSET + (e->numDrones - 1) + (processedDrones * (ENEMY_DRONE_OBS_SIZE - 1));
-            scalarObs[scalarObsOffset++] = enemyDrone->team == agentDrone->team;
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.x, MAX_X_POS, false);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelPos.y, MAX_Y_POS, false);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneDistance, MAX_DISTANCE, true);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->velocity.x, MAX_SPEED, false);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->velocity.y, MAX_SPEED, false);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAccel.x, MAX_ACCEL, false);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAccel.y, MAX_ACCEL, false);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelNormPos.x, 1.0f, false);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneRelNormPos.y, 1.0f, false);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->lastAim.x, 1.0f, false);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->lastAim.y, 1.0f, false);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDroneAimAngle, PI, false);
-            scalarObs[scalarObsOffset++] = scaleAmmo(e, enemyDrone);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->weaponCooldown, enemyDrone->weaponInfo->coolDown, true);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->weaponCharge, enemyDrone->weaponInfo->charge, true);
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->energyLeft, DRONE_ENERGY_MAX, true);
-            scalarObs[scalarObsOffset++] = (float)enemyDrone->energyFullyDepleted;
-            scalarObs[scalarObsOffset++] = enemyDroneBraking;
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->burstCooldown, DRONE_BURST_COOLDOWN, true);
-            scalarObs[scalarObsOffset++] = (float)enemyDrone->chargingBurst;
-            scalarObs[scalarObsOffset++] = scaleValue(enemyDrone->burstCharge, DRONE_ENERGY_MAX, true);
-            scalarObs[scalarObsOffset++] = 1; // is drone alive
+            continuousObsOffset = ENEMY_DRONE_OBS_OFFSET + (e->numDrones - 1) + (processedDrones * ENEMY_DRONE_OBS_SIZE);
+            scalarObs[continuousObsOffset++] = enemyDrone->team == agentDrone->team;
+            scalarObs[continuousObsOffset++] = scaleValue(enemyDroneRelPos.x, MAX_X_POS, false);
+            scalarObs[continuousObsOffset++] = scaleValue(enemyDroneRelPos.y, MAX_Y_POS, false);
+            scalarObs[continuousObsOffset++] = scaleValue(enemyDroneDistance, MAX_DISTANCE, true);
+            scalarObs[continuousObsOffset++] = scaleValue(enemyDrone->velocity.x, MAX_SPEED, false);
+            scalarObs[continuousObsOffset++] = scaleValue(enemyDrone->velocity.y, MAX_SPEED, false);
+            scalarObs[continuousObsOffset++] = scaleValue(enemyDroneAccel.x, MAX_ACCEL, false);
+            scalarObs[continuousObsOffset++] = scaleValue(enemyDroneAccel.y, MAX_ACCEL, false);
+            scalarObs[continuousObsOffset++] = scaleValue(enemyDroneRelNormPos.x, 1.0f, false);
+            scalarObs[continuousObsOffset++] = scaleValue(enemyDroneRelNormPos.y, 1.0f, false);
+            scalarObs[continuousObsOffset++] = scaleValue(enemyDrone->lastAim.x, 1.0f, false);
+            scalarObs[continuousObsOffset++] = scaleValue(enemyDrone->lastAim.y, 1.0f, false);
+            scalarObs[continuousObsOffset++] = scaleValue(enemyDroneAimAngle, PI, false);
+            scalarObs[continuousObsOffset++] = scaleAmmo(e, enemyDrone);
+            scalarObs[continuousObsOffset++] = scaleValue(enemyDrone->weaponCooldown, enemyDrone->weaponInfo->coolDown, true);
+            scalarObs[continuousObsOffset++] = scaleValue(enemyDrone->weaponCharge, enemyDrone->weaponInfo->charge, true);
+            scalarObs[continuousObsOffset++] = scaleValue(enemyDrone->energyLeft, DRONE_ENERGY_MAX, true);
+            scalarObs[continuousObsOffset++] = (float)enemyDrone->energyFullyDepleted;
+            scalarObs[continuousObsOffset++] = enemyDroneBraking;
+            scalarObs[continuousObsOffset++] = scaleValue(enemyDrone->burstCooldown, DRONE_BURST_COOLDOWN, true);
+            scalarObs[continuousObsOffset++] = (float)enemyDrone->chargingBurst;
+            scalarObs[continuousObsOffset++] = scaleValue(enemyDrone->burstCharge, DRONE_ENERGY_MAX, true);
+            scalarObs[continuousObsOffset++] = 1; // is drone alive
 
             processedDrones++;
-            ASSERTF(scalarObsOffset == ENEMY_DRONE_OBS_OFFSET + (e->numDrones - 1) + (processedDrones * (ENEMY_DRONE_OBS_SIZE - 1)), "offset: %d", scalarObsOffset);
+            ASSERTF(continuousObsOffset == ENEMY_DRONE_OBS_OFFSET + (e->numDrones - 1) + (processedDrones * ENEMY_DRONE_OBS_SIZE), "offset: %d", continuousObsOffset);
         }
 
         // compute active drone observations
-        scalarObsOffset = ENEMY_DRONE_OBS_OFFSET + ((e->numDrones - 1) * ENEMY_DRONE_OBS_SIZE);
+        continuousObsOffset = ENEMY_DRONE_OBS_OFFSET + ((e->numDrones - 1) * ENEMY_DRONE_OBS_SIZE);
         const b2Vec2 agentDroneAccel = b2Sub(agentDrone->velocity, agentDrone->lastVelocity);
         float agentDroneBraking = 0.0f;
         if (agentDrone->braking) {
             agentDroneBraking = 1.0f;
         }
 
-        scalarObs[scalarObsOffset++] = agentDrone->weaponInfo->type + 1;
-        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->pos.x, MAX_X_POS, false);
-        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->pos.y, MAX_Y_POS, false);
-        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->velocity.x, MAX_SPEED, false);
-        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->velocity.y, MAX_SPEED, false);
-        scalarObs[scalarObsOffset++] = scaleValue(agentDroneAccel.x, MAX_ACCEL, false);
-        scalarObs[scalarObsOffset++] = scaleValue(agentDroneAccel.y, MAX_ACCEL, false);
-        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->lastAim.x, 1.0f, false);
-        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->lastAim.y, 1.0f, false);
-        scalarObs[scalarObsOffset++] = scaleAmmo(e, agentDrone);
-        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->weaponCooldown, agentDrone->weaponInfo->coolDown, true);
-        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->weaponCharge, agentDrone->weaponInfo->charge, true);
-        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->energyLeft, DRONE_ENERGY_MAX, true);
-        scalarObs[scalarObsOffset++] = (float)agentDrone->energyFullyDepleted;
-        scalarObs[scalarObsOffset++] = agentDroneBraking;
-        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->burstCooldown, DRONE_BURST_COOLDOWN, true);
-        scalarObs[scalarObsOffset++] = (float)agentDrone->chargingBurst;
-        scalarObs[scalarObsOffset++] = scaleValue(agentDrone->burstCharge, DRONE_ENERGY_MAX, true);
-        scalarObs[scalarObsOffset++] = hitShot;
-        scalarObs[scalarObsOffset++] = tookShot;
-        scalarObs[scalarObsOffset++] = agentDrone->stepInfo.ownShotTaken;
+        discreteObsOffset = discreteObsStart + ENEMY_DRONE_WEAPONS_OBS_OFFSET + e->numDrones - 1;
+        e->obs[discreteObsOffset] = agentDrone->weaponInfo->type + 1;
 
-        ASSERTF(scalarObsOffset == ENEMY_DRONE_OBS_OFFSET + ((e->numDrones - 1) * ENEMY_DRONE_OBS_SIZE) + DRONE_OBS_SIZE, "offset: %d", scalarObsOffset);
-        scalarObs[scalarObsOffset] = scaleValue(e->stepsLeft, e->totalSteps, true);
+        scalarObs[continuousObsOffset++] = scaleValue(agentDrone->pos.x, MAX_X_POS, false);
+        scalarObs[continuousObsOffset++] = scaleValue(agentDrone->pos.y, MAX_Y_POS, false);
+        scalarObs[continuousObsOffset++] = scaleValue(agentDrone->velocity.x, MAX_SPEED, false);
+        scalarObs[continuousObsOffset++] = scaleValue(agentDrone->velocity.y, MAX_SPEED, false);
+        scalarObs[continuousObsOffset++] = scaleValue(agentDroneAccel.x, MAX_ACCEL, false);
+        scalarObs[continuousObsOffset++] = scaleValue(agentDroneAccel.y, MAX_ACCEL, false);
+        scalarObs[continuousObsOffset++] = scaleValue(agentDrone->lastAim.x, 1.0f, false);
+        scalarObs[continuousObsOffset++] = scaleValue(agentDrone->lastAim.y, 1.0f, false);
+        scalarObs[continuousObsOffset++] = scaleAmmo(e, agentDrone);
+        scalarObs[continuousObsOffset++] = scaleValue(agentDrone->weaponCooldown, agentDrone->weaponInfo->coolDown, true);
+        scalarObs[continuousObsOffset++] = scaleValue(agentDrone->weaponCharge, agentDrone->weaponInfo->charge, true);
+        scalarObs[continuousObsOffset++] = scaleValue(agentDrone->energyLeft, DRONE_ENERGY_MAX, true);
+        scalarObs[continuousObsOffset++] = (float)agentDrone->energyFullyDepleted;
+        scalarObs[continuousObsOffset++] = agentDroneBraking;
+        scalarObs[continuousObsOffset++] = scaleValue(agentDrone->burstCooldown, DRONE_BURST_COOLDOWN, true);
+        scalarObs[continuousObsOffset++] = (float)agentDrone->chargingBurst;
+        scalarObs[continuousObsOffset++] = scaleValue(agentDrone->burstCharge, DRONE_ENERGY_MAX, true);
+        scalarObs[continuousObsOffset++] = hitShot;
+        scalarObs[continuousObsOffset++] = tookShot;
+        scalarObs[continuousObsOffset++] = agentDrone->stepInfo.ownShotTaken;
+
+        ASSERTF(continuousObsOffset == ENEMY_DRONE_OBS_OFFSET + ((e->numDrones - 1) * ENEMY_DRONE_OBS_SIZE) + DRONE_OBS_SIZE, "offset: %d", continuousObsOffset);
+        scalarObs[continuousObsOffset] = scaleValue(e->stepsLeft, e->totalSteps, true);
     }
 }
 
@@ -574,7 +579,7 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
     e->isTraining = isTraining;
 
     e->obsBytes = obsBytes(e->numDrones);
-    e->mapObsBytes = alignedSize(MAP_OBS_SIZE * sizeof(uint8_t), sizeof(float));
+    e->discreteObsBytes = alignedSize(discreteObsSize(e->numDrones) * sizeof(uint8_t), sizeof(float));
 
     e->obs = obs;
     e->discretizeActions = discretizeActions;

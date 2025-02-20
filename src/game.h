@@ -1755,7 +1755,7 @@ void handleSensorEvents(env *e) {
     }
 }
 
-void findNearWalls(const env *e, droneEntity *drone, nearEntity nearestWalls[], const uint8_t nWalls) {
+void findNearWalls(const env *e, const droneEntity *drone, nearEntity nearestWalls[], const uint8_t nWalls) {
     nearEntity nearWalls[MAX_NEAREST_WALLS];
 
     for (uint8_t i = 0; i < MAX_NEAREST_WALLS; ++i) {
