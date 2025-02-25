@@ -97,6 +97,8 @@ typedef struct wallEntity {
     bool isFloating;
     enum entityType type;
     bool isSuddenDeath;
+
+    entity *ent;
 } wallEntity;
 
 typedef struct weaponInformation {
@@ -166,6 +168,8 @@ typedef struct projectileEntity {
     uint8_t numDronesBehindWalls;
     uint8_t dronesBehindWalls[_MAX_DRONES];
     bool needsToBeDestroyed;
+
+    entity *ent;
 } projectileEntity;
 
 // used to keep track of what happened each step for reward purposes
@@ -230,6 +234,8 @@ typedef struct droneEntity {
     b2Vec2 lastVelocity;
     droneStepInfo stepInfo;
     bool dead;
+
+    entity *ent;
 } droneEntity;
 
 typedef struct logEntry {

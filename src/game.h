@@ -35,17 +35,17 @@ static inline int16_t entityPosToCellIdx(const env *e, const b2Vec2 pos) {
     return cellIdx;
 }
 
-typedef struct overlapCtx {
+typedef struct overlapAABBCtx {
     const enum entityType *type;
     bool overlaps;
-} overlapCtx;
+} overlapAABBCtx;
 
-bool overlapCallback(b2ShapeId shapeID, void *context) {
+bool overlapAABBCallback(b2ShapeId shapeID, void *context) {
     if (!b2Shape_IsValid(shapeID)) {
         return true;
     }
 
-    overlapCtx *ctx = context;
+    overlapAABBCtx *ctx = context;
     if (ctx->type == NULL) {
         ctx->overlaps = true;
         return false;
@@ -71,24 +71,158 @@ bool isOverlappingAABB(const env *e, const b2Vec2 pos, const float distance, con
         .categoryBits = category,
         .maskBits = maskBits,
     };
-    overlapCtx ctx = {.type = type, .overlaps = false};
-    b2World_OverlapAABB(e->worldID, bounds, filter, overlapCallback, &ctx);
+    overlapAABBCtx ctx = {.type = type, .overlaps = false};
+    b2World_OverlapAABB(e->worldID, bounds, filter, overlapAABBCallback, &ctx);
     return ctx.overlaps;
 }
 
-// returns true if the given position overlaps with a circle
-// with shape categories specified in maskBits;
-// if type is set only entities that match a shape category in maskBits *and*
-// that have the entity type specified will be considered
-bool isOverlappingCircle(const env *e, const b2Vec2 pos, const float radius, const enum shapeCategory category, const uint64_t maskBits, const enum entityType *type) {
-    const b2Circle circle = {.center = b2Vec2_zero, .radius = radius};
-    const b2Transform transform = {.p = pos, .q = b2Rot_identity};
+b2ShapeProxy makeDistanceProxyFromType(const enum entityType type, bool *isCircle) {
+    b2ShapeProxy proxy = {0};
+    switch (type) {
+    case DRONE_ENTITY:
+        *isCircle = true;
+        proxy.radius = DRONE_RADIUS;
+        break;
+    case WEAPON_PICKUP_ENTITY:
+        proxy.count = 4;
+        proxy.points[0] = (b2Vec2){.x = -PICKUP_THICKNESS / 2.0f, .y = -PICKUP_THICKNESS / 2.0f};
+        proxy.points[1] = (b2Vec2){.x = -PICKUP_THICKNESS / 2.0f, .y = +PICKUP_THICKNESS / 2.0f};
+        proxy.points[2] = (b2Vec2){.x = +PICKUP_THICKNESS / 2.0f, .y = -PICKUP_THICKNESS / 2.0f};
+        proxy.points[3] = (b2Vec2){.x = +PICKUP_THICKNESS / 2.0f, .y = +PICKUP_THICKNESS / 2.0f};
+        break;
+    case STANDARD_WALL_ENTITY:
+    case BOUNCY_WALL_ENTITY:
+    case DEATH_WALL_ENTITY:
+        proxy.count = 4;
+        proxy.points[0] = (b2Vec2){.x = -FLOATING_WALL_THICKNESS / 2.0f, .y = -FLOATING_WALL_THICKNESS / 2.0f};
+        proxy.points[1] = (b2Vec2){.x = -FLOATING_WALL_THICKNESS / 2.0f, .y = +FLOATING_WALL_THICKNESS / 2.0f};
+        proxy.points[2] = (b2Vec2){.x = +FLOATING_WALL_THICKNESS / 2.0f, .y = -FLOATING_WALL_THICKNESS / 2.0f};
+        proxy.points[3] = (b2Vec2){.x = +FLOATING_WALL_THICKNESS / 2.0f, .y = +FLOATING_WALL_THICKNESS / 2.0f};
+        break;
+    default:
+        ERRORF("unknown entity type for shape distance: %d", type);
+    }
+
+    return proxy;
+}
+
+b2ShapeProxy makeDistanceProxy(const entity *ent, bool *isCircle) {
+    if (ent->type == PROJECTILE_ENTITY) {
+        b2ShapeProxy proxy = {0};
+        const projectileEntity *proj = ent->entity;
+        proxy.radius = proj->weaponInfo->radius;
+        return proxy;
+    }
+
+    return makeDistanceProxyFromType(ent->type, isCircle);
+}
+
+b2Transform entityTransform(const entity *ent) {
+    b2Transform transform;
+    wallEntity *wall;
+    projectileEntity *proj;
+    droneEntity *drone;
+
+    switch (ent->type) {
+    case STANDARD_WALL_ENTITY:
+    case BOUNCY_WALL_ENTITY:
+    case DEATH_WALL_ENTITY:
+        wall = ent->entity;
+        transform.p = wall->pos;
+        transform.q = wall->rot;
+        return transform;
+    case PROJECTILE_ENTITY:
+        proj = ent->entity;
+        transform.p = proj->pos;
+        return transform;
+    case DRONE_ENTITY:
+        drone = ent->entity;
+        transform.p = drone->pos;
+        return transform;
+    default:
+        ERRORF("unknown entity type: %d", ent->type);
+    }
+}
+
+b2DistanceOutput closestPoint(const entity *srcEnt, const entity *dstEnt) {
+    bool isCircle = false;
+    b2DistanceInput input;
+    input.proxyA = makeDistanceProxy(srcEnt, &isCircle);
+    input.proxyB = makeDistanceProxy(dstEnt, &isCircle);
+    input.transformA = entityTransform(srcEnt);
+    input.transformB = entityTransform(dstEnt);
+    input.useRadii = isCircle;
+
+    b2SimplexCache cache = {0};
+    return b2ShapeDistance(&cache, &input, NULL, 0);
+}
+
+typedef struct behindWallContext {
+    const entity *ent;
+    bool hit;
+} behindWallContext;
+
+float entityBehindWallCallback(b2ShapeId shapeID, b2Vec2 point, b2Vec2 normal, float fraction, void *context) {
+    // these are unused but required by the b2CastResultFcn callback prototype
+    MAYBE_UNUSED(point);
+    MAYBE_UNUSED(normal);
+    MAYBE_UNUSED(fraction);
+
+    behindWallContext *ctx = context;
+    const entity *ent = b2Shape_GetUserData(shapeID);
+    if (ent == ctx->ent) {
+        return -1;
+    }
+    ctx->hit = true;
+    return 0;
+}
+
+bool entityBehindWall(const env *e, const b2Vec2 startPos, const b2Vec2 endPos, const entity *srcEnt) {
+    const b2Vec2 rayDirection = b2Normalize(b2Sub(endPos, startPos));
+    const float rayDistance = b2Distance(startPos, endPos);
+    const b2Vec2 rayEnd = b2MulAdd(endPos, rayDistance, rayDirection);
+    const b2Vec2 translation = b2Sub(rayEnd, startPos);
+    const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE};
+
+    behindWallContext ctx = {.ent = srcEnt, .hit = false};
+    b2World_CastRay(e->worldID, startPos, translation, filter, entityBehindWallCallback, &ctx);
+    return ctx.hit;
+}
+
+typedef struct overlapCircleCtx {
+    const env *e;
+    entity *ent;
+    bool overlaps;
+} overlapCircleCtx;
+
+bool droneInMineProximityCallback(b2ShapeId shapeID, void *context) {
+    if (!b2Shape_IsValid(shapeID)) {
+        return true;
+    }
+
+    overlapCircleCtx *ctx = context;
+    const entity *overlappingEnt = b2Shape_GetUserData(shapeID);
+    const b2DistanceOutput output = closestPoint(ctx->ent, overlappingEnt);
+    const bool behind = entityBehindWall(ctx->e, output.pointA, output.pointB, ctx->ent);
+    if (!behind) {
+        ctx->overlaps = true;
+    } else {
+        projectileEntity *proj = ctx->ent->entity;
+        droneEntity *drone = overlappingEnt->entity;
+        proj->dronesBehindWalls[proj->numDronesBehindWalls++] = drone->idx;
+    }
+    return behind;
+}
+
+bool droneInitiallyInMineProximity(const env *e, projectileEntity *projectile) {
+    const b2Circle circle = {.center = b2Vec2_zero, .radius = MINE_LAUNCHER_PROXIMITY_RADIUS};
+    const b2Transform transform = {.p = projectile->pos, .q = b2Rot_identity};
     b2QueryFilter filter = {
-        .categoryBits = category,
-        .maskBits = maskBits,
+        .categoryBits = PROJECTILE_SHAPE,
+        .maskBits = DRONE_SHAPE,
     };
-    overlapCtx ctx = {.type = type, .overlaps = false};
-    b2World_OverlapCircle(e->worldID, &circle, transform, filter, overlapCallback, &ctx);
+    overlapCircleCtx ctx = {.e = e, .ent = projectile->ent, .overlaps = false};
+    b2World_OverlapCircle(e->worldID, &circle, transform, filter, droneInMineProximityCallback, &ctx);
     return ctx.overlaps;
 }
 
@@ -218,6 +352,7 @@ entity *createWall(const env *e, const b2Vec2 pos, const float width, const floa
     ent->type = type;
     ent->entity = wall;
 
+    wall->ent = ent;
     wallShapeDef.userData = ent;
     const b2Polygon wallPolygon = b2MakeBox(extent.x, extent.y);
     wall->shapeID = b2CreatePolygonShape(wallBodyID, &wallShapeDef, &wallPolygon);
@@ -366,7 +501,19 @@ void createDrone(env *e, const uint8_t idx) {
     b2BodyDef droneBodyDef = b2DefaultBodyDef();
     droneBodyDef.type = b2_dynamicBody;
 
-    if (!findOpenPos(e, DRONE_SHAPE, &droneBodyDef.position, -1)) {
+    int8_t spawnQuad = -1;
+    if (!e->isTraining) {
+        // spawn drones in diagonal quadrants from each other so that
+        // they're more likely to be further apart if we're not training;
+        // doing this while training will result in much slower learning
+        // due to drones starting much farther apart
+        int8_t spawnQuad = 3 - e->lastSpawnQuad;
+        if (e->lastSpawnQuad == -1) {
+            spawnQuad = randInt(&e->randState, 0, 3);
+            e->lastSpawnQuad = spawnQuad;
+        }
+    }
+    if (!findOpenPos(e, DRONE_SHAPE, &droneBodyDef.position, spawnQuad)) {
         ERROR("no open position for drone");
     }
 
@@ -403,6 +550,7 @@ void createDrone(env *e, const uint8_t idx) {
     ent->type = DRONE_ENTITY;
     ent->entity = drone;
 
+    drone->ent = ent;
     droneShapeDef.userData = ent;
     drone->shapeID = b2CreateCircleShape(droneBodyID, &droneShapeDef, &droneCircle);
     b2Body_SetUserData(drone->bodyID, ent);
@@ -519,6 +667,7 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     ent->type = PROJECTILE_ENTITY;
     ent->entity = projectile;
 
+    projectile->ent = ent;
     b2Body_SetUserData(projectile->bodyID, ent);
     b2Shape_SetUserData(projectile->shapeID, ent);
 
@@ -535,47 +684,6 @@ float computeHitStrength(const droneEntity *hitDrone) {
     const float prevSpeed = b2Length(hitDrone->lastVelocity);
     const float curSpeed = b2Length(hitDrone->velocity);
     return fabsf(curSpeed - prevSpeed) / MAX_SPEED;
-}
-
-b2ShapeProxy makeDistanceProxyFromType(const enum entityType type, bool *isCircle) {
-    b2ShapeProxy proxy = {0};
-    switch (type) {
-    case DRONE_ENTITY:
-        *isCircle = true;
-        proxy.radius = DRONE_RADIUS;
-        break;
-    case WEAPON_PICKUP_ENTITY:
-        proxy.count = 4;
-        proxy.points[0] = (b2Vec2){.x = -PICKUP_THICKNESS / 2.0f, .y = -PICKUP_THICKNESS / 2.0f};
-        proxy.points[1] = (b2Vec2){.x = -PICKUP_THICKNESS / 2.0f, .y = +PICKUP_THICKNESS / 2.0f};
-        proxy.points[2] = (b2Vec2){.x = +PICKUP_THICKNESS / 2.0f, .y = -PICKUP_THICKNESS / 2.0f};
-        proxy.points[3] = (b2Vec2){.x = +PICKUP_THICKNESS / 2.0f, .y = +PICKUP_THICKNESS / 2.0f};
-        break;
-    case STANDARD_WALL_ENTITY:
-    case BOUNCY_WALL_ENTITY:
-    case DEATH_WALL_ENTITY:
-        proxy.count = 4;
-        proxy.points[0] = (b2Vec2){.x = -FLOATING_WALL_THICKNESS / 2.0f, .y = -FLOATING_WALL_THICKNESS / 2.0f};
-        proxy.points[1] = (b2Vec2){.x = -FLOATING_WALL_THICKNESS / 2.0f, .y = +FLOATING_WALL_THICKNESS / 2.0f};
-        proxy.points[2] = (b2Vec2){.x = +FLOATING_WALL_THICKNESS / 2.0f, .y = -FLOATING_WALL_THICKNESS / 2.0f};
-        proxy.points[3] = (b2Vec2){.x = +FLOATING_WALL_THICKNESS / 2.0f, .y = +FLOATING_WALL_THICKNESS / 2.0f};
-        break;
-    default:
-        ERRORF("unknown entity type for shape distance: %d", type);
-    }
-
-    return proxy;
-}
-
-b2ShapeProxy makeDistanceProxy(const entity *ent, bool *isCircle) {
-    if (ent->type == PROJECTILE_ENTITY) {
-        b2ShapeProxy proxy = {0};
-        const projectileEntity *proj = ent->entity;
-        proxy.radius = proj->weaponInfo->radius;
-        return proxy;
-    }
-
-    return makeDistanceProxyFromType(ent->type, isCircle);
 }
 
 // simplified and copied from box2d/src/shape.c
@@ -632,16 +740,6 @@ void createProjectileExplosion(env *e, projectileEntity *projectile, const bool 
     const enum cc_stat res = cc_array_remove_fast(e->explodingProjectiles, projectile, NULL);
     MAYBE_UNUSED(res);
     ASSERT(res == CC_OK);
-}
-
-bool entityBehindWall(const env *e, const b2Vec2 startPos, const b2Vec2 endPos) {
-    const b2Vec2 rayDirection = b2Normalize(b2Sub(endPos, startPos));
-    const float rayDistance = b2Distance(startPos, endPos);
-    const b2Vec2 rayEnd = b2MulAdd(endPos, rayDistance, rayDirection);
-    const b2Vec2 translation = b2Sub(rayEnd, startPos);
-    const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE};
-    const b2RayResult rayRes = b2World_CastRayClosest(e->worldID, startPos, translation, filter);
-    return rayRes.hit;
 }
 
 typedef struct explosionCtx {
@@ -722,11 +820,6 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
         ERRORF("invalid entity type %d to explode", entity->type);
     }
 
-    // don't explode the entity if it's behind a static wall
-    if (entityBehindWall(ctx->e, ctx->def->position, transform.p)) {
-        return true;
-    }
-
     // find the closest point from the entity to the explosion center
     const b2BodyId bodyID = b2Shape_GetBody(shapeID);
     ASSERT(b2Body_IsValid(bodyID));
@@ -744,6 +837,11 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
     // don't consider falloff for static walls so burst pushback isn't as
     // surprising to players
     if (output.distance > ctx->def->radius + ctx->def->falloff || (isStaticWall && output.distance > ctx->def->radius)) {
+        return true;
+    }
+
+    // don't explode the entity if it's behind a static wall
+    if (!isStaticWall && entityBehindWall(ctx->e, ctx->def->position, output.pointA, entity)) {
         return true;
     }
 
@@ -792,9 +890,8 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
         parentSpeed *= b2Dot(direction, parentDirection);
     }
     // don't change the direction of the explosion if this is a burst
-    // hitting a projectile or static wall to make deflecting and movement
-    // more predictable
-    if (!ctx->isBurst || (entity->type != PROJECTILE_ENTITY && !isStaticWall)) {
+    // hitting a projectile or static wall to make it more predictable
+    if (!ctx->isBurst) {
         direction = b2Normalize(b2Add(direction, parentDirection));
     }
 
@@ -1330,12 +1427,17 @@ void projectilesStep(env *e) {
         const float distance = b2Distance(projectile->pos, projectile->lastPos);
         projectile->distance += distance;
 
+        // if a drone is in a set mine's sensor range but behind a wall,
+        // we need to check until the drone leaves the sensor range if
+        // it's not behind the wall anymore as we normally only check if
+        // we need to explode the mine when a drone touches the sensor
         if (projectile->numDronesBehindWalls != 0) {
             bool destroyed = false;
             for (uint8_t i = 0; i < projectile->numDronesBehindWalls; i++) {
                 const uint8_t droneIdx = projectile->dronesBehindWalls[i];
                 const droneEntity *drone = safe_array_get_at(e->drones, droneIdx);
-                if (entityBehindWall(e, projectile->pos, drone->pos)) {
+                const b2DistanceOutput output = closestPoint(projectile->ent, drone->ent);
+                if (entityBehindWall(e, output.pointA, output.pointB, NULL)) {
                     continue;
                 }
 
@@ -1549,7 +1651,7 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
         } else if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON && projectile->speed != 0.0f) {
             // if the mine is in explosion proximity of a drone now,
             // destroy it
-            if (isOverlappingCircle(e, projectile->pos, MINE_LAUNCHER_PROXIMITY_RADIUS, PROJECTILE_SHAPE, DRONE_SHAPE, NULL)) {
+            if (droneInitiallyInMineProximity(e, projectile)) {
                 destroyProjectile(e, projectile, true, true);
                 destroyExplodedProjectiles(e);
                 return 1;
@@ -1759,8 +1861,9 @@ void handleProjectileBeginTouch(env *e, const entity *sensor, const entity *visi
         }
 
         ASSERT(visitor->type == DRONE_ENTITY);
-        const droneEntity *drone = visitor->entity;
-        if (entityBehindWall(e, projectile->pos, drone->pos)) {
+        const b2DistanceOutput output = closestPoint(sensor, visitor);
+        if (entityBehindWall(e, output.pointA, output.pointB, NULL)) {
+            const droneEntity *drone = visitor->entity;
             projectile->dronesBehindWalls[projectile->numDronesBehindWalls++] = drone->idx;
             return;
         }
