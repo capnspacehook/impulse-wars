@@ -2,7 +2,7 @@
 #include "render.h"
 
 int main(void) {
-    const int NUM_DRONES = 4;
+    const int NUM_DRONES = 2;
 
     env *e = fastCalloc(1, sizeof(env));
 

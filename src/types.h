@@ -163,6 +163,8 @@ typedef struct projectileEntity {
     uint8_t bounces;
     uint8_t contacts;
     bool setMine;
+    uint8_t numDronesBehindWalls;
+    uint8_t dronesBehindWalls[_MAX_DRONES];
     bool needsToBeDestroyed;
 } projectileEntity;
 
