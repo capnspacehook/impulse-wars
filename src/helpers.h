@@ -88,7 +88,7 @@
 #define RAD2DEG (180.0f / PI)
 #endif
 
-#define INV_MASS(density, radius) (1.0f / (density * PI * radius * radius))
+#define INV_MASS(density, radius) (1.0f / ((density) * PI * (radius) * (radius)))
 
 #define ASSERT_VEC_BOUNDED(vec)                  \
     ASSERTF(vec.x <= 1.0f, "vec.x: %f", vec.x);  \

@@ -9,8 +9,8 @@ const uint8_t TWO_BIT_MASK = 0x3;
 
 // general settings
 const uint8_t TRAINING_ACTIONS_PER_SECOND = 10;
-const uint8_t TRAINING_FRAME_RATE = TRAINING_ACTIONS_PER_SECOND;
-const uint8_t TRAINING_BOX2D_SUBSTEPS = 1;
+const uint8_t TRAINING_FRAME_RATE = 30;
+const uint8_t TRAINING_BOX2D_SUBSTEPS = 2;
 
 const uint8_t EVAL_FRAME_RATE = 120;
 const uint8_t EVAL_BOX2D_SUBSTEPS = 4;
@@ -245,7 +245,7 @@ const float WEAPON_DISCARD_COST = 0.2f;
 #define IMPLODER_FIRE_MAGNITUDE 60.0f
 #define IMPLODER_DAMPING 0.0f
 #define IMPLODER_CHARGE 2.0f
-#define IMPLODER_COOL_DOWN 0.0f
+#define IMPLODER_COOL_DOWN 1.5f
 #define IMPLODER_MAX_DISTANCE INFINITE
 #define IMPLODER_RADIUS 0.8f
 #define IMPLODER_DENSITY 1.0f
@@ -259,13 +259,13 @@ const float WEAPON_DISCARD_COST = 0.2f;
 #define ACCELERATOR_FIRE_MAGNITUDE 35.0f
 #define ACCELERATOR_DAMPING 0.0f
 #define ACCELERATOR_CHARGE 0.0f
-#define ACCELERATOR_COOL_DOWN 0.0f
+#define ACCELERATOR_COOL_DOWN 2.0f
 #define ACCELERATOR_MAX_DISTANCE INFINITE
 #define ACCELERATOR_RADIUS 0.5f
 #define ACCELERATOR_DENSITY 2.0f
 #define ACCELERATOR_INV_MASS INV_MASS(ACCELERATOR_DENSITY, ACCELERATOR_RADIUS)
 #define ACCELERATOR_BOUNCE 100
-#define ACCELERATOR_BOUNCE_SPEED_COEF 1.05f
+#define ACCELERATOR_BOUNCE_SPEED_COEF 1.07f
 #define ACCELERATOR_MAX_SPEED 500.f
 #define ACCELERATOR_SPAWN_WEIGHT 1.0f
 
@@ -614,12 +614,12 @@ void weaponExplosion(const enum weaponType type, b2ExplosionDef *explosionDef) {
     case IMPLODER_WEAPON:
         explosionDef->radius = 10.0f;
         explosionDef->falloff = 5.0f;
-        explosionDef->impulsePerLength = -150.0f;
+        explosionDef->impulsePerLength = -125.0f;
         return;
     case FLAK_CANNON_WEAPON:
         explosionDef->radius = 5.0;
         explosionDef->falloff = 2.5f;
-        explosionDef->impulsePerLength = 45.0f;
+        explosionDef->impulsePerLength = 10.0f;
         return;
     case MINE_LAUNCHER_WEAPON:
         explosionDef->radius = 12.5f;

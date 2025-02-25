@@ -8,7 +8,7 @@
 
 // these functions call each other so need to be forward declared
 void destroyProjectile(env *e, projectileEntity *projectile, const bool processExplosions, const bool full);
-void createExplosion(env *e, droneEntity *drone, const enum weaponType *type, const b2ExplosionDef *def);
+void createExplosion(env *e, droneEntity *drone, const projectileEntity *projectile, const b2ExplosionDef *def);
 
 static inline bool entityTypeIsWall(const enum entityType type) {
     // walls are the first 3 entity types
@@ -193,6 +193,7 @@ entity *createWall(const env *e, const b2Vec2 pos, const float width, const floa
     if (floating) {
         wallShapeDef.filter.categoryBits = FLOATING_WALL_SHAPE;
         wallShapeDef.filter.maskBits |= WALL_SHAPE | WEAPON_PICKUP_SHAPE;
+        wallShapeDef.enableSensorEvents = true;
     }
 
     if (type == BOUNCY_WALL_ENTITY) {
@@ -386,20 +387,7 @@ void createDrone(env *e, const uint8_t idx) {
     drone->bodyID = droneBodyID;
     drone->weaponInfo = e->defaultWeapon;
     drone->ammo = weaponAmmo(e->defaultWeapon->type, drone->weaponInfo->type);
-    drone->weaponCooldown = 0.0f;
-    drone->heat = 0;
-    drone->chargingWeapon = false;
-    drone->weaponCharge = 0.0f;
     drone->energyLeft = DRONE_ENERGY_MAX;
-    drone->braking = false;
-    drone->chargingBurst = false;
-    drone->burstCharge = 0.0f;
-    drone->burstCooldown = 0.0f;
-    drone->energyFullyDepleted = false;
-    drone->energyFullyDepletedThisStep = false;
-    drone->energyRefillWait = 0.0f;
-    drone->shotThisStep = false;
-    drone->diedThisStep = false;
     drone->idx = idx;
     drone->team = idx;
     if (e->teamsEnabled) {
@@ -408,12 +396,7 @@ void createDrone(env *e, const uint8_t idx) {
     drone->initalPos = droneBodyDef.position;
     drone->pos = droneBodyDef.position;
     drone->mapCellIdx = entityPosToCellIdx(e, droneBodyDef.position);
-    drone->lastPos = b2Vec2_zero;
-    drone->lastMove = b2Vec2_zero;
     drone->lastAim = (b2Vec2){.x = 0.0f, .y = -1.0f};
-    drone->velocity = b2Vec2_zero;
-    drone->lastVelocity = b2Vec2_zero;
-    drone->dead = false;
     memset(&drone->stepInfo, 0x0, sizeof(droneStepInfo));
 
     entity *ent = fastCalloc(1, sizeof(entity));
@@ -505,7 +488,6 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     b2ShapeDef projectileShapeDef = b2DefaultShapeDef();
     projectileShapeDef.enableContactEvents = true;
     projectileShapeDef.density = drone->weaponInfo->density;
-    projectileShapeDef.friction = 0.0f;
     projectileShapeDef.restitution = 1.0f;
     projectileShapeDef.filter.categoryBits = PROJECTILE_SHAPE;
     projectileShapeDef.filter.maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE;
@@ -531,11 +513,6 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     projectile->velocity = b2Body_GetLinearVelocity(projectileBodyID);
     projectile->speed = b2Length(projectile->velocity);
     projectile->lastSpeed = projectile->speed;
-    projectile->distance = 0.0f;
-    projectile->bounces = 0;
-    projectile->inContact = false;
-    projectile->setMine = false;
-    projectile->needsToBeDestroyed = false;
     cc_array_add(e->projectiles, projectile);
 
     entity *ent = fastCalloc(1, sizeof(entity));
@@ -638,7 +615,7 @@ void createProjectileExplosion(env *e, projectileEntity *projectile, const bool 
     explosion.position = projectile->pos;
     explosion.maskBits = FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE;
     droneEntity *parentDrone = safe_array_get_at(e->drones, projectile->droneIdx);
-    createExplosion(e, parentDrone, &projectile->weaponInfo->type, &explosion);
+    createExplosion(e, parentDrone, projectile, &explosion);
 
     if (e->client != NULL) {
         explosionInfo *explInfo = fastCalloc(1, sizeof(explosionInfo));
@@ -661,7 +638,7 @@ typedef struct explosionCtx {
     env *e;
     const bool isBurst;
     droneEntity *parentDrone;
-    const enum weaponType *weaponType;
+    const projectileEntity *projectile;
     const b2ExplosionDef *def;
 } explosionCtx;
 
@@ -679,17 +656,23 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
     wallEntity *wall = NULL;
     projectileEntity *projectile = NULL;
 
-    // the explosion shouldn't affect the parent drone if this is a burst
-    if (entity->type == DRONE_ENTITY) {
+    if (entity->type == PROJECTILE_ENTITY) {
+        // don't explode the parent projectile
+        projectile = entity->entity;
+        if (ctx->projectile != NULL && ctx->projectile == projectile) {
+            return true;
+        }
+    } else if (entity->type == DRONE_ENTITY) {
         drone = entity->entity;
+        // the explosion shouldn't affect the parent drone if this is a burst
         if (drone->idx == ctx->parentDrone->idx) {
             if (ctx->isBurst) {
                 return true;
             }
 
             drone->stepInfo.ownShotTaken = true;
-            ctx->e->stats[drone->idx].ownShotsTaken[*ctx->weaponType]++;
-            DEBUG_LOGF("drone %d hit itself with explosion from weapon %d", drone->idx, *ctx->weaponType);
+            ctx->e->stats[drone->idx].ownShotsTaken[ctx->projectile->weaponInfo->type]++;
+            DEBUG_LOGF("drone %d hit itself with explosion from weapon %d", drone->idx, ctx->projectile->weaponInfo->type);
         }
         ctx->parentDrone->stepInfo.explosionHit[drone->idx] = true;
         if (ctx->isBurst) {
@@ -697,12 +680,13 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
             ctx->e->stats[ctx->parentDrone->idx].burstsHit++;
             DEBUG_LOGF("drone %d hit by burst from drone %d", drone->idx, ctx->parentDrone->idx);
         } else {
-            DEBUG_LOGF("drone %d hit drone %d with explosion from weapon %d", ctx->parentDrone->idx, drone->idx, *ctx->weaponType);
-            ctx->e->stats[ctx->parentDrone->idx].shotsHit[*ctx->weaponType]++;
-            DEBUG_LOGF("drone %d hit by explosion from weapon %d from drone %d", drone->idx, *ctx->weaponType, ctx->parentDrone->idx);
+            DEBUG_LOGF("drone %d hit drone %d with explosion from weapon %d", ctx->parentDrone->idx, drone->idx, ctx->projectile->weaponInfo->type);
+            ctx->e->stats[ctx->parentDrone->idx].shotsHit[ctx->projectile->weaponInfo->type]++;
+            DEBUG_LOGF("drone %d hit by explosion from weapon %d from drone %d", drone->idx, ctx->projectile->weaponInfo->type, ctx->parentDrone->idx);
         }
         drone->stepInfo.explosionTaken[ctx->parentDrone->idx] = true;
     }
+
     bool isStaticWall = false;
     bool isFloatingWall = false;
     if (entityTypeIsWall(entity->type)) {
@@ -742,6 +726,13 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
     } else {
         direction = b2Normalize(b2Sub(closestPoint, ctx->def->position));
     }
+    // if the direction is zero, the magnitude cannot be calculated
+    // correctly so set the direction randomly
+    if (b2VecEqual(direction, b2Vec2_zero)) {
+        direction.x = randFloat(&ctx->e->randState, -1.0f, 1.0f);
+        direction.y = randFloat(&ctx->e->randState, -1.0f, 1.0f);
+        direction = b2Normalize(direction);
+    }
 
     b2Vec2 localLine = b2InvRotateVector(transform.q, b2LeftPerp(direction));
     float perimeter = getShapeProjectedPerimeter(shapeID, localLine);
@@ -751,7 +742,29 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
         scale = clamp((ctx->def->radius + ctx->def->falloff - output.distance) / ctx->def->falloff);
     }
 
-    float magnitude = (ctx->def->impulsePerLength + b2Length(ctx->parentDrone->lastVelocity)) * perimeter * scale;
+    // the parent drone or projecile's velocity affects the direction
+    // and magnitude of the explosion
+    float parentSpeed;
+    b2Vec2 parentDirection;
+    if (ctx->projectile != NULL) {
+        parentSpeed = b2Length(ctx->projectile->velocity);
+        if (ctx->def->impulsePerLength < 0.0f) {
+            parentSpeed *= -1.0f;
+        }
+        parentDirection = b2Normalize(ctx->projectile->velocity);
+    } else {
+        parentSpeed = b2Length(ctx->parentDrone->lastVelocity);
+        parentDirection = b2Normalize(ctx->parentDrone->lastVelocity);
+    }
+    parentSpeed *= b2Dot(direction, parentDirection);
+    // don't change the direction of the explosion if this is a burst
+    // hitting a projectile or static wall to make deflecting and movement
+    // more predictable
+    if (!ctx->isBurst || (entity->type != PROJECTILE_ENTITY && !isStaticWall)) {
+        direction = b2Normalize(b2Add(direction, parentDirection));
+    }
+
+    float magnitude = (ctx->def->impulsePerLength + parentSpeed) * perimeter * scale;
     if (isStaticWall) {
         // reduce the magnitude when pushing a drone away from a wall
         magnitude = log2f(magnitude) * 7.5f;
@@ -773,7 +786,6 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
             }
             break;
         case PROJECTILE_ENTITY:
-            projectile = entity->entity;
             // mine launcher projectiles explode when caught in another
             // explosion, explode this mine only once
             if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON && ctx->def->impulsePerLength > 0.0f) {
@@ -781,9 +793,18 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
                 break;
             }
 
-            projectile->velocity = b2Body_GetLinearVelocity(projectile->bodyID);
-            projectile->lastSpeed = projectile->speed;
-            projectile->speed = b2Length(projectile->velocity);
+            // ensure projectiles don't slow down
+            b2Vec2 newVel = b2Body_GetLinearVelocity(projectile->bodyID);
+            float newSpeed = b2Length(newVel);
+            if (newSpeed < projectile->lastSpeed) {
+                newSpeed = projectile->lastSpeed;
+                newVel = b2MulSV(newSpeed, b2Normalize(newVel));
+                b2Body_SetLinearVelocity(projectile->bodyID, newVel);
+            }
+
+            projectile->velocity = newVel;
+            projectile->lastSpeed = newSpeed;
+            projectile->speed = newSpeed;
             break;
         case DRONE_ENTITY:
             drone->lastVelocity = drone->velocity;
@@ -804,7 +825,7 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
     return true;
 }
 
-void createExplosion(env *e, droneEntity *drone, const enum weaponType *type, const b2ExplosionDef *def) {
+void createExplosion(env *e, droneEntity *drone, const projectileEntity *projectile, const b2ExplosionDef *def) {
     const float fullRadius = def->radius + def->falloff;
     b2AABB aabb = {
         .lowerBound.x = def->position.x - fullRadius,
@@ -819,9 +840,9 @@ void createExplosion(env *e, droneEntity *drone, const enum weaponType *type, co
 
     explosionCtx ctx = {
         .e = e,
-        .isBurst = type == NULL,
+        .isBurst = projectile == NULL,
         .parentDrone = drone,
-        .weaponType = type,
+        .projectile = projectile,
         .def = def,
     };
     b2World_OverlapAABB(e->worldID, aabb, filter, explodeCallback, &ctx);
@@ -1021,7 +1042,7 @@ void droneMove(droneEntity *drone, b2Vec2 direction) {
         direction = b2MulSV(0.5f, direction);
         drone->lastMove = direction;
     }
-    b2Vec2 force = b2MulSV(DRONE_MOVE_MAGNITUDE, direction);
+    const b2Vec2 force = b2MulSV(DRONE_MOVE_MAGNITUDE, direction);
     b2Body_ApplyForceToCenter(drone->bodyID, force, true);
 }
 
@@ -1344,6 +1365,7 @@ void handleBodyMoveEvents(env *e) {
             continue;
         }
         ASSERT(b2IsValidVec2(event->transform.p));
+        const b2Vec2 newPos = event->transform.p;
         entity *ent = event->userData;
         if (ent == NULL) {
             continue;
@@ -1360,43 +1382,47 @@ void handleBodyMoveEvents(env *e) {
         case BOUNCY_WALL_ENTITY:
         case DEATH_WALL_ENTITY:
             wall = ent->entity;
-            wall->pos = event->transform.p;
-            wall->mapCellIdx = entityPosToCellIdx(e, wall->pos);
+            wall->mapCellIdx = entityPosToCellIdx(e, newPos);
             if (wall->mapCellIdx == -1) {
-                DEBUG_LOGF("invalid position for floating wall: (%f, %f) destroying", wall->pos.x, wall->pos.y);
+                DEBUG_LOGF("invalid position for floating wall: (%f, %f) destroying", newPos.x, newPos.y);
                 cc_array_remove_fast(e->floatingWalls, wall, NULL);
                 destroyWall(e, wall, false);
                 continue;
             }
+            wall->pos = newPos;
             wall->rot = event->transform.q;
             wall->velocity = b2Body_GetLinearVelocity(wall->bodyID);
             break;
         case PROJECTILE_ENTITY:
             proj = ent->entity;
-            proj->lastPos = proj->pos;
-            proj->pos = event->transform.p;
-            proj->mapCellIdx = entityPosToCellIdx(e, proj->pos);
+            proj->mapCellIdx = entityPosToCellIdx(e, newPos);
             if (proj->mapCellIdx == -1) {
-                DEBUG_LOGF("invalid position for projectile: (%f, %f) destroying", proj->pos.x, proj->pos.y);
+                DEBUG_LOGF("invalid position for projectile: (%f, %f) destroying", newPos.x, newPos.y);
                 destroyProjectile(e, proj, false, true);
                 continue;
             }
+            proj->lastPos = proj->pos;
+            proj->pos = newPos;
             proj->velocity = b2Body_GetLinearVelocity(proj->bodyID);
-            if (proj->weaponInfo->damping != 0.0f && !proj->inContact) {
+            // if the projectile doesn't have damping its speed will
+            // only change when colliding with a dynamic body or getting
+            // hit by an explosion, and if it's currently colliding with
+            // something we don't care about the current speed
+            if (proj->weaponInfo->damping != 0.0f && proj->contacts == 0) {
                 proj->lastSpeed = proj->speed;
                 proj->speed = b2Length(proj->velocity);
             }
             break;
         case DRONE_ENTITY:
             drone = ent->entity;
-            drone->lastPos = drone->pos;
-            drone->pos = event->transform.p;
-            drone->mapCellIdx = entityPosToCellIdx(e, drone->pos);
+            drone->mapCellIdx = entityPosToCellIdx(e, newPos);
             if (drone->mapCellIdx == -1) {
-                DEBUG_LOGF("invalid position for drone: (%f, %f) killing it", drone->pos.x, drone->pos.y);
+                DEBUG_LOGF("invalid position for drone: (%f, %f) killing it", newPos.x, newPos.y);
                 killDrone(e, drone);
                 continue;
             }
+            drone->lastPos = drone->pos;
+            drone->pos = newPos;
             drone->lastVelocity = drone->velocity;
             drone->velocity = b2Body_GetLinearVelocity(drone->bodyID);
             break;
@@ -1410,7 +1436,7 @@ void handleBodyMoveEvents(env *e) {
 // times, and update drone stats if a drone was hit
 uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *ent, const b2Manifold *manifold, const bool projIsShapeA) {
     projectileEntity *projectile = proj->entity;
-    projectile->inContact = true;
+    projectile->contacts++;
 
     // e (shape B in the collision) will be NULL if it's another
     // projectile that was just destroyed
@@ -1491,6 +1517,7 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
                 jointDef.localAnchorB = manifold->points[0].anchorA;
             }
             b2CreateWeldJoint(e->worldID, &jointDef);
+            projectile->velocity = b2Vec2_zero;
             projectile->setMine = true;
         }
     }
@@ -1507,7 +1534,7 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
 // ensure speed is maintained when a projectile hits a dynamic body
 void handleProjectileEndContact(const entity *proj, const entity *ent) {
     projectileEntity *projectile = proj->entity;
-    projectile->inContact = false;
+    projectile->contacts--;
 
     // mines stick to walls, explode when hitting another projectile
     // and are destroyed when hitting a drone so no matter what we don't
@@ -1517,37 +1544,43 @@ void handleProjectileEndContact(const entity *proj, const entity *ent) {
     }
 
     if (ent != NULL) {
-        if (entityTypeIsWall(ent->type)) {
-            // if the projectile hit a wall it's speed won't be changed,
-            // nothing to do
-            return;
-        } else if (ent->type == PROJECTILE_ENTITY) {
+        if (ent->type == PROJECTILE_ENTITY) {
             const projectileEntity *projectile2 = ent->entity;
-            // allow projectile speeds to change when two different
-            // projectiles collide
+            // allow projectile speeds to increase when two different
+            // projectile types collide
             if (projectile->weaponInfo->type != projectile2->weaponInfo->type) {
-                projectile->velocity = b2Body_GetLinearVelocity(projectile->bodyID);
-                projectile->speed = b2Length(projectile->velocity);
-                projectile->lastSpeed = projectile->speed;
+                b2Vec2 newVel = b2Body_GetLinearVelocity(projectile->bodyID);
+                float newSpeed = b2Length(newVel);
+                if (newSpeed < projectile->lastSpeed) {
+                    newSpeed = projectile->lastSpeed;
+                    newVel = b2MulSV(newSpeed, b2Normalize(newVel));
+                    b2Body_SetLinearVelocity(projectile->bodyID, newVel);
+                }
+                projectile->velocity = newVel;
+                projectile->speed = newSpeed;
+                projectile->lastSpeed = newSpeed;
                 return;
             }
         }
     }
 
-    float speed = projectile->lastSpeed;
+    // the last speed is used here instead of the current speed because
+    // the current speed will be the speed box2d set the projectile to
+    // after a collision and we want to keep the speed consistent
+    float newSpeed = projectile->lastSpeed;
     if (projectile->weaponInfo->type == ACCELERATOR_WEAPON) {
-        speed = fminf(projectile->lastSpeed * ACCELERATOR_BOUNCE_SPEED_COEF, ACCELERATOR_MAX_SPEED);
-        projectile->speed = speed;
+        newSpeed = fminf(projectile->lastSpeed * ACCELERATOR_BOUNCE_SPEED_COEF, ACCELERATOR_MAX_SPEED);
+        projectile->speed = newSpeed;
     }
 
     // ensure the projectile's speed doesn't change after bouncing off
     // something
-    const b2Vec2 velocity = b2Body_GetLinearVelocity(projectile->bodyID);
-    const b2Vec2 newVel = b2MulSV(speed, b2Normalize(velocity));
+    b2Vec2 newVel = b2Body_GetLinearVelocity(projectile->bodyID);
+    newVel = b2MulSV(newSpeed, b2Normalize(newVel));
     b2Body_SetLinearVelocity(projectile->bodyID, newVel);
     projectile->velocity = newVel;
-    projectile->speed = b2Length(newVel);
-    projectile->lastSpeed = speed;
+    projectile->speed = newSpeed;
+    projectile->lastSpeed = newSpeed;
 }
 
 void handleContactEvents(env *e) {

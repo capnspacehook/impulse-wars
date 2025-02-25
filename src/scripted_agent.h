@@ -400,7 +400,7 @@ agentActions scriptedAgentActions(env *e, droneEntity *drone) {
             continue;
         }
         droneEntity *otherDrone = safe_array_get_at(e->drones, i);
-        if (otherDrone->dead) {
+        if (otherDrone->dead || otherDrone->team == drone->team) {
             continue;
         }
         const float distanceSquared = b2DistanceSquared(otherDrone->pos, drone->pos);

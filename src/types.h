@@ -161,7 +161,7 @@ typedef struct projectileEntity {
     float lastSpeed;
     float distance;
     uint8_t bounces;
-    bool inContact;
+    uint8_t contacts;
     bool setMine;
     bool needsToBeDestroyed;
 } projectileEntity;
