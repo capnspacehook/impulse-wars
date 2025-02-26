@@ -2,6 +2,7 @@ RELEASE_PYTHON_MODULE_DIR := python-module-release
 DEBUG_PYTHON_MODULE_DIR := python-module-debug
 DEBUG_DIR := debug-demo
 RELEASE_DIR := release-demo
+RELEASE_WEB_DIR := release-demo-web
 BENCHMARK_DIR := benchmark
 
 DEBUG_BUILD_TYPE := Debug
@@ -39,7 +40,15 @@ release-demo:
 	cmake -GNinja -DCMAKE_BUILD_TYPE=$(RELEASE_BUILD_TYPE) -DBUILD_DEMO=true .. && \
 	cmake --build .
 
-# build C benchmark 
+# build C demo in release mode for web
+.PHONY: release-demo-web
+release-demo-web:
+	@mkdir -p $(RELEASE_WEB_DIR)
+	@cd $(RELEASE_WEB_DIR) && \
+	emcmake cmake -GNinja -DCMAKE_BUILD_TYPE=$(RELEASE_BUILD_TYPE) -DPLATFORM=Web -DBUILD_DEMO=true .. && \
+	cmake --build .
+
+# build C benchmark
 .PHONY: benchmark
 benchmark:
 	@mkdir -p $(BENCHMARK_DIR)

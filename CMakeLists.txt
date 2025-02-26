@@ -8,7 +8,7 @@ project(
 	LANGUAGES C
 )
 
-message(INFO " C Compiler: ${CMAKE_C_COMPILER} ${CMAKE_C_COMPILER_VERSION}")
+message(INFO " C Compiler: ${CMAKE_C_COMPILER} ${CMAKE_C_COMPILER_VERSION} ${CMAKE_C_COMPILER_ID}")
 
 # use ccache if available to speed up subsequent builds
 find_program(CCACHE_FOUND "ccache")
@@ -43,10 +43,22 @@ if(CMAKE_BUILD_TYPE MATCHES Debug)
 		add_link_options("-fuse-ld=mold")
 	endif()
 else()
-	add_compile_options("-flto" "-march=native" "-fno-math-errno")
+	add_compile_options("-flto" "-fno-math-errno")
+	if (NOT DEFINED EMSCRIPTEN)
+		# emscripten doesn't support -march=native, it doesn't make sense
+		# for WASM anyway
+		add_compile_options("-march=native")
+	else()
+		# tell emscripten to generate an HTML file that can be used to
+		# test the WASM, and ensure necessary code is transformed to be
+		# async friendly; it allows the game to be run much more smoothly
+		set(CMAKE_EXECUTABLE_SUFFIX ".html")
+		add_link_options("-sASYNCIFY")
+	endif()
 	# ensure the linker used is from the same compiler toolchain, or else
-	# link time optimization will probably fail
-	if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+	# link time optimization will probably fail; if we're using
+	# emscripten it will use it's own linker
+	if(CMAKE_C_COMPILER_ID MATCHES "Clang" AND NOT DEFINED EMSCRIPTEN)
 		add_link_options("-fuse-ld=lld")
 	endif()
 endif()

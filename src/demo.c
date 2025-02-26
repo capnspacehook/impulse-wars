@@ -1,8 +1,15 @@
 #include "env.h"
 #include "render.h"
 
+#ifdef __EMSCRIPTEN__
+void emscriptenStep(void *e) {
+    stepEnv((env *)e);
+    return;
+}
+#endif
+
 int main(void) {
-    const int NUM_DRONES = 2;
+    const int NUM_DRONES = 4;
 
     env *e = fastCalloc(1, sizeof(env));
 
@@ -20,11 +27,15 @@ int main(void) {
     rayClient *client = createRayClient();
     e->client = client;
 
-    initEnv(e, NUM_DRONES, NUM_DRONES, obs, true, contActions, discActions, rewards, masks, terminals, truncations, logs, -1, time(NULL), false, false, false);
+    initEnv(e, NUM_DRONES, 0, obs, true, contActions, discActions, rewards, masks, terminals, truncations, logs, -1, time(NULL), false, false, false);
     initMaps(e);
     setupEnv(e);
     e->humanInput = true;
 
+#ifdef __EMSCRIPTEN__
+    lastFrameTime = emscripten_get_now();
+    emscripten_set_main_loop_arg(emscriptenStep, e, 0, true);
+#else
     while (true) {
         if (WindowShouldClose()) {
             destroyEnv(e);
@@ -44,4 +55,5 @@ int main(void) {
 
         stepEnv(e);
     }
+#endif
 }

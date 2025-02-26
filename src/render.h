@@ -41,12 +41,16 @@ static inline b2Vec2 rayVecToB2Vec(const env *e, const Vector2 v) {
 rayClient *createRayClient() {
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(DEFAULT_WIDTH, DEFAULT_HEIGHT, "Impulse Wars");
-    const int monitor = GetCurrentMonitor();
 
     rayClient *client = fastCalloc(1, sizeof(rayClient));
 
     if (client->height == 0) {
+#ifndef __EMSCRIPTEN__
+        const int monitor = GetCurrentMonitor();
         client->height = GetMonitorHeight(monitor) - HEIGHT_LEEWAY;
+#else
+        client->height = DEFAULT_HEIGHT;
+#endif
     }
     if (client->width == 0) {
         client->width = ((float)client->height * ((float)DEFAULT_WIDTH / (float)DEFAULT_HEIGHT));
@@ -58,7 +62,9 @@ rayClient *createRayClient() {
 
     SetWindowSize(client->width, client->height);
 
+#ifndef __EMSCRIPTEN__
     SetTargetFPS(EVAL_FRAME_RATE);
+#endif
 
     return client;
 }
@@ -495,7 +501,9 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
     BeginDrawing();
 
     ClearBackground(BLACK);
+#ifndef __EMSCRIPTEN__
     DrawFPS(e->renderScale, e->renderScale);
+#endif
 
     renderUI(e, starting, ending, winner, winningTeam);
 
@@ -556,15 +564,22 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
     EndDrawing();
 }
 
+void renderWait(env *e, const bool starting, const bool ending, const int8_t winner, const int8_t winningTeam, const float time) {
+#ifdef __EMSCRIPTEN__
+    _renderEnv(e, starting, ending, winner, winningTeam);
+    emscripten_sleep(time * 1000.0);
+#else
+    for (uint16_t i = 0; i < (uint16_t)(time * e->frameRate); i++) {
+        _renderEnv(e, starting, ending, winner, winningTeam);
+    }
+#endif
+}
+
 void renderEnv(env *e, const bool starting, const bool ending, const int8_t winner, const int8_t winningTeam) {
     if (starting) {
-        for (uint16_t i = 0; i < (uint16_t)(START_READY_TIME * e->frameRate); i++) {
-            _renderEnv(e, starting, ending, winner, winningTeam);
-        }
+        renderWait(e, starting, ending, winner, winningTeam, START_READY_TIME);
     } else if (ending) {
-        for (uint16_t i = 0; i < (uint16_t)(END_WAIT_TIME * e->frameRate); i++) {
-            _renderEnv(e, starting, ending, winner, winningTeam);
-        }
+        renderWait(e, starting, ending, winner, winningTeam, END_WAIT_TIME);
     } else {
         _renderEnv(e, starting, ending, winner, winningTeam);
     }

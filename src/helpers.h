@@ -106,8 +106,9 @@
     } while (0)
 
 // use malloc when debugging so the address sanitizer can find issues with
-// heap memory, use dlmalloc in release mode for performance
-#ifndef NDEBUG
+// heap memory, use dlmalloc in release mode for performance; emscripten
+// uses dlmalloc by default so no need to change anything here
+#if !defined(NDEBUG) || defined(__EMSCRIPTEN__)
 #define fastMalloc(size) malloc(size)
 #define fastCalloc(nmemb, size) calloc(nmemb, size)
 #define fastFree(ptr) free(ptr)
