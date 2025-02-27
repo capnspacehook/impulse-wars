@@ -1086,9 +1086,9 @@ void stepEnv(env *e) {
         // running at a fixed frame rate doesn't seem to work well in
         // the browser, so we need to adjust to handle a variable frame
         // rate; see https://www.gafferongames.com/post/fix_your_timestep/
-        const double time = emscripten_get_now();
-        const double deltaTime = (time - lastFrameTime) / 1000.0;
-        lastFrameTime = time;
+        const double curTime = emscripten_get_now();
+        const double deltaTime = (curTime - lastFrameTime) / 1000.0;
+        lastFrameTime = curTime;
 
         accumulator += deltaTime;
         while (accumulator >= e->deltaTime) {
@@ -1153,9 +1153,9 @@ void stepEnv(env *e) {
             handleSensorEvents(e);
 
             // handle sudden death
-            e->stepsLeft = fmaxf(e->stepsLeft - 1, 0.0f);
-            if (e->numDrones == e->numAgents && e->stepsLeft == 0) {
-                e->suddenDeathSteps = fmaxf(e->suddenDeathSteps - 1, 0.0f);
+            e->stepsLeft = max(e->stepsLeft - 1, 0);
+            if ((!e->isTraining || e->numDrones == e->numAgents) && e->stepsLeft == 0) {
+                e->suddenDeathSteps = max(e->suddenDeathSteps - 1, 0);
                 if (e->suddenDeathSteps == 0) {
                     DEBUG_LOG("placing sudden death walls");
                     handleSuddenDeath(e);

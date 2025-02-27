@@ -108,6 +108,7 @@ b2ShapeProxy makeDistanceProxyFromType(const enum entityType type, bool *isCircl
 
 b2ShapeProxy makeDistanceProxy(const entity *ent, bool *isCircle) {
     if (ent->type == PROJECTILE_ENTITY) {
+        *isCircle = true;
         b2ShapeProxy proxy = {0};
         const projectileEntity *proj = ent->entity;
         proxy.radius = proj->weaponInfo->radius;
@@ -178,9 +179,14 @@ float entityBehindWallCallback(b2ShapeId shapeID, b2Vec2 point, b2Vec2 normal, f
 }
 
 bool entityBehindWall(const env *e, const b2Vec2 startPos, const b2Vec2 endPos, const entity *srcEnt) {
-    const b2Vec2 rayDirection = b2Normalize(b2Sub(endPos, startPos));
     const float rayDistance = b2Distance(startPos, endPos);
-    const b2Vec2 rayEnd = b2MulAdd(endPos, rayDistance, rayDirection);
+    // if the two points are extremely close we can safely assume the
+    // entity is not behind a wall
+    if (rayDistance <= 1.0f) {
+        return false;
+    }
+    const b2Vec2 rayDirection = b2Normalize(b2Sub(endPos, startPos));
+    const b2Vec2 rayEnd = b2MulAdd(startPos, rayDistance, rayDirection);
     const b2Vec2 translation = b2Sub(rayEnd, startPos);
     const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE};
 
@@ -771,7 +777,7 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
     case PROJECTILE_ENTITY:
         // don't explode the parent projectile
         projectile = entity->entity;
-        if (ctx->projectile != NULL && ctx->projectile == projectile) {
+        if (ctx->projectile != NULL && (ctx->projectile == projectile || projectile->needsToBeDestroyed)) {
             return true;
         }
         transform.p = projectile->pos;
