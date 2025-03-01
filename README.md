@@ -9,8 +9,7 @@ A C reinforcement learning environment that is very closely based off of the gam
 - move: left stick
 - aim: right stick
 - shoot: right bottom trigger
-- light brake: left bottom trigger
-- hard brake: left top trigger
+- brake: left bottom trigger
 - burst: right top trigger or bottom face button
     - hold to charge and release to burst
 - discard weapon: left face button
@@ -20,7 +19,7 @@ A C reinforcement learning environment that is very closely based off of the gam
 - move: WASD
 - aim: mouse pointer
 - shoot: left mouse button
-- light brake: spacebar
+- brake: spacebar
 - burst: right mouse button
     - hold to charge and release to burst
 
