@@ -57,7 +57,7 @@ class ImpulseWars(pufferlib.PufferEnv):
         human_control: bool = False,
         seed: int = 0,
         render: bool = False,
-        report_interval: int = 16,
+        report_interval: int = 64,
         buf=None,
     ):
         if num_drones > maxDrones() or num_drones <= 0:

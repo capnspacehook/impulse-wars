@@ -126,7 +126,7 @@ class Policy(nn.Module):
         mapObs = obs[:, : self.obsInfo.mapObsSize].reshape((batchSize, -1, 1))
         # unpack wall types, weapon pickup types, and drone indexes
         mapObs = (mapObs & self.unpackMask) >> self.unpackShift
-        # reshape to 3D map
+        # reshape so channels are first, required for torch conv2d
         return mapObs.permute(0, 2, 1).reshape(
             (batchSize, 4, self.obsInfo.mapObsRows, self.obsInfo.mapObsColumns)
         )

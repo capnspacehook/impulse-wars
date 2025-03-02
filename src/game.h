@@ -178,7 +178,7 @@ float entityBehindWallCallback(b2ShapeId shapeID, b2Vec2 point, b2Vec2 normal, f
     return 0;
 }
 
-bool entityBehindWall(const env *e, const b2Vec2 startPos, const b2Vec2 endPos, const entity *srcEnt) {
+bool entityBehindWall(const env *e, const b2Vec2 startPos, const b2Vec2 endPos, const entity *srcEnt, const bool checkFloatingWalls) {
     const float rayDistance = b2Distance(startPos, endPos);
     // if the two points are extremely close we can safely assume the
     // entity is not behind a wall
@@ -188,7 +188,10 @@ bool entityBehindWall(const env *e, const b2Vec2 startPos, const b2Vec2 endPos, 
     const b2Vec2 rayDirection = b2Normalize(b2Sub(endPos, startPos));
     const b2Vec2 rayEnd = b2MulAdd(startPos, rayDistance, rayDirection);
     const b2Vec2 translation = b2Sub(rayEnd, startPos);
-    const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE};
+    b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE};
+    if (checkFloatingWalls) {
+        filter.maskBits |= FLOATING_WALL_SHAPE;
+    }
 
     behindWallContext ctx = {.ent = srcEnt, .hit = false};
     b2World_CastRay(e->worldID, startPos, translation, filter, entityBehindWallCallback, &ctx);
@@ -209,7 +212,7 @@ bool droneInMineProximityCallback(b2ShapeId shapeID, void *context) {
     overlapCircleCtx *ctx = context;
     const entity *overlappingEnt = b2Shape_GetUserData(shapeID);
     const b2DistanceOutput output = closestPoint(ctx->ent, overlappingEnt);
-    const bool behind = entityBehindWall(ctx->e, output.pointA, output.pointB, ctx->ent);
+    const bool behind = entityBehindWall(ctx->e, output.pointA, output.pointB, ctx->ent, true);
     if (!behind) {
         ctx->overlaps = true;
     } else {
@@ -846,8 +849,10 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
         return true;
     }
 
-    // don't explode the entity if it's behind a static wall
-    if (!isStaticWall && entityBehindWall(ctx->e, ctx->def->position, output.pointA, entity)) {
+    // don't explode the entity if it's behind a static or floating wall,
+    // but always consider floating walls for implosions
+    const bool isImplosion = ctx->def->impulsePerLength < 0.0f;
+    if (!isStaticWall && entityBehindWall(ctx->e, ctx->def->position, output.pointA, entity, !isImplosion)) {
         return true;
     }
 
@@ -880,7 +885,7 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
     b2Vec2 parentDirection;
     if (ctx->projectile != NULL) {
         parentSpeed = b2Length(ctx->projectile->velocity);
-        if (ctx->def->impulsePerLength < 0.0f) {
+        if (isImplosion) {
             parentSpeed *= -1.0f;
         }
         parentDirection = b2Normalize(ctx->projectile->velocity);
@@ -1443,7 +1448,7 @@ void projectilesStep(env *e) {
                 const uint8_t droneIdx = projectile->dronesBehindWalls[i];
                 const droneEntity *drone = safe_array_get_at(e->drones, droneIdx);
                 const b2DistanceOutput output = closestPoint(projectile->ent, drone->ent);
-                if (entityBehindWall(e, output.pointA, output.pointB, NULL)) {
+                if (entityBehindWall(e, output.pointA, output.pointB, NULL, true)) {
                     continue;
                 }
 
@@ -1668,7 +1673,8 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
             wallEntity *wall = ent->entity;
             ASSERT(manifold->pointCount == 1);
 
-            // disable fixed rotation so floating walls mines are attached to can rotate
+            // disable fixed rotation so floating walls that mines are
+            // attached to can rotate
             b2Body_SetFixedRotation(projectile->bodyID, false);
 
             b2WeldJointDef jointDef = b2DefaultWeldJointDef();
@@ -1868,7 +1874,7 @@ void handleProjectileBeginTouch(env *e, const entity *sensor, const entity *visi
 
         ASSERT(visitor->type == DRONE_ENTITY);
         const b2DistanceOutput output = closestPoint(sensor, visitor);
-        if (entityBehindWall(e, output.pointA, output.pointB, NULL)) {
+        if (entityBehindWall(e, output.pointA, output.pointB, NULL, true)) {
             const droneEntity *drone = visitor->entity;
             projectile->dronesBehindWalls[projectile->numDronesBehindWalls++] = drone->idx;
             return;
