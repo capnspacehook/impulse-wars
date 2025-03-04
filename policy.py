@@ -29,9 +29,11 @@ class Policy(nn.Module):
     def __init__(
         self,
         env: pufferlib.PufferEnv,
+        batchSize: int,
         numDrones: int,
         discretizeActions: bool = False,
         isTraining: bool = True,
+        device: str = "cuda",
     ):
         super().__init__()
 
@@ -40,6 +42,20 @@ class Policy(nn.Module):
         self.numDrones = numDrones
         self.isTraining = isTraining
         self.obsInfo = obsConstants(numDrones)
+
+        self.discreteFactors = np.array(
+            [self.obsInfo.wallTypes] * self.obsInfo.numNearWallObs
+            + [self.obsInfo.wallTypes + 1] * self.obsInfo.numFloatingWallObs
+            + [self.numDrones + 1] * self.obsInfo.numProjectileObs,
+        )
+        discreteOffsets = th.tensor([0] + list(np.cumsum(self.discreteFactors)[:-1]), device="cuda").view(
+            1, -1
+        )
+        self.register_buffer("discreteOffsets", discreteOffsets, persistent=False)
+        self.discreteMultihotDim = self.discreteFactors.sum()
+
+        multihotBuffer = th.zeros(65355, self.discreteMultihotDim, device="cuda")
+        self.register_buffer("multihotOutput", multihotBuffer, persistent=False)
 
         # most of the observation is a 2D array of bytes, but the end
         # contains around 200 floats; this allows us to treat the end
@@ -155,23 +171,12 @@ class Policy(nn.Module):
         map = self.mapCNN(mapObs)
 
         # process discrete observations
-        nearWallTypeObs = obs[
-            :, self.obsInfo.nearWallTypesObsOffset : self.obsInfo.floatingWallTypesObsOffset
-        ].long()
-        nearWallTypes = one_hot(nearWallTypeObs, self.obsInfo.wallTypes).float()
-        nearWallTypes = th.flatten(nearWallTypes, start_dim=1, end_dim=-1)
-
-        floatingWallTypeObs = obs[
-            :, self.obsInfo.floatingWallTypesObsOffset : self.obsInfo.projectileDroneObsOffset
-        ].long()
-        floatingWallTypes = one_hot(floatingWallTypeObs, self.obsInfo.wallTypes + 1).float()
-        floatingWallTypes = th.flatten(floatingWallTypes, start_dim=1, end_dim=-1)
-
-        projDroneIdxObs = obs[
-            :, self.obsInfo.projectileDroneObsOffset : self.obsInfo.projectileTypesObsOffset
-        ].long()
-        projDroneIdxes = one_hot(projDroneIdxObs, self.numDrones + 1).float()
-        projDroneIdxes = th.flatten(projDroneIdxes, start_dim=1, end_dim=-1)
+        multihotInput = (
+            obs[:, self.obsInfo.nearWallTypesObsOffset : self.obsInfo.projectileTypesObsOffset]
+            + self.discreteOffsets
+        )
+        multihotOutput = self.multihotOutput[:batchSize].zero_()
+        multihotOutput.scatter_(1, multihotInput.long(), 1)
 
         weaponTypeObs = obs[:, self.obsInfo.projectileTypesObsOffset : self.obsInfo.discreteObsSize].int()
         weaponTypes = self.weaponTypeEmbedding(weaponTypeObs).float()
@@ -181,9 +186,7 @@ class Policy(nn.Module):
         continuousObs = nativize_tensor(obs[:, self.obsInfo.continuousObsOffset :], self.dtype)
 
         # combine all observations and feed through final linear encoder
-        features = th.cat(
-            (map, nearWallTypes, floatingWallTypes, projDroneIdxes, weaponTypes, continuousObs), dim=-1
-        )
+        features = th.cat((map, multihotOutput, weaponTypes, continuousObs), dim=-1)
 
         return self.encoder(features), None
 

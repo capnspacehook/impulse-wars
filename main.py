@@ -24,7 +24,14 @@ from impulse_wars import ImpulseWars
 
 def make_policy(env, config, isTraining: bool):
     """Make the policy for the environment"""
-    policy = Policy(env, config.num_drones, config.discretize_actions, isTraining)
+    policy = Policy(
+        env,
+        config.train.minibatch_size,
+        config.env.num_drones,
+        config.env.discretize_actions,
+        isTraining,
+        config.train.device,
+    )
     policy = Recurrent(env, policy)
     return pufferlib.cleanrl.RecurrentPolicy(policy)
 
@@ -65,7 +72,7 @@ def train(args) -> Deque[Dict[str, Any]] | None:
         vecenv.reset()
 
     if args.model_path is None:
-        policy = make_policy(vecenv.driver_env, args.env, True).to(args.train.device)
+        policy = make_policy(vecenv.driver_env, args, True).to(args.train.device)
     else:
         policy = th.load(args.model_path, map_location=args.train.device)
 
@@ -273,7 +280,7 @@ if __name__ == "__main__":
         )
 
         if args.model_path is None:
-            policy = make_policy(vecenv, args.env, False).to(args.train.device)
+            policy = make_policy(vecenv, args, False).to(args.train.device)
         else:
             policy = th.load(args.model_path, map_location=args.train.device)
             policy.policy.policy.isTraining = False
