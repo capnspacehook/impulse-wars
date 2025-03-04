@@ -48,13 +48,13 @@ class Policy(nn.Module):
             + [self.obsInfo.wallTypes + 1] * self.obsInfo.numFloatingWallObs
             + [self.numDrones + 1] * self.obsInfo.numProjectileObs,
         )
-        discreteOffsets = th.tensor([0] + list(np.cumsum(self.discreteFactors)[:-1]), device="cuda").view(
+        discreteOffsets = th.tensor([0] + list(np.cumsum(self.discreteFactors)[:-1]), device=device).view(
             1, -1
         )
         self.register_buffer("discreteOffsets", discreteOffsets, persistent=False)
         self.discreteMultihotDim = self.discreteFactors.sum()
 
-        multihotBuffer = th.zeros(65355, self.discreteMultihotDim, device="cuda")
+        multihotBuffer = th.zeros(batchSize, self.discreteMultihotDim, device=device)
         self.register_buffer("multihotOutput", multihotBuffer, persistent=False)
 
         # most of the observation is a 2D array of bytes, but the end
@@ -136,7 +136,6 @@ class Policy(nn.Module):
         actions, value = self.decode_actions(hidden)
         return actions, value
 
-    @th.compiler.disable
     def unpack(self, batchSize: int, obs: th.Tensor) -> th.Tensor:
         # prepare map obs to be unpacked
         mapObs = obs[:, : self.obsInfo.mapObsSize].reshape((batchSize, -1, 1))
