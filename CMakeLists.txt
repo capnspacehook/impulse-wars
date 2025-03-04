@@ -82,7 +82,7 @@ FetchContent_MakeAvailable(raylib)
 # maybe due to install prefix schenanigans?
 FetchContent_Declare(
 	box2d
-	URL https://github.com/capnspacehook/box2d/archive/refs/heads/char_round1.zip
+	URL https://github.com/capnspacehook/box2d/archive/d671b7248107a38544bde12d94ebcdf9ec0a04f8.zip
 )
 set(BOX2D_ENABLE_SIMD ON CACHE BOOL "Enable SIMD math (faster)" FORCE)
 set(BOX2D_AVX2 ON CACHE BOOL "Enable AVX2 (faster)" FORCE)

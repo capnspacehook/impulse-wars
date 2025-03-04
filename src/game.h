@@ -185,9 +185,7 @@ bool entityBehindWall(const env *e, const b2Vec2 startPos, const b2Vec2 endPos, 
     if (rayDistance <= 1.0f) {
         return false;
     }
-    const b2Vec2 rayDirection = b2Normalize(b2Sub(endPos, startPos));
-    const b2Vec2 rayEnd = b2MulAdd(startPos, rayDistance, rayDirection);
-    const b2Vec2 translation = b2Sub(rayEnd, startPos);
+    const b2Vec2 translation = b2Sub(endPos, startPos);
     b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE};
     if (checkFloatingWalls) {
         filter.maskBits |= FLOATING_WALL_SHAPE;
@@ -871,7 +869,11 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
         direction = b2Normalize(direction);
     }
 
-    b2Vec2 localLine = b2InvRotateVector(transform.q, b2LeftPerp(direction));
+    b2Vec2 localLine = b2Vec2_zero;
+    if (entityTypeIsWall(entity->type)) {
+        // the localLine isn't used in perimeter calculations for circles
+        localLine = b2InvRotateVector(transform.q, b2LeftPerp(direction));
+    }
     float perimeter = getShapeProjectedPerimeter(shapeID, localLine);
     float scale = 1.0f;
     // ignore falloff for projectiles to avoid slowing them down to a crawl
