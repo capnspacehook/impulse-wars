@@ -2,6 +2,7 @@
 #define IMPULSE_WARS_TYPES_H
 
 #include "box2d/box2d.h"
+#include "raylib.h"
 
 #include "include/cc_array.h"
 
@@ -10,6 +11,10 @@
 #define _MAX_DRONES 4
 
 const uint8_t NUM_WALL_TYPES = 3;
+
+#define MAX_TRAIL_POINTS 20
+#define MAX_DRONE_TRAIL_POINTS 20
+#define MAX_PROJECTLE_TRAIL_POINTS 10
 
 enum entityType {
     STANDARD_WALL_ENTITY,
@@ -147,6 +152,11 @@ typedef struct weaponPickupEntity {
 
 typedef struct droneEntity droneEntity;
 
+typedef struct trailPoints {
+    Vector2 points[MAX_TRAIL_POINTS];
+    uint8_t length;
+} trailPoints;
+
 typedef struct projectileEntity {
     uint8_t droneIdx;
 
@@ -170,6 +180,8 @@ typedef struct projectileEntity {
     bool needsToBeDestroyed;
 
     entity *ent;
+
+    trailPoints trailPoints;
 } projectileEntity;
 
 // used to keep track of what happened each step for reward purposes
@@ -234,6 +246,8 @@ typedef struct droneEntity {
     b2Vec2 lastVelocity;
     droneStepInfo stepInfo;
     bool dead;
+
+    trailPoints trailPoints;
 
     entity *ent;
 } droneEntity;

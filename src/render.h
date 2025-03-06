@@ -1,7 +1,7 @@
 #ifndef IMPULSE_WARS_RENDER_H
 #define IMPULSE_WARS_RENDER_H
 
-#include "raylib.h"
+#include "raymath.h"
 
 #include "env.h"
 #include "helpers.h"
@@ -22,6 +22,10 @@ const float halfDroneRadius = DRONE_RADIUS / 2.0f;
 const float aimGuideHeight = 0.3f * DRONE_RADIUS;
 const float chargedAimGuideHeight = DRONE_RADIUS;
 
+const float wallLinePercent = 0.9f;
+
+const float sqrt2 = 1.414213562f;
+
 static inline float b2XToRayX(const env *e, const float x) {
     return e->client->halfWidth + (x * e->renderScale);
 }
@@ -36,6 +40,19 @@ static inline Vector2 b2VecToRayVec(const env *e, const b2Vec2 v) {
 
 static inline b2Vec2 rayVecToB2Vec(const env *e, const Vector2 v) {
     return (b2Vec2){.x = (v.x - e->client->halfWidth) / e->renderScale, .y = ((v.y - e->client->halfHeight - (2 * e->renderScale)) / e->renderScale)};
+}
+
+void updateTrailPoints(const env *e, trailPoints *tp, const uint8_t maxLen, const b2Vec2 pos) {
+    const Vector2 v = b2VecToRayVec(e, pos);
+    if (tp->length < maxLen) {
+        tp->points[tp->length++] = v;
+        return;
+    }
+
+    for (uint8_t i = 0; i < maxLen - 1; i++) {
+        tp->points[i] = tp->points[i + 1];
+    }
+    tp->points[maxLen - 1] = v;
 }
 
 rayClient *createRayClient() {
@@ -223,21 +240,22 @@ void renderUI(const env *e, const bool starting, const bool ending, const int8_t
 }
 
 void renderBrakeTrails(const env *e, const bool ending) {
+    const float maxLifetime = 3.0f * e->frameRate;
+    const float radius = 0.3f * e->renderScale;
+
     CC_ArrayIter brakeTrailIter;
     cc_array_iter_init(&brakeTrailIter, e->brakeTrailPoints);
     brakeTrailPoint *trailPoint;
     while (cc_array_iter_next(&brakeTrailIter, (void **)&trailPoint) != CC_ITER_END) {
         if (trailPoint->lifetime == UINT16_MAX) {
-            trailPoint->lifetime = 3.0f * e->frameRate;
+            trailPoint->lifetime = maxLifetime;
         } else if (trailPoint->lifetime == 0) {
             fastFree(trailPoint);
             cc_array_iter_remove(&brakeTrailIter, NULL);
             continue;
         }
 
-        Color trailColor = GRAY;
-        trailColor.a = 32.0f * (trailPoint->lifetime / (3.0f * e->frameRate));
-        float radius = 0.3f * e->renderScale;
+        Color trailColor = Fade(GRAY, 0.133f * (trailPoint->lifetime / maxLifetime));
         DrawCircleV(b2VecToRayVec(e, trailPoint->pos), radius, trailColor);
         if (!ending) {
             trailPoint->lifetime--;
@@ -280,12 +298,15 @@ void renderEmptyCell(const env *e, const b2Vec2 emptyCell, const size_t idx) {
         .width = WALL_THICKNESS * e->renderScale,
         .height = WALL_THICKNESS * e->renderScale,
     };
-    DrawRectangleLinesEx(rec, e->renderScale / 20.0f, RAYWHITE);
+    DrawRectangleLinesEx(rec, e->renderScale / 20.0f, Fade(GRAY, 0.25f));
 
-    const int bufferSize = 4;
-    char idxStr[bufferSize];
-    snprintf(idxStr, bufferSize, "%zu", idx);
-    DrawText(idxStr, rec.x, rec.y, 1.5f * e->renderScale, WHITE);
+    MAYBE_UNUSED(idx);
+    // used for debugging
+    //
+    // const int bufferSize = 4;
+    // char idxStr[bufferSize];
+    // snprintf(idxStr, bufferSize, "%zu", idx);
+    // DrawText(idxStr, rec.x, rec.y, 1.5f * e->renderScale, WHITE);
 }
 
 void renderWall(const env *e, const wallEntity *wall) {
@@ -320,9 +341,11 @@ void renderWall(const env *e, const wallEntity *wall) {
     }
 
     DrawRectanglePro(rec, origin, angle, color);
-    // rec.x -= wall->extent.x * scale;
-    // rec.y -= wall->extent.y * scale;
-    // DrawRectangleLinesEx(rec, scale / 20.0f, WHITE);
+    origin.x *= wallLinePercent;
+    origin.y *= wallLinePercent;
+    rec.width *= wallLinePercent;
+    rec.height *= wallLinePercent;
+    DrawRectanglePro(rec, origin, angle, BLACK);
 }
 
 void renderWeaponPickup(const env *e, const weaponPickupEntity *pickup) {
@@ -421,9 +444,45 @@ void renderDroneGuides(const env *e, droneEntity *drone, const uint8_t droneIdx)
     DrawRectanglePro(aimGuide, (Vector2){.x = 0.0f, .y = (aimGuideHeight / 2.0f) * e->renderScale}, aimAngle, droneColor);
 }
 
+void renderDroneTrail(const env *e, const droneEntity *drone, Color droneColor) {
+    if (drone->trailPoints.length < 2) {
+        return; // Need at least two points to form a trail.
+    }
+
+    const float trailWidth = e->renderScale * DRONE_RADIUS;
+    const float numPoints = drone->trailPoints.length;
+
+    for (uint8_t i = 0; i < drone->trailPoints.length - 1; i++) {
+        const Vector2 p0 = drone->trailPoints.points[i];
+        const Vector2 p1 = drone->trailPoints.points[i + 1];
+
+        // Compute direction and a perpendicular vector.
+        Vector2 segment = Vector2Subtract(p1, p0);
+        if (Vector2Length(segment) == 0) {
+            continue; // Avoid division by zero.
+        }
+        segment = Vector2Normalize(segment);
+        const Vector2 perp = {-segment.y, segment.x};
+
+        // Compute four vertices for the quad segment.
+        const Vector2 v0 = Vector2Add(p0, Vector2Scale(perp, trailWidth));
+        const Vector2 v1 = Vector2Subtract(p0, Vector2Scale(perp, trailWidth));
+        const Vector2 v2 = Vector2Add(p1, Vector2Scale(perp, trailWidth));
+        const Vector2 v3 = Vector2Subtract(p1, Vector2Scale(perp, trailWidth));
+
+        // Draw the quad as two triangles.
+        const float alpha0 = 0.5f * ((float)(i + 1) / numPoints);
+        const float alpha1 = 0.5f * ((float)(i + 2) / numPoints);
+        DrawTriangle(v0, v2, v1, Fade(droneColor, alpha0));
+        DrawTriangle(v1, v2, v3, Fade(droneColor, alpha1));
+    }
+}
+
 void renderDrone(const env *e, const droneEntity *drone, const int droneIdx) {
     const Vector2 raylibPos = b2VecToRayVec(e, drone->pos);
-    DrawCircleV(raylibPos, DRONE_RADIUS * e->renderScale, getDroneColor(droneIdx));
+    const Color droneColor = getDroneColor(droneIdx);
+    renderDroneTrail(e, drone, droneColor);
+    DrawCircleV(raylibPos, DRONE_RADIUS * e->renderScale, droneColor);
     DrawCircleV(raylibPos, DRONE_RADIUS * 0.8f * e->renderScale, BLACK);
 }
 
@@ -488,12 +547,52 @@ void renderDroneUI(const env *e, const droneEntity *drone) {
     DrawRectanglePro(fillRec, origin, 0.0f, RAYWHITE);
 }
 
-// TODO: render projectile trails, different colors for different weapons
+void renderProjectileTrail(const env *e, const projectileEntity *proj, const Color color) {
+    if (proj->trailPoints.length < 2) {
+        return; // need at least two points
+    }
+
+    const float maxWidth = e->renderScale * proj->weaponInfo->radius;
+    const float numPoints = proj->trailPoints.length;
+
+    for (uint8_t i = 0; i < proj->trailPoints.length - 1; i++) {
+        const Vector2 p0 = proj->trailPoints.points[i];
+        const Vector2 p1 = proj->trailPoints.points[i + 1];
+
+        // Compute a perpendicular vector for the segment
+        Vector2 dir = Vector2Subtract(p1, p0);
+        if (Vector2Length(dir) == 0) {
+            continue; // Avoid division by zero
+        }
+        dir = Vector2Normalize(dir);
+        const Vector2 perp = {-dir.y, dir.x};
+
+        // Compute widths for the start and end of the segment.
+        // Taper so that older segments are narrower.
+        const float taper0 = (float)(i + 1) / numPoints;
+        const float taper1 = (float)(i + 2) / numPoints;
+        const float width0 = maxWidth * taper0;
+        const float width1 = maxWidth * taper1;
+
+        // Calculate two vertices on each side of the segment.
+        const Vector2 v0 = Vector2Add(p0, Vector2Scale(perp, width0));
+        const Vector2 v1 = Vector2Subtract(p0, Vector2Scale(perp, width0));
+        const Vector2 v2 = Vector2Add(p1, Vector2Scale(perp, width1));
+        const Vector2 v3 = Vector2Subtract(p1, Vector2Scale(perp, width1));
+
+        // Draw two triangles for the quad and fade the color with distance so older parts are more transparent.
+        DrawTriangle(v0, v2, v1, Fade(color, taper0));
+        DrawTriangle(v1, v2, v3, Fade(color, taper1));
+    }
+}
+
 void renderProjectiles(env *e) {
     for (size_t i = 0; i < cc_array_size(e->projectiles); i++) {
         projectileEntity *projectile = safe_array_get_at(e->projectiles, i);
-        const Color projectileColor = getProjectileColor(projectile->weaponInfo->type);
-        DrawCircleV(b2VecToRayVec(e, projectile->pos), e->renderScale * projectile->weaponInfo->radius, projectileColor);
+
+        const Color color = getProjectileColor(projectile->weaponInfo->type);
+        renderProjectileTrail(e, projectile, color);
+        DrawCircleV(b2VecToRayVec(e, projectile->pos), e->renderScale * projectile->weaponInfo->radius, color);
     }
 }
 
@@ -506,6 +605,15 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
 #endif
 
     renderUI(e, starting, ending, winner, winningTeam);
+
+    // for (size_t i = 0; i < cc_array_size(e->cells); i++) {
+    //     const mapCell *cell = safe_array_get_at(e->cells, i);
+    //     if (cell->ent != NULL) {
+    //         continue;
+    //     }
+    //     renderEmptyCell(e, cell->pos, i);
+    // }
+    //
 
     renderExplosions(e, ending);
 
@@ -550,12 +658,6 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
         }
         renderDroneUI(e, drone);
     }
-
-    // for (size_t i = 0; i < cc_array_size(e->cells); i++) {
-    //     mapCell *cell;
-    //     cc_array_get_at(e->cells, i, (void **)&cell);
-    //     renderEmptyCell(e, cell->pos, i);
-    // }
 
     if (!b2VecEqual(e->debugPoint, b2Vec2_zero)) {
         DrawCircleV(b2VecToRayVec(e, e->debugPoint), DRONE_RADIUS * 0.5f * e->renderScale, WHITE);

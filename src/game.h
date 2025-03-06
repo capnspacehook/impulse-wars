@@ -10,6 +10,8 @@
 void destroyProjectile(env *e, projectileEntity *projectile, const bool processExplosions, const bool full);
 void createExplosion(env *e, droneEntity *drone, const projectileEntity *projectile, const b2ExplosionDef *def);
 
+void updateTrailPoints(const env *e, trailPoints *tp, const uint8_t maxLen, const b2Vec2 pos);
+
 static inline bool entityTypeIsWall(const enum entityType type) {
     // walls are the first 3 entity types
     return type <= DEATH_WALL_ENTITY;
@@ -514,10 +516,11 @@ void createDrone(env *e, const uint8_t idx) {
         // they're more likely to be further apart if we're not training;
         // doing this while training will result in much slower learning
         // due to drones starting much farther apart
-        int8_t spawnQuad = 3 - e->lastSpawnQuad;
         if (e->lastSpawnQuad == -1) {
             spawnQuad = randInt(&e->randState, 0, 3);
             e->lastSpawnQuad = spawnQuad;
+        } else {
+            spawnQuad = 3 - e->lastSpawnQuad;
         }
     }
     if (!findOpenPos(e, DRONE_SHAPE, &droneBodyDef.position, spawnQuad)) {
@@ -634,7 +637,6 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
 
     b2BodyDef projectileBodyDef = b2DefaultBodyDef();
     projectileBodyDef.type = b2_dynamicBody;
-    projectileBodyDef.fixedRotation = true;
     projectileBodyDef.isBullet = drone->weaponInfo->isPhysicsBullet;
     projectileBodyDef.linearDamping = drone->weaponInfo->damping;
     projectileBodyDef.enableSleep = drone->weaponInfo->canSleep;
@@ -1584,6 +1586,10 @@ void handleBodyMoveEvents(env *e) {
                 proj->lastSpeed = proj->speed;
                 proj->speed = b2Length(proj->velocity);
             }
+
+            if (e->client != NULL) {
+                updateTrailPoints(e, &proj->trailPoints, MAX_PROJECTLE_TRAIL_POINTS, newPos);
+            }
             break;
         case DRONE_ENTITY:
             drone = ent->entity;
@@ -1597,6 +1603,10 @@ void handleBodyMoveEvents(env *e) {
             drone->pos = newPos;
             drone->lastVelocity = drone->velocity;
             drone->velocity = b2Body_GetLinearVelocity(drone->bodyID);
+
+            if (e->client != NULL) {
+                updateTrailPoints(e, &drone->trailPoints, MAX_DRONE_TRAIL_POINTS, newPos);
+            }
             break;
         default:
             ERRORF("unknown entity type for move event %d", ent->type);
@@ -1674,10 +1684,6 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
             ASSERT(entityTypeIsWall(ent->type));
             wallEntity *wall = ent->entity;
             ASSERT(manifold->pointCount == 1);
-
-            // disable fixed rotation so floating walls that mines are
-            // attached to can rotate
-            b2Body_SetFixedRotation(projectile->bodyID, false);
 
             b2WeldJointDef jointDef = b2DefaultWeldJointDef();
             jointDef.bodyIdA = projectile->bodyID;
