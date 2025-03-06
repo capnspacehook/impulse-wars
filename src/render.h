@@ -19,6 +19,7 @@ const Color barolo = {.r = 165, .g = 37, .b = 8, .a = 255};
 const Color bambooBrown = {.r = 204, .g = 129, .b = 0, .a = 255};
 
 const float halfDroneRadius = DRONE_RADIUS / 2.0f;
+const float droneThrusterRadius = DRONE_RADIUS * 0.66;
 const float aimGuideHeight = 0.3f * DRONE_RADIUS;
 const float chargedAimGuideHeight = DRONE_RADIUS;
 
@@ -374,22 +375,27 @@ b2RayResult droneAimingAt(const env *e, droneEntity *drone) {
     return b2World_CastRayClosest(e->worldID, drone->pos, translation, filter);
 }
 
-void renderDroneGuides(const env *e, droneEntity *drone, const uint8_t droneIdx) {
+void renderDroneGuides(env *e, droneEntity *drone, const uint8_t droneIdx, const bool ending) {
     const float rayX = b2XToRayX(e, drone->pos.x);
     const float rayY = b2YToRayY(e, drone->pos.y);
     const Color droneColor = getDroneColor(droneIdx);
 
     // render thruster move guide
     if (!b2VecEqual(drone->lastMove, b2Vec2_zero)) {
-        float moveMagnitude = b2Length(drone->lastMove);
-        float moveRot = RAD2DEG * b2Rot_GetAngle(b2MakeRot(b2Atan2(-drone->lastMove.y, -drone->lastMove.x)));
+        const float moveMagnitude = b2Length(drone->lastMove);
+        const float moveRot = RAD2DEG * b2Rot_GetAngle(b2MakeRot(b2Atan2(-drone->lastMove.y, -drone->lastMove.x)));
+        float flickerWidth = 0.0f;
+        if (!ending) {
+            flickerWidth = randFloat(&e->randState, -0.05f, 0.05f);
+        }
         Rectangle moveGuide = {
             .x = rayX,
             .y = rayY,
-            .width = ((halfDroneRadius * moveMagnitude) + halfDroneRadius) * e->renderScale * 2.0f,
-            .height = halfDroneRadius * e->renderScale * 2.0f,
+            .width = ((halfDroneRadius * moveMagnitude) + halfDroneRadius + flickerWidth) * e->renderScale * 2.0f,
+            .height = droneThrusterRadius * e->renderScale * 2.0f,
         };
-        DrawRectanglePro(moveGuide, (Vector2){.x = 0.0f, .y = 0.5f * e->renderScale}, moveRot, droneColor);
+        const Color thrusterColor = Fade(droneColor, 0.9f);
+        DrawRectanglePro(moveGuide, (Vector2){.x = 0.0f, .y = droneThrusterRadius * e->renderScale}, moveRot, thrusterColor);
     }
 
     // find length of laser aiming guide by where it touches the nearest shape
@@ -628,7 +634,7 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
         if (drone->dead) {
             continue;
         }
-        renderDroneGuides(e, drone, i);
+        renderDroneGuides(e, drone, i, ending);
     }
     for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
         const droneEntity *drone = safe_array_get_at(e->drones, i);
