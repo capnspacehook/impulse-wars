@@ -169,6 +169,7 @@ typedef struct projectileEntity {
     int16_t mapCellIdx;
     b2Vec2 lastPos;
     b2Vec2 velocity;
+    b2Vec2 lastVelocity;
     float speed;
     float lastSpeed;
     float distance;

@@ -668,6 +668,7 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     projectile->pos = projectileBodyDef.position;
     projectile->lastPos = projectileBodyDef.position;
     projectile->velocity = b2Body_GetLinearVelocity(projectileBodyID);
+    projectile->lastVelocity = projectile->velocity;
     projectile->speed = b2Length(projectile->velocity);
     projectile->lastSpeed = projectile->speed;
     cc_array_add(e->projectiles, projectile);
@@ -885,18 +886,29 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
 
     // the parent drone or projecile's velocity affects the direction
     // and magnitude of the explosion
+    b2Vec2 parentVelocity;
     float parentSpeed;
-    b2Vec2 parentDirection;
     if (ctx->projectile != NULL) {
-        parentSpeed = b2Length(ctx->projectile->velocity);
+        // use the projectile's last velocity and speed if it is in
+        // contact with another body, as the current velocity will be
+        // the velocity after the projectile rebounds which is not
+        // what we want
+        if (ctx->projectile->contacts != 0) {
+            parentVelocity = ctx->projectile->lastVelocity;
+            parentSpeed = ctx->projectile->lastSpeed;
+        } else {
+            parentVelocity = ctx->projectile->velocity;
+            parentSpeed = ctx->projectile->speed;
+        }
         if (isImplosion) {
             parentSpeed *= -1.0f;
         }
-        parentDirection = b2Normalize(ctx->projectile->velocity);
     } else {
-        parentSpeed = b2Length(ctx->parentDrone->lastVelocity);
-        parentDirection = b2Normalize(ctx->parentDrone->lastVelocity);
+        parentVelocity = ctx->parentDrone->lastVelocity;
+        parentSpeed = b2Length(parentVelocity);
     }
+    const b2Vec2 parentDirection = b2Normalize(parentVelocity);
+
     // scale the parent speed by how close the movement direction of
     // the parent is to where the entity is to the parent, except if
     // we're bursting off of a wall to make it more predictable and
@@ -906,9 +918,8 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
     }
     // don't change the direction of the explosion if this is a burst
     // hitting a projectile or static wall to make it more predictable
-    if (!ctx->isBurst) {
-        direction = b2Normalize(b2Add(direction, parentDirection));
-    }
+    const b2Vec2 baseImpulse = b2MulSV(fabsf(ctx->def->impulsePerLength), direction);
+    direction = b2Normalize(b2Add(baseImpulse, parentVelocity));
 
     float magnitude = (ctx->def->impulsePerLength + parentSpeed) * perimeter * scale;
     if (isStaticWall) {
@@ -1577,6 +1588,7 @@ void handleBodyMoveEvents(env *e) {
             }
             proj->lastPos = proj->pos;
             proj->pos = newPos;
+            proj->lastVelocity = proj->velocity;
             proj->velocity = b2Body_GetLinearVelocity(proj->bodyID);
             // if the projectile doesn't have damping its speed will
             // only change when colliding with a dynamic body or getting
