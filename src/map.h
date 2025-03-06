@@ -546,16 +546,26 @@ void computeMapBoundsAndQuadrants(env *e, mapEntry *map) {
         }};
 }
 
+#ifndef AUTOPXD
 bool posValidDroneSpawnPoint(const env *e, const b2Vec2 pos) {
+    const b2QueryFilter filter = {
+        .categoryBits = DRONE_SHAPE,
+        .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE,
+    };
+    droneEntity dummyDrone = {.pos = pos};
+    const entity ent = {.type = DRONE_ENTITY, .entity = &dummyDrone};
     const enum entityType deathWallType = DEATH_WALL_ENTITY;
-    if (isOverlappingAABB(e, pos, DRONE_DEATH_WALL_SPAWN_DISTANCE, DRONE_SHAPE, WALL_SHAPE | FLOATING_WALL_SHAPE, &deathWallType)) {
+
+    if (isOverlappingCircleInLineOfSight(e, &ent, pos, DRONE_DEATH_WALL_SPAWN_DISTANCE, filter, &deathWallType)) {
         return false;
     }
-    if (isOverlappingAABB(e, pos, DRONE_WALL_SPAWN_DISTANCE, DRONE_SHAPE, WALL_SHAPE | FLOATING_WALL_SHAPE, NULL)) {
+    if (isOverlappingAABB(e, pos, DRONE_WALL_SPAWN_DISTANCE, filter)) {
         return false;
     }
+
     return true;
 }
+#endif
 
 void initMaps(env *e) {
     for (uint8_t i = 0; i < NUM_MAPS; i++) {
@@ -571,13 +581,13 @@ void initMaps(env *e) {
         for (uint16_t i = 0; i < cc_array_size(e->cells); i++) {
             const mapCell *cell = safe_array_get_at(e->cells, i);
 
-            // precompute valid cells for drones to spawn
-            droneSpawns[i] = posValidDroneSpawnPoint(e, cell->pos);
-
             // precompute packed map layout
             if (cell->ent != NULL) {
                 packedLayout[i] = ((cell->ent->type + 1) & TWO_BIT_MASK) << 5;
                 continue;
+            } else {
+                // precompute valid cells for drones to spawn
+                droneSpawns[i] = posValidDroneSpawnPoint(e, cell->pos);
             }
 
             // find nearest walls for each empty cell

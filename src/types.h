@@ -2,7 +2,16 @@
 #define IMPULSE_WARS_TYPES_H
 
 #include "box2d/box2d.h"
+
+// autopxd2 can't parse raylib headers
+#ifndef AUTOPXD
 #include "raylib.h"
+#else
+typedef struct Vector2 {
+    float x;
+    float y;
+} Vector2;
+#endif
 
 #include "include/cc_array.h"
 

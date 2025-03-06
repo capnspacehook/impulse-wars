@@ -148,7 +148,7 @@ const float PICKUP_RESPAWN_WAIT = 3.0f;
 const float SUDDEN_DEATH_PICKUP_RESPAWN_WAIT = 2.0f;
 
 // drone settings
-const float DRONE_WALL_SPAWN_DISTANCE = 5.0f;
+const float DRONE_WALL_SPAWN_DISTANCE = 2.0f;
 const float DRONE_DEATH_WALL_SPAWN_DISTANCE = 7.5f;
 const float DRONE_DRONE_SPAWN_DISTANCE_SQUARED = SQUARED(10.0f);
 #define DRONE_RADIUS 1.0f

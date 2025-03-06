@@ -613,7 +613,6 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
     //     }
     //     renderEmptyCell(e, cell->pos, i);
     // }
-    //
 
     renderExplosions(e, ending);
 
@@ -624,14 +623,14 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
 
     renderBrakeTrails(e, ending);
 
-    for (uint8_t i = 0; i < e->numDrones; i++) {
+    for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
         if (drone->dead) {
             continue;
         }
         renderDroneGuides(e, drone, i);
     }
-    for (uint8_t i = 0; i < e->numDrones; i++) {
+    for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
         const droneEntity *drone = safe_array_get_at(e->drones, i);
         if (drone->dead) {
             continue;
@@ -651,7 +650,7 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
 
     renderProjectiles(e);
 
-    for (uint8_t i = 0; i < e->numDrones; i++) {
+    for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
         const droneEntity *drone = safe_array_get_at(e->drones, i);
         if (drone->dead) {
             continue;
