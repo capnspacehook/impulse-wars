@@ -171,9 +171,9 @@ float posInLineOfSightCallback(b2ShapeId shapeID, b2Vec2 point, b2Vec2 normal, f
 bool posInLineOfSight(const env *e, const b2Vec2 startPos, const b2Vec2 endPos, const entity *srcEnt, const b2QueryFilter filter, const enum entityType *targetType) {
     const float rayDistance = b2Distance(startPos, endPos);
     // if the two points are extremely close we can safely assume the
-    // entity is not behind a wall
+    // entity is in line of sight
     if (rayDistance <= 1.0f) {
-        return false;
+        return true;
     }
 
     const b2Vec2 translation = b2Sub(endPos, startPos);
