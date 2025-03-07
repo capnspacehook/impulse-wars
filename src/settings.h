@@ -625,12 +625,14 @@ void weaponExplosion(const enum weaponType type, b2ExplosionDef *explosionDef) {
     case FLAK_CANNON_WEAPON:
         explosionDef->radius = 5.0;
         explosionDef->falloff = 2.5f;
+        // will typically be closer to 45 with projectile velocity
+        // factored in
         explosionDef->impulsePerLength = 10.0f;
         return;
     case MINE_LAUNCHER_WEAPON:
         explosionDef->radius = 12.5f;
         explosionDef->falloff = 2.5f;
-        explosionDef->impulsePerLength = 100.0f;
+        explosionDef->impulsePerLength = 200.0f;
         return;
     default:
         ERRORF("unknown weapon type %d for projectile explosion", type);

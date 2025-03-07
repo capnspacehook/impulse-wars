@@ -150,19 +150,19 @@ b2DistanceOutput closestPoint(const entity *srcEnt, const entity *dstEnt) {
     return b2ShapeDistance(&cache, &input, NULL, 0);
 }
 
-typedef struct inLineOfSightContext {
+typedef struct behindWallContext {
     const entity *srcEnt;
     const enum entityType *targetType;
     bool hit;
-} inLineOfSightContext;
+} behindWallContext;
 
-float posInLineOfSightCallback(b2ShapeId shapeID, b2Vec2 point, b2Vec2 normal, float fraction, void *context) {
+float posBehindWallCallback(b2ShapeId shapeID, b2Vec2 point, b2Vec2 normal, float fraction, void *context) {
     // these are unused but required by the b2CastResultFcn callback prototype
     MAYBE_UNUSED(point);
     MAYBE_UNUSED(normal);
     MAYBE_UNUSED(fraction);
 
-    inLineOfSightContext *ctx = context;
+    behindWallContext *ctx = context;
     const entity *ent = b2Shape_GetUserData(shapeID);
     if (ent == ctx->srcEnt || (ctx->targetType != NULL && ent->type == *ctx->targetType)) {
         return -1;
@@ -171,23 +171,23 @@ float posInLineOfSightCallback(b2ShapeId shapeID, b2Vec2 point, b2Vec2 normal, f
     return 0;
 }
 
-// returns true if there are no shapes that match filter between startPos and endPos
-bool posInLineOfSight(const env *e, const b2Vec2 startPos, const b2Vec2 endPos, const entity *srcEnt, const b2QueryFilter filter, const enum entityType *targetType) {
+// returns true if there are shapes that match filter between startPos and endPos
+bool posBehindWall(const env *e, const b2Vec2 startPos, const b2Vec2 endPos, const entity *srcEnt, const b2QueryFilter filter, const enum entityType *targetType) {
     const float rayDistance = b2Distance(startPos, endPos);
     // if the two points are extremely close we can safely assume the
-    // entity is in line of sight
+    // entity isn't behind a wall
     if (rayDistance <= 1.0f) {
-        return true;
+        return false;
     }
 
     const b2Vec2 translation = b2Sub(endPos, startPos);
-    inLineOfSightContext ctx = {
+    behindWallContext ctx = {
         .srcEnt = srcEnt,
         .targetType = targetType,
         .hit = false,
     };
-    b2World_CastRay(e->worldID, startPos, translation, filter, posInLineOfSightCallback, &ctx);
-    return !ctx.hit;
+    b2World_CastRay(e->worldID, startPos, translation, filter, posBehindWallCallback, &ctx);
+    return ctx.hit;
 }
 
 typedef struct overlapCircleCtx {
@@ -210,15 +210,15 @@ bool isOverlappingCircleCallback(b2ShapeId shapeID, void *context) {
     }
 
     const b2DistanceOutput output = closestPoint(ctx->ent, overlappingEnt);
-    const bool inSight = posInLineOfSight(ctx->e, output.pointA, output.pointB, ctx->ent, ctx->filter, ctx->targetType);
-    if (inSight) {
+    const bool behind = posBehindWall(ctx->e, output.pointA, output.pointB, ctx->ent, ctx->filter, ctx->targetType);
+    if (!behind) {
         ctx->overlaps = true;
     } else if (ctx->ent->type == PROJECTILE_ENTITY) {
         projectileEntity *proj = ctx->ent->entity;
         droneEntity *drone = overlappingEnt->entity;
         proj->dronesBehindWalls[proj->numDronesBehindWalls++] = drone->idx;
     }
-    return !inSight;
+    return behind;
 }
 
 bool isOverlappingCircleInLineOfSight(const env *e, const entity *ent, const b2Vec2 startPos, const float radius, const b2QueryFilter filter, const enum entityType *targetType) {
@@ -939,7 +939,7 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
     if (!isImplosion) {
         filter.maskBits |= FLOATING_WALL_SHAPE;
     }
-    if (!isStaticWall && !posInLineOfSight(ctx->e, ctx->def->position, output.pointA, entity, filter, NULL)) {
+    if (!isStaticWall && posBehindWall(ctx->e, ctx->def->position, output.pointA, entity, filter, NULL)) {
         return true;
     }
 
@@ -1566,7 +1566,7 @@ void projectilesStep(env *e) {
                 const droneEntity *drone = safe_array_get_at(e->drones, droneIdx);
                 const b2DistanceOutput output = closestPoint(projectile->ent, drone->ent);
                 const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE};
-                if (!posInLineOfSight(e, output.pointA, output.pointB, NULL, filter, NULL)) {
+                if (posBehindWall(e, projectile->pos, output.pointB, NULL, filter, NULL)) {
                     continue;
                 }
 
@@ -1796,7 +1796,7 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
             destroyExplodedProjectiles(e);
             return 1;
         }
-    } else if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON && projectile->speed != 0.0f) {
+    } else if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON && !projectile->setMine) {
         // if the mine is in explosion proximity of a drone now,
         // destroy it
         const b2QueryFilter filter = {
@@ -1826,6 +1826,9 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
         }
         b2CreateWeldJoint(e->worldID, &jointDef);
         projectile->velocity = b2Vec2_zero;
+        projectile->lastVelocity = b2Vec2_zero;
+        projectile->speed = 0.0f;
+        projectile->lastSpeed = 0.0f;
         projectile->setMine = true;
     }
 
@@ -2023,7 +2026,7 @@ void handleProjectileBeginTouch(env *e, const entity *sensor, const entity *visi
         ASSERT(visitor->type == DRONE_ENTITY);
         const b2DistanceOutput output = closestPoint(sensor, visitor);
         const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE};
-        if (!posInLineOfSight(e, output.pointA, output.pointB, NULL, filter, NULL)) {
+        if (posBehindWall(e, projectile->pos, output.pointB, NULL, filter, NULL)) {
             const droneEntity *drone = visitor->entity;
             projectile->dronesBehindWalls[projectile->numDronesBehindWalls++] = drone->idx;
             return;
