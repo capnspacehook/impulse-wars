@@ -88,7 +88,11 @@
 #define RAD2DEG (180.0f / PI)
 #endif
 
-#define INV_MASS(density, radius) (1.0f / ((density) * PI * (radius) * (radius)))
+#define MASS(density, radius) ((density) * PI * (radius) * (radius))
+#define INV_MASS(density, radius) (1.0f / MASS(density, radius))
+// given a mass and radius, calculate the density such that the density
+// and radius will result in the same mass as what's given
+#define MATCHING_DENSITY(mass, radius) ((mass) / (PI * (radius) * (radius)))
 
 #define ASSERT_VEC_BOUNDED(vec)                  \
     ASSERTF(vec.x <= 1.0f, "vec.x: %f", vec.x);  \

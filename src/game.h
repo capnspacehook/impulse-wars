@@ -70,6 +70,10 @@ b2ShapeProxy makeDistanceProxyFromType(const enum entityType type, bool *isCircl
         *isCircle = true;
         proxy.radius = DRONE_RADIUS;
         break;
+    case SHIELD_ENTITY:
+        *isCircle = true;
+        proxy.radius = DRONE_SHIELD_RADIUS;
+        break;
     case WEAPON_PICKUP_ENTITY:
         proxy.count = 4;
         proxy.points[0] = (b2Vec2){.x = -PICKUP_THICKNESS / 2.0f, .y = -PICKUP_THICKNESS / 2.0f};
@@ -335,7 +339,7 @@ entity *createWall(const env *e, const b2Vec2 pos, const float width, const floa
     wallShapeDef.restitution = STANDARD_WALL_RESTITUTION;
     wallShapeDef.friction = STANDARD_WALL_FRICTION;
     wallShapeDef.filter.categoryBits = WALL_SHAPE;
-    wallShapeDef.filter.maskBits = FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE;
+    wallShapeDef.filter.maskBits = FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE | SHIELD_SHAPE;
     if (floating) {
         wallShapeDef.filter.categoryBits = FLOATING_WALL_SHAPE;
         wallShapeDef.filter.maskBits |= WALL_SHAPE | WEAPON_PICKUP_SHAPE;
@@ -380,8 +384,7 @@ entity *createWall(const env *e, const b2Vec2 pos, const float width, const floa
 }
 
 void destroyWall(const env *e, wallEntity *wall, const bool full) {
-    entity *ent = b2Shape_GetUserData(wall->shapeID);
-    fastFree(ent);
+    fastFree(wall->ent);
 
     if (full) {
         mapCell *cell = safe_array_get_at(e->cells, wall->mapCellIdx);
@@ -509,7 +512,60 @@ void disableWeaponPickup(env *e, weaponPickupEntity *pickup) {
     e->spawnedWeaponPickups[pickup->weapon]--;
 }
 
+void createDroneShield(const env *e, droneEntity *drone, const int8_t groupIdx) {
+    // the shield is comprised of 2 shapes over 2 bodies:
+    // 1. a kinematic body that allows the parent drone to be unaffected
+    // by collisions since kinematic bodies have essentially infinite mass
+    // 2. a shape on the drone body that collides with walls and other
+    // shields, since kinematic bodies don't collide with other kinematic
+    // bodies or static bodies
+
+    b2BodyDef shieldBodyDef = b2DefaultBodyDef();
+    shieldBodyDef.type = b2_kinematicBody;
+    shieldBodyDef.fixedRotation = true;
+    shieldBodyDef.position = drone->pos;
+    b2BodyId shieldBodyID = b2CreateBody(e->worldID, &shieldBodyDef);
+
+    b2ShapeDef shieldShapeDef = b2DefaultShapeDef();
+    shieldShapeDef.filter.categoryBits = SHIELD_SHAPE;
+    shieldShapeDef.filter.maskBits = PROJECTILE_SHAPE | DRONE_SHAPE;
+    shieldShapeDef.filter.groupIndex = groupIdx;
+    shieldShapeDef.enableContactEvents = true;
+
+    b2ShapeDef shieldBufferShapeDef = b2DefaultShapeDef();
+    shieldBufferShapeDef.density = 0.0f;
+    shieldBufferShapeDef.friction = DRONE_FRICTION;
+    shieldBufferShapeDef.restitution = DRONE_RESTITUTION;
+    shieldBufferShapeDef.filter.categoryBits = SHIELD_SHAPE;
+    shieldBufferShapeDef.filter.maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | SHIELD_SHAPE;
+    shieldBufferShapeDef.filter.groupIndex = groupIdx;
+
+    shieldEntity *shield = fastCalloc(1, sizeof(shieldEntity));
+    shield->drone = drone;
+    shield->bodyID = shieldBodyID;
+    shield->pos = drone->pos;
+    shield->health = DRONE_SHIELD_HEALTH;
+    shield->duration = DRONE_SHIELD_START_DURATION;
+
+    entity *shieldEnt = fastCalloc(1, sizeof(entity));
+    shieldEnt->type = SHIELD_ENTITY;
+    shieldEnt->entity = shield;
+
+    const b2Circle shieldCircle = {.center = b2Vec2_zero, .radius = DRONE_SHIELD_RADIUS};
+
+    shield->ent = shieldEnt;
+    shieldShapeDef.userData = shieldEnt;
+    shield->shapeID = b2CreateCircleShape(shieldBodyID, &shieldShapeDef, &shieldCircle);
+    b2Body_SetUserData(shield->bodyID, shieldEnt);
+
+    shieldBufferShapeDef.userData = shieldEnt;
+    shield->bufferShapeID = b2CreateCircleShape(drone->bodyID, &shieldBufferShapeDef, &shieldCircle);
+
+    drone->shield = shield;
+}
+
 void createDrone(env *e, const uint8_t idx) {
+    const int8_t groupIdx = -(idx + 1);
     b2BodyDef droneBodyDef = b2DefaultBodyDef();
     droneBodyDef.type = b2_dynamicBody;
 
@@ -540,7 +596,8 @@ void createDrone(env *e, const uint8_t idx) {
     droneShapeDef.friction = DRONE_FRICTION;
     droneShapeDef.restitution = DRONE_RESTITUTION;
     droneShapeDef.filter.categoryBits = DRONE_SHAPE;
-    droneShapeDef.filter.maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | WEAPON_PICKUP_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE;
+    droneShapeDef.filter.maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | WEAPON_PICKUP_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE | SHIELD_SHAPE;
+    droneShapeDef.filter.groupIndex = groupIdx;
     droneShapeDef.enableContactEvents = true;
     droneShapeDef.enableSensorEvents = true;
     const b2Circle droneCircle = {.center = b2Vec2_zero, .radius = DRONE_RADIUS};
@@ -571,11 +628,27 @@ void createDrone(env *e, const uint8_t idx) {
     b2Body_SetUserData(drone->bodyID, ent);
 
     cc_array_add(e->drones, drone);
+
+    createDroneShield(e, drone, groupIdx);
+}
+
+void destroyDroneShield(shieldEntity *shield) {
+    droneEntity *drone = shield->drone;
+    drone->shield = NULL;
+
+    b2DestroyBody(shield->bodyID);
+    b2DestroyShape(shield->bufferShapeID, false);
+    fastFree(shield->ent);
+    fastFree(shield);
 }
 
 void destroyDrone(droneEntity *drone) {
-    entity *ent = b2Shape_GetUserData(drone->shapeID);
-    fastFree(ent);
+    fastFree(drone->ent);
+
+    shieldEntity *shield = drone->shield;
+    if (shield != NULL) {
+        destroyDroneShield(shield);
+    }
 
     b2DestroyBody(drone->bodyID);
     fastFree(drone);
@@ -614,9 +687,13 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     ASSERT_VEC_NORMALIZED(normAim);
 
     const float radius = drone->weaponInfo->radius;
+    float droneRadius = DRONE_RADIUS;
+    if (drone->shield != NULL) {
+        droneRadius = DRONE_SHIELD_RADIUS;
+    }
     // spawn the projectile just outside the drone so they don't
     // immediately collide
-    b2Vec2 pos = b2MulAdd(drone->pos, DRONE_RADIUS + (radius * 1.5f), normAim);
+    b2Vec2 pos = b2MulAdd(drone->pos, droneRadius + (radius * 1.5f), normAim);
     // if the projectile is inside a wall or out of the map, move the
     // projectile to be just outside the wall
     bool projectileInWall = false;
@@ -630,7 +707,7 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
         }
     }
     if (projectileInWall) {
-        const b2Vec2 rayEnd = b2MulAdd(drone->pos, DRONE_RADIUS + (radius * 2.5f), normAim);
+        const b2Vec2 rayEnd = b2MulAdd(drone->pos, droneRadius + (radius * 2.5f), normAim);
         const b2Vec2 translation = b2Sub(rayEnd, drone->pos);
         const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE};
         const b2RayResult rayRes = b2World_CastRayClosest(e->worldID, drone->pos, translation, filter);
@@ -652,7 +729,7 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     projectileShapeDef.density = drone->weaponInfo->density;
     projectileShapeDef.restitution = 1.0f;
     projectileShapeDef.filter.categoryBits = PROJECTILE_SHAPE;
-    projectileShapeDef.filter.maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE;
+    projectileShapeDef.filter.maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE | SHIELD_SHAPE;
     const b2Circle projectileCircle = {.center = b2Vec2_zero, .radius = radius};
 
     b2ShapeId projectileShapeID = b2CreateCircleShape(projectileBodyID, &projectileShapeDef, &projectileCircle);
@@ -930,7 +1007,12 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
     const b2Vec2 baseImpulse = b2MulSV(fabsf(ctx->def->impulsePerLength), direction);
     direction = b2Normalize(b2Add(baseImpulse, parentVelocity));
 
-    float magnitude = (ctx->def->impulsePerLength + parentSpeed) * perimeter * scale;
+    float shieldReduction = 1.0f;
+    if (drone != NULL && drone->shield != NULL) {
+        shieldReduction = DRONE_SHIELD_EXPLOSION_REDUCTION;
+    }
+
+    float magnitude = (ctx->def->impulsePerLength + parentSpeed) * perimeter * scale * shieldReduction;
     if (isStaticWall) {
         // reduce the magnitude when pushing a drone away from a wall
         magnitude = log2f(magnitude) * 7.5f;
@@ -1020,8 +1102,7 @@ void destroyProjectile(env *e, projectileEntity *projectile, const bool processE
         createProjectileExplosion(e, projectile, true);
     }
 
-    entity *ent = b2Shape_GetUserData(projectile->shapeID);
-    fastFree(ent);
+    fastFree(projectile->ent);
 
     b2DestroyBody(projectile->bodyID);
 
@@ -1452,6 +1533,14 @@ void droneStep(env *e, droneEntity *drone) {
 
     const float distance = b2Distance(drone->lastPos, drone->pos);
     e->stats[drone->idx].distanceTraveled += distance;
+
+    shieldEntity *shield = drone->shield;
+    if (shield != NULL) {
+        shield->duration = fmaxf(shield->duration - e->deltaTime, 0.0f);
+        if (shield->duration == 0.0f || shield->health == 0.0f) {
+            destroyDroneShield(shield);
+        }
+    }
 }
 
 void projectilesStep(env *e) {
@@ -1573,6 +1662,7 @@ void handleBodyMoveEvents(env *e) {
         wallEntity *wall;
         projectileEntity *proj;
         droneEntity *drone;
+        shieldEntity *shield;
 
         // if the new position is out of bounds, destroy the entity unless
         // a drone is out of bounds, then just kill it
@@ -1634,6 +1724,10 @@ void handleBodyMoveEvents(env *e) {
                 updateTrailPoints(e, &drone->trailPoints, MAX_DRONE_TRAIL_POINTS, newPos);
             }
             break;
+        case SHIELD_ENTITY:
+            shield = ent->entity;
+            shield->pos = newPos;
+            break;
         default:
             ERRORF("unknown entity type for move event %d", ent->type);
         }
@@ -1648,7 +1742,7 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
 
     // e (shape B in the collision) will be NULL if it's another
     // projectile that was just destroyed
-    if (ent == NULL || (ent != NULL && ent->type == PROJECTILE_ENTITY)) {
+    if (ent == NULL || ent->type == PROJECTILE_ENTITY) {
         // explode mines when hit by a projectile
         if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON) {
             uint8_t numDestroyed = 1;
@@ -1669,67 +1763,72 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
     } else if (ent->type == BOUNCY_WALL_ENTITY) {
         // always allow projectiles to bounce off bouncy walls
         return false;
-    } else if (ent->type != BOUNCY_WALL_ENTITY) {
-        projectile->bounces++;
-        if (ent->type == DRONE_ENTITY) {
-            droneEntity *hitDrone = ent->entity;
-            if (projectile->droneIdx != hitDrone->idx) {
-                droneEntity *shooterDrone = safe_array_get_at(e->drones, projectile->droneIdx);
-
-                if (shooterDrone->team != hitDrone->team) {
-                    droneAddEnergy(shooterDrone, projectile->weaponInfo->energyRefill);
-                }
-                // add 1 so we can differentiate between no weapon and weapon 0
-                shooterDrone->stepInfo.shotHit[hitDrone->idx] = projectile->weaponInfo->type + 1;
-                e->stats[shooterDrone->idx].shotsHit[projectile->weaponInfo->type]++;
-                DEBUG_LOGF("drone %d hit drone %d with weapon %d", shooterDrone->idx, hitDrone->idx, projectile->weaponInfo->type);
-                hitDrone->stepInfo.shotTaken[shooterDrone->idx] = projectile->weaponInfo->type + 1;
-                e->stats[hitDrone->idx].shotsTaken[projectile->weaponInfo->type]++;
-                DEBUG_LOGF("drone %d hit by drone %d with weapon %d", hitDrone->idx, shooterDrone->idx, projectile->weaponInfo->type);
-            } else {
-                hitDrone->stepInfo.ownShotTaken = true;
-                e->stats[hitDrone->idx].ownShotsTaken[projectile->weaponInfo->type]++;
-                DEBUG_LOGF("drone %d hit by own weapon %d", hitDrone->idx, projectile->weaponInfo->type);
-            }
-
-            if (projectile->weaponInfo->destroyedOnDroneHit) {
-                destroyProjectile(e, projectile, projectile->weaponInfo->explodesOnDroneHit, true);
-                destroyExplodedProjectiles(e);
-                return 1;
-            }
-        } else if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON && projectile->speed != 0.0f) {
-            // if the mine is in explosion proximity of a drone now,
-            // destroy it
-            const b2QueryFilter filter = {
-                .categoryBits = PROJECTILE_SHAPE,
-                .maskBits = DRONE_SHAPE,
-            };
-            if (isOverlappingCircleInLineOfSight(e, projectile->ent, projectile->pos, MINE_LAUNCHER_PROXIMITY_RADIUS, filter, NULL)) {
-                destroyProjectile(e, projectile, true, true);
-                destroyExplodedProjectiles(e);
-                return 1;
-            }
-
-            // create a weld joint to stick the mine to the wall
-            ASSERT(entityTypeIsWall(ent->type));
-            wallEntity *wall = ent->entity;
-            ASSERT(manifold->pointCount == 1);
-
-            b2WeldJointDef jointDef = b2DefaultWeldJointDef();
-            jointDef.bodyIdA = projectile->bodyID;
-            jointDef.bodyIdB = wall->bodyID;
-            if (projIsShapeA) {
-                jointDef.localAnchorA = manifold->points[0].anchorA;
-                jointDef.localAnchorB = manifold->points[0].anchorB;
-            } else {
-                jointDef.localAnchorA = manifold->points[0].anchorB;
-                jointDef.localAnchorB = manifold->points[0].anchorA;
-            }
-            b2CreateWeldJoint(e->worldID, &jointDef);
-            projectile->velocity = b2Vec2_zero;
-            projectile->setMine = true;
-        }
+    } else if (ent->type == SHIELD_ENTITY) {
+        // always allow projectiles to bounce off shields, and update shield health
+        // TODO: decrease shield health
+        return false;
     }
+
+    projectile->bounces++;
+    if (ent->type == DRONE_ENTITY) {
+        droneEntity *hitDrone = ent->entity;
+        if (projectile->droneIdx != hitDrone->idx) {
+            droneEntity *shooterDrone = safe_array_get_at(e->drones, projectile->droneIdx);
+
+            if (shooterDrone->team != hitDrone->team) {
+                droneAddEnergy(shooterDrone, projectile->weaponInfo->energyRefill);
+            }
+            // add 1 so we can differentiate between no weapon and weapon 0
+            shooterDrone->stepInfo.shotHit[hitDrone->idx] = projectile->weaponInfo->type + 1;
+            e->stats[shooterDrone->idx].shotsHit[projectile->weaponInfo->type]++;
+            DEBUG_LOGF("drone %d hit drone %d with weapon %d", shooterDrone->idx, hitDrone->idx, projectile->weaponInfo->type);
+            hitDrone->stepInfo.shotTaken[shooterDrone->idx] = projectile->weaponInfo->type + 1;
+            e->stats[hitDrone->idx].shotsTaken[projectile->weaponInfo->type]++;
+            DEBUG_LOGF("drone %d hit by drone %d with weapon %d", hitDrone->idx, shooterDrone->idx, projectile->weaponInfo->type);
+        } else {
+            hitDrone->stepInfo.ownShotTaken = true;
+            e->stats[hitDrone->idx].ownShotsTaken[projectile->weaponInfo->type]++;
+            DEBUG_LOGF("drone %d hit by own weapon %d", hitDrone->idx, projectile->weaponInfo->type);
+        }
+
+        if (projectile->weaponInfo->destroyedOnDroneHit) {
+            destroyProjectile(e, projectile, projectile->weaponInfo->explodesOnDroneHit, true);
+            destroyExplodedProjectiles(e);
+            return 1;
+        }
+    } else if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON && projectile->speed != 0.0f) {
+        // if the mine is in explosion proximity of a drone now,
+        // destroy it
+        const b2QueryFilter filter = {
+            .categoryBits = PROJECTILE_SHAPE,
+            .maskBits = DRONE_SHAPE,
+        };
+        if (isOverlappingCircleInLineOfSight(e, projectile->ent, projectile->pos, MINE_LAUNCHER_PROXIMITY_RADIUS, filter, NULL)) {
+            destroyProjectile(e, projectile, true, true);
+            destroyExplodedProjectiles(e);
+            return 1;
+        }
+
+        // create a weld joint to stick the mine to the wall
+        ASSERT(entityTypeIsWall(ent->type));
+        wallEntity *wall = ent->entity;
+        ASSERT(manifold->pointCount == 1);
+
+        b2WeldJointDef jointDef = b2DefaultWeldJointDef();
+        jointDef.bodyIdA = projectile->bodyID;
+        jointDef.bodyIdB = wall->bodyID;
+        if (projIsShapeA) {
+            jointDef.localAnchorA = manifold->points[0].anchorA;
+            jointDef.localAnchorB = manifold->points[0].anchorB;
+        } else {
+            jointDef.localAnchorA = manifold->points[0].anchorB;
+            jointDef.localAnchorB = manifold->points[0].anchorA;
+        }
+        b2CreateWeldJoint(e->worldID, &jointDef);
+        projectile->velocity = b2Vec2_zero;
+        projectile->setMine = true;
+    }
+
     const uint8_t maxBounces = projectile->weaponInfo->maxBounces;
     if (projectile->bounces == maxBounces) {
         destroyProjectile(e, projectile, true, true);
@@ -1817,17 +1916,28 @@ void handleContactEvents(env *e) {
                     e1 = NULL;
                 }
 
-            } else if (e1->type == DEATH_WALL_ENTITY && e2 != NULL && e2->type == DRONE_ENTITY) {
-                droneEntity *drone = e2->entity;
-                killDrone(e, drone);
+            } else if (e1->type == DEATH_WALL_ENTITY && e2 != NULL) {
+                if (e2->type == DRONE_ENTITY) {
+                    droneEntity *drone = e2->entity;
+                    killDrone(e, drone);
+                } else if (e2->type == SHIELD_ENTITY) {
+                    shieldEntity *shield = e2->entity;
+                    destroyDroneShield(shield);
+                    e2 = NULL;
+                }
             }
         }
         if (e2 != NULL) {
             if (e2->type == PROJECTILE_ENTITY) {
                 handleProjectileBeginContact(e, e2, e1, &event->manifold, false);
-            } else if (e2->type == DEATH_WALL_ENTITY && e1 != NULL && e1->type == DRONE_ENTITY) {
-                droneEntity *drone = e1->entity;
-                killDrone(e, drone);
+            } else if (e2->type == DEATH_WALL_ENTITY && e1 != NULL) {
+                if (e1->type == DRONE_ENTITY) {
+                    droneEntity *drone = e1->entity;
+                    killDrone(e, drone);
+                } else if (e1->type == SHIELD_ENTITY) {
+                    shieldEntity *shield = e1->entity;
+                    destroyDroneShield(shield);
+                }
             }
         }
     }

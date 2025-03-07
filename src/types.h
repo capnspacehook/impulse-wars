@@ -32,6 +32,7 @@ enum entityType {
     WEAPON_PICKUP_ENTITY,
     PROJECTILE_ENTITY,
     DRONE_ENTITY,
+    SHIELD_ENTITY,
 };
 
 // the category bit that will be set on each entity's shape; this is
@@ -42,6 +43,7 @@ enum shapeCategory {
     PROJECTILE_SHAPE = 4,
     WEAPON_PICKUP_SHAPE = 8,
     DRONE_SHAPE = 16,
+    SHIELD_SHAPE = 32,
 };
 
 // general purpose entity object
@@ -206,23 +208,18 @@ typedef struct droneStepInfo {
     bool ownShotTaken;
 } droneStepInfo;
 
-// stats for the whole episode
-typedef struct droneStats {
-    float reward;
-    float distanceTraveled;
-    float absDistanceTraveled;
-    float shotsFired[_NUM_WEAPONS];
-    float shotsHit[_NUM_WEAPONS];
-    float shotsTaken[_NUM_WEAPONS];
-    float ownShotsTaken[_NUM_WEAPONS];
-    float weaponsPickedUp[_NUM_WEAPONS];
-    float shotDistances[_NUM_WEAPONS];
-    float brakeTime;
-    float totalBursts;
-    float burstsHit;
-    float energyEmptied;
-    float wins;
-} droneStats;
+typedef struct shieldEntity {
+    droneEntity *drone;
+
+    b2BodyId bodyID;
+    b2ShapeId shapeID;
+    b2ShapeId bufferShapeID;
+    b2Vec2 pos;
+    float health;
+    float duration;
+
+    entity *ent;
+} shieldEntity;
 
 typedef struct droneEntity {
     b2BodyId bodyID;
@@ -259,8 +256,27 @@ typedef struct droneEntity {
 
     trailPoints trailPoints;
 
+    shieldEntity *shield;
     entity *ent;
 } droneEntity;
+
+// stats for the whole episode
+typedef struct droneStats {
+    float reward;
+    float distanceTraveled;
+    float absDistanceTraveled;
+    float shotsFired[_NUM_WEAPONS];
+    float shotsHit[_NUM_WEAPONS];
+    float shotsTaken[_NUM_WEAPONS];
+    float ownShotsTaken[_NUM_WEAPONS];
+    float weaponsPickedUp[_NUM_WEAPONS];
+    float shotDistances[_NUM_WEAPONS];
+    float brakeTime;
+    float totalBursts;
+    float burstsHit;
+    float energyEmptied;
+    float wins;
+} droneStats;
 
 typedef struct logEntry {
     float length;

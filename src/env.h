@@ -1141,6 +1141,11 @@ void stepEnv(env *e) {
                     droneMove(drone, actions.move);
                 }
                 droneBrake(e, drone, actions.brake);
+
+                // update shield velocity if its active
+                if (drone->shield != NULL) {
+                    b2Body_SetLinearVelocity(drone->shield->bodyID, b2Body_GetLinearVelocity(drone->bodyID));
+                }
             }
 
             b2World_Step(e->worldID, e->deltaTime, e->box2dSubSteps);

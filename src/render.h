@@ -173,7 +173,7 @@ Color getProjectileColor(const enum weaponType type) {
     case ACCELERATOR_WEAPON:
         return DARKBLUE;
     case FLAK_CANNON_WEAPON:
-        return VIOLET;
+        return MAROON;
     case MACHINEGUN_WEAPON:
     case SNIPER_WEAPON:
     case SHOTGUN_WEAPON:
@@ -490,6 +490,10 @@ void renderDrone(const env *e, const droneEntity *drone, const int droneIdx) {
     renderDroneTrail(e, drone, droneColor);
     DrawCircleV(raylibPos, DRONE_RADIUS * e->renderScale, droneColor);
     DrawCircleV(raylibPos, DRONE_RADIUS * 0.8f * e->renderScale, BLACK);
+
+    if (drone->shield != NULL) {
+        DrawCircleV(b2VecToRayVec(e, drone->shield->pos), DRONE_SHIELD_RADIUS * e->renderScale, Fade(droneColor, 0.5f));
+    }
 }
 
 void renderDroneUI(const env *e, const droneEntity *drone) {
