@@ -192,6 +192,14 @@ const float DRONE_SHIELD_BREAK_ENERGY_COST = -0.33f;
 const float EXPLOSION_ENERGY_REFILL_COEF = 1.75f;
 const float WEAPON_DISCARD_COST = 0.2f;
 
+const uint8_t DRONE_PIECE_COUNT = 5;
+const float DRONE_PIECE_MIN_DISTANCE = 1.5f;
+const float DRONE_PIECE_MAX_DISTANCE = 3.0f;
+const float DRONE_PIECE_LINEAR_DAMPING = 1.0f;
+const float DRONE_PIECE_ANGULAR_DAMPING = 1.0f;
+const float DRONE_PIECE_MIN_SPEED = 10.0f;
+const float DRONE_PIECE_MAX_SPEED = 15.0f;
+
 // weapon projectile settings
 #define STANDARD_AMMO INFINITE
 #define STANDARD_PROJECTILES 1

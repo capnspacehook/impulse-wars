@@ -390,7 +390,7 @@ entity *createWall(const env *e, const b2Vec2 pos, const float width, const floa
     wallShapeDef.restitution = STANDARD_WALL_RESTITUTION;
     wallShapeDef.friction = STANDARD_WALL_FRICTION;
     wallShapeDef.filter.categoryBits = WALL_SHAPE;
-    wallShapeDef.filter.maskBits = FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE | SHIELD_SHAPE;
+    wallShapeDef.filter.maskBits = FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE | SHIELD_SHAPE | DRONE_PIECE_SHAPE;
     if (floating) {
         wallShapeDef.filter.categoryBits = FLOATING_WALL_SHAPE;
         wallShapeDef.filter.maskBits |= WALL_SHAPE | WEAPON_PICKUP_SHAPE;
@@ -672,6 +672,7 @@ void createDrone(env *e, const uint8_t idx) {
     drone->mapCellIdx = entityPosToCellIdx(e, droneBodyDef.position);
     drone->lastAim = (b2Vec2){.x = 0.0f, .y = -1.0f};
     drone->livesLeft = DRONE_LIVES;
+    drone->respawnGuideLifetime = UINT16_MAX;
     memset(&drone->stepInfo, 0x0, sizeof(droneStepInfo));
 
     entity *ent = fastCalloc(1, sizeof(entity));
@@ -697,9 +698,70 @@ void droneAddEnergy(droneEntity *drone, float energy) {
     }
 }
 
-void destroyDroneShield(shieldEntity *shield) {
+void createDronePiece(env *e, droneEntity *drone, const bool fromShield) {
+    const float distance = randFloat(&e->randState, DRONE_PIECE_MIN_DISTANCE, DRONE_PIECE_MAX_DISTANCE);
+    const b2Vec2 direction = {.x = randFloat(&e->randState, -1.0f, 1.0f), .y = randFloat(&e->randState, -1.0f, 1.0f)};
+    const b2Vec2 pos = b2MulAdd(drone->pos, distance, direction);
+    const b2Rot rot = b2MakeRot(randFloat(&e->randState, -PI, PI));
+
+    dronePieceEntity *piece = fastCalloc(1, sizeof(dronePieceEntity));
+    piece->droneIdx = drone->idx;
+    piece->pos = pos;
+    piece->rot = rot;
+    piece->isShieldPiece = fromShield;
+    piece->lifetime = UINT16_MAX;
+
+    entity *ent = fastCalloc(1, sizeof(entity));
+    ent->type = DRONE_PIECE_ENTITY;
+    ent->entity = piece;
+    piece->ent = ent;
+
+    b2BodyDef pieceBodyDef = b2DefaultBodyDef();
+    pieceBodyDef.type = b2_dynamicBody;
+
+    pieceBodyDef.position = pos;
+    pieceBodyDef.rotation = rot;
+    pieceBodyDef.linearDamping = DRONE_PIECE_LINEAR_DAMPING;
+    pieceBodyDef.angularDamping = DRONE_PIECE_ANGULAR_DAMPING;
+    pieceBodyDef.linearVelocity = b2MulSV(randFloat(&e->randState, DRONE_PIECE_MIN_SPEED, DRONE_PIECE_MAX_SPEED), direction);
+    pieceBodyDef.angularVelocity = randFloat(&e->randState, -PI, PI);
+    pieceBodyDef.userData = ent;
+    piece->bodyID = b2CreateBody(e->worldID, &pieceBodyDef);
+
+    b2ShapeDef pieceShapeDef = b2DefaultShapeDef();
+    pieceShapeDef.filter.categoryBits = DRONE_PIECE_SHAPE;
+    pieceShapeDef.filter.maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | DRONE_PIECE_SHAPE;
+    pieceShapeDef.density = 1.0f;
+    pieceShapeDef.userData = ent;
+
+    // make pieces from the shield a bit smaller
+    if (fromShield) {
+        piece->vertices[0] = (b2Vec2){.x = 0.0f, .y = -1.0f};
+        piece->vertices[1] = (b2Vec2){.x = -0.5f, .y = 0.0f};
+        piece->vertices[2] = (b2Vec2){.x = 0.5f, .y = 0.0f};
+    } else {
+        piece->vertices[0] = (b2Vec2){.x = 0.0f, .y = -1.5f};
+        piece->vertices[1] = (b2Vec2){.x = -0.75f, .y = 0.0f};
+        piece->vertices[2] = (b2Vec2){.x = 0.75f, .y = 0.0f};
+    }
+
+    const b2Hull pieceHull = b2ComputeHull(piece->vertices, 3);
+    const b2Polygon piecePolygon = b2MakePolygon(&pieceHull, 0.0f);
+    piece->shapeID = b2CreatePolygonShape(piece->bodyID, &pieceShapeDef, &piecePolygon);
+
+    cc_array_add(e->dronePieces, piece);
+}
+
+void destroyDronePiece(dronePieceEntity *piece) {
+    b2DestroyBody(piece->bodyID);
+    fastFree(piece->ent);
+    fastFree(piece);
+}
+
+void destroyDroneShield(env *e, shieldEntity *shield, const bool createPieces) {
     droneEntity *drone = shield->drone;
-    if (shield->health <= 0.0f) {
+    const float health = shield->health;
+    if (health <= 0.0f) {
         droneAddEnergy(drone, DRONE_SHIELD_BREAK_ENERGY_COST);
     }
     drone->shield = NULL;
@@ -708,14 +770,23 @@ void destroyDroneShield(shieldEntity *shield) {
     b2DestroyShape(shield->bufferShapeID, false);
     fastFree(shield->ent);
     fastFree(shield);
+
+    if (!createPieces || health > 0.0f) {
+        return;
+    }
+
+    // only create pieces if the shield was broken early
+    for (uint8_t i = 0; i < DRONE_PIECE_COUNT; i++) {
+        createDronePiece(e, drone, true);
+    }
 }
 
-void destroyDrone(droneEntity *drone) {
+void destroyDrone(env *e, droneEntity *drone) {
     fastFree(drone->ent);
 
     shieldEntity *shield = drone->shield;
     if (shield != NULL) {
-        destroyDroneShield(shield);
+        destroyDroneShield(e, shield, false);
     }
 
     b2DestroyBody(drone->bodyID);
@@ -733,7 +804,7 @@ void droneChangeWeapon(const env *e, droneEntity *drone, const enum weaponType n
     drone->ammo = weaponAmmo(e->defaultWeapon->type, drone->weaponInfo->type);
 }
 
-void killDrone(const env *e, droneEntity *drone) {
+void killDrone(env *e, droneEntity *drone) {
     if (drone->dead || drone->livesLeft == 0) {
         return;
     }
@@ -752,6 +823,10 @@ void killDrone(const env *e, droneEntity *drone) {
     drone->shotThisStep = false;
     drone->velocity = b2Vec2_zero;
     drone->lastVelocity = b2Vec2_zero;
+
+    for (uint8_t i = 0; i < DRONE_PIECE_COUNT; i++) {
+        createDronePiece(e, drone, false);
+    }
 }
 
 bool respawnDrone(env *e, droneEntity *drone) {
@@ -765,6 +840,7 @@ bool respawnDrone(env *e, droneEntity *drone) {
 
     drone->dead = false;
     drone->pos = pos;
+    drone->respawnGuideLifetime = UINT16_MAX;
 
     droneAddEnergy(drone, DRONE_ENERGY_RESPAWN_REFILL);
 
@@ -1643,7 +1719,7 @@ bool droneStep(env *e, droneEntity *drone) {
     if (shield != NULL) {
         shield->duration -= e->deltaTime;
         if (shield->duration <= 0.0f || shield->health <= 0.0f) {
-            destroyDroneShield(shield);
+            destroyDroneShield(e, shield, true);
         }
     }
 
@@ -1770,6 +1846,7 @@ void handleBodyMoveEvents(env *e) {
         projectileEntity *proj;
         droneEntity *drone;
         shieldEntity *shield;
+        dronePieceEntity *piece;
 
         // if the new position is out of bounds, destroy the entity unless
         // a drone is out of bounds, then just kill it
@@ -1834,6 +1911,11 @@ void handleBodyMoveEvents(env *e) {
         case SHIELD_ENTITY:
             shield = ent->entity;
             shield->pos = newPos;
+            break;
+        case DRONE_PIECE_ENTITY:
+            piece = ent->entity;
+            piece->pos = newPos;
+            piece->rot = event->transform.q;
             break;
         default:
             ERRORF("unknown entity type for move event %d", ent->type);
@@ -2042,7 +2124,7 @@ void handleContactEvents(env *e) {
                 } else if (e2->type == SHIELD_ENTITY) {
                     shieldEntity *shield = e2->entity;
                     shield->health = 0.0f;
-                    destroyDroneShield(shield);
+                    destroyDroneShield(e, shield, true);
                     e2 = NULL;
                 }
             }
@@ -2057,7 +2139,7 @@ void handleContactEvents(env *e) {
                 } else if (e1->type == SHIELD_ENTITY) {
                     shieldEntity *shield = e1->entity;
                     shield->health = 0.0f;
-                    destroyDroneShield(shield);
+                    destroyDroneShield(e, shield, true);
                 }
             }
         }

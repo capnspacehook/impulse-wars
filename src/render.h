@@ -6,14 +6,24 @@
 #include "env.h"
 #include "helpers.h"
 
+bool droneControlledByHuman(const env *e, uint8_t i);
+
 const float DEFAULT_SCALE = 11.0f;
-const uint16_t DEFAULT_WIDTH = 1250;
+const uint16_t DEFAULT_WIDTH = 1500;
 const uint16_t DEFAULT_HEIGHT = 1000;
 const uint16_t HEIGHT_LEEWAY = 75;
 
 const float START_READY_TIME = 1.0f;
 const float END_WAIT_TIME = 2.0f;
+
 const float EXPLOSION_TIME = 0.5f;
+
+const float DRONE_RESPAWN_GUIDE_SHRINK_TIME = 0.75f;
+const float DRONE_RESPAWN_GUIDE_HOLD_TIME = 0.75f;
+const float DRONE_RESPAWN_GUIDE_MAX_RADIUS = DRONE_RADIUS * 5.5f;
+const float DRONE_RESPAWN_GUIDE_MIN_RADIUS = DRONE_RADIUS * 2.5f;
+
+const float DRONE_PIECE_LIFETIME = 2.0f;
 
 const Color barolo = {.r = 165, .g = 37, .b = 8, .a = 255};
 const Color bambooBrown = {.r = 204, .g = 129, .b = 0, .a = 255};
@@ -145,6 +155,39 @@ char *getWeaponAbreviation(const enum weaponType type) {
     return name;
 }
 
+char *getWeaponName(const enum weaponType type) {
+    char *name = "";
+    switch (type) {
+    case STANDARD_WEAPON:
+        name = "Standard";
+        break;
+    case MACHINEGUN_WEAPON:
+        name = "Machine Gun";
+        break;
+    case SNIPER_WEAPON:
+        name = "Railgun";
+        break;
+    case SHOTGUN_WEAPON:
+        name = "Shotgun";
+        break;
+    case IMPLODER_WEAPON:
+        name = "Imploder";
+        break;
+    case ACCELERATOR_WEAPON:
+        name = "Accelerator";
+        break;
+    case FLAK_CANNON_WEAPON:
+        name = "Flak Cannon";
+        break;
+    case MINE_LAUNCHER_WEAPON:
+        name = "Mine Launcher";
+        break;
+    default:
+        ERRORF("unknown weapon pickup type %d", type);
+    }
+    return name;
+}
+
 float getWeaponAimGuideWidth(const enum weaponType type) {
     switch (type) {
     case STANDARD_WEAPON:
@@ -193,12 +236,83 @@ void renderTimer(const env *e, const char *timerStr, const Color color) {
 }
 
 void renderUI(const env *e, const bool starting, const bool ending, const int8_t winner, const int8_t winningTeam) {
-    // render human control message
-    if (e->humanInput) {
-        const char *msg = "Human input: drone %d";
-        char buffer[strlen(msg) + 2];
-        snprintf(buffer, sizeof(buffer), msg, e->humanDroneInput);
-        DrawText(buffer, e->client->scale, 3 * e->client->scale, 20, LIME);
+    // render drone info
+    const uint8_t droneInfoStrSize = 64;
+    char droneInfoStr[droneInfoStrSize];
+    memset(droneInfoStr, 0x0, droneInfoStrSize);
+    uint8_t fontSize = 2 * e->client->scale;
+    uint8_t xMargin = 5 * e->client->scale;
+    uint8_t yMargin = 12 * e->client->scale;
+
+    for (int i = 0; i < e->numDrones; i++) {
+        const droneEntity *drone = safe_array_get_at(e->drones, i);
+
+        snprintf(droneInfoStr, droneInfoStrSize, "Drone %d", drone->idx + 1);
+        const Vector2 textSize = MeasureTextEx(GetFontDefault(), droneInfoStr, fontSize, fontSize / 10);
+        const uint16_t lineWidth = textSize.x + (3 * (e->renderScale * 2.5f));
+
+        uint16_t x = 0;
+        uint16_t y = 0;
+        switch (drone->idx) {
+        case 0:
+            x = xMargin;
+            y = yMargin;
+            break;
+        case 1:
+            x = e->client->width - lineWidth - xMargin;
+            y = yMargin;
+            break;
+        case 2:
+            x = xMargin;
+            y = e->client->height - yMargin - (6 * e->client->scale);
+            break;
+        case 3:
+            x = e->client->width - lineWidth - xMargin;
+            y = e->client->height - yMargin - (6 * e->client->scale);
+            break;
+        }
+
+        Color textColor = RAYWHITE;
+        if (drone->livesLeft == 0) {
+            textColor = Fade(RAYWHITE, 0.5f);
+        }
+        DrawText(droneInfoStr, x, y, fontSize, textColor);
+
+        uint16_t lifeX = x + textSize.x;
+        uint16_t lifeY = y + (textSize.y / 2);
+        const Color droneColor = getDroneColor(drone->idx);
+        for (uint8_t i = 0; i < drone->livesLeft; i++) {
+            lifeX += e->renderScale * 2.5f;
+            DrawCircleLines(lifeX, lifeY, e->renderScale, droneColor);
+        }
+
+        y += textSize.y + e->client->scale;
+        DrawLine(x, y, x + textSize.x, y, droneColor);
+
+        y += e->client->scale;
+        const char *weaponName = getWeaponName(drone->weaponInfo->type);
+        DrawText(weaponName, x, y, fontSize, textColor);
+
+        y += textSize.y + e->client->scale;
+        DrawLine(x, y, x + MeasureText(weaponName, fontSize), y, droneColor);
+
+        y += e->client->scale;
+        char *playerType = "";
+        if (droneControlledByHuman(e, drone->idx)) {
+            playerType = "Human";
+        } else if (drone->idx < e->numAgents) {
+            playerType = "NN";
+        } else {
+            playerType = "Scripted";
+        }
+        if (e->teamsEnabled) {
+            snprintf(droneInfoStr, droneInfoStrSize, "%s | Team %d", playerType, drone->team + 1);
+        } else {
+            memset(droneInfoStr, 0x0, droneInfoStrSize);
+            strncpy(droneInfoStr, playerType, strlen(playerType));
+        }
+
+        DrawText(droneInfoStr, x, y, fontSize, textColor);
     }
 
     // render timer
@@ -230,7 +344,7 @@ void renderUI(const env *e, const bool starting, const bool ending, const int8_t
         return;
     }
 
-    const int bufferSize = 3;
+    const uint8_t bufferSize = 3;
     char timerStr[bufferSize];
     if (e->stepsLeft >= 10 * e->frameRate) {
         snprintf(timerStr, bufferSize, "%d", (uint16_t)(e->stepsLeft / e->frameRate));
@@ -368,6 +482,80 @@ void renderWeaponPickup(const env *e, const weaponPickupEntity *pickup) {
     DrawText(weaponName, rec.x - origin.x + (0.1f * e->renderScale), rec.y - origin.y + e->renderScale, e->renderScale, BLACK);
 }
 
+b2Vec2 b2RotatedPolygonVec(const float cosA, const float sinA, const b2Vec2 pos, const b2Vec2 vertice) {
+    return (b2Vec2){
+        .x = cosA * (vertice.x - pos.x) - sinA * (vertice.y - pos.y) + pos.x,
+        .y = sinA * (vertice.x - pos.x) + cosA * (vertice.y - pos.y) + pos.y,
+    };
+}
+
+void renderDronePieces(const env *e, const bool ending) {
+    const float maxLifetime = e->frameRate * DRONE_PIECE_LIFETIME;
+
+    CC_ArrayIter iter;
+    cc_array_iter_init(&iter, e->dronePieces);
+    dronePieceEntity *piece;
+    while (cc_array_iter_next(&iter, (void **)&piece) != CC_ITER_END) {
+        if (piece->lifetime == UINT16_MAX) {
+            piece->lifetime = maxLifetime;
+        }
+
+        float baseAlpha = 1.0f;
+        if (piece->isShieldPiece) {
+            baseAlpha = 0.5f;
+        }
+        const float alpha = baseAlpha * ((float)piece->lifetime / maxLifetime);
+        const Color color = Fade(getDroneColor(piece->droneIdx), alpha);
+        const float cosA = cosf(b2Rot_GetAngle(piece->rot));
+        const float sinA = sinf(b2Rot_GetAngle(piece->rot));
+
+        b2Vec2 v1 = b2Add(piece->pos, piece->vertices[0]);
+        v1 = b2RotatedPolygonVec(cosA, sinA, piece->pos, v1);
+        b2Vec2 v2 = b2Add(piece->pos, piece->vertices[1]);
+        v2 = b2RotatedPolygonVec(cosA, sinA, piece->pos, v2);
+        b2Vec2 v3 = b2Add(piece->pos, piece->vertices[2]);
+        v3 = b2RotatedPolygonVec(cosA, sinA, piece->pos, v3);
+
+        DrawTriangleLines(
+            b2VecToRayVec(e, v1),
+            b2VecToRayVec(e, v2),
+            b2VecToRayVec(e, v3),
+            color);
+
+        if (ending) {
+            continue;
+        }
+
+        piece->lifetime--;
+        if (piece->lifetime == 0) {
+            destroyDronePiece(piece);
+            cc_array_iter_remove_fast(&iter, NULL);
+        }
+    }
+}
+
+void renderDroneRespawnGuides(const env *e, droneEntity *drone, const bool ending) {
+    if (drone->respawnGuideLifetime == 0) {
+        return;
+    }
+    const float maxLifetime = e->frameRate * (DRONE_RESPAWN_GUIDE_SHRINK_TIME + DRONE_RESPAWN_GUIDE_HOLD_TIME);
+    const uint16_t shrinkTime = e->frameRate * DRONE_RESPAWN_GUIDE_SHRINK_TIME;
+    if (drone->respawnGuideLifetime == UINT16_MAX) {
+        drone->respawnGuideLifetime = maxLifetime;
+    }
+
+    float radius = DRONE_RESPAWN_GUIDE_MIN_RADIUS;
+    if (drone->respawnGuideLifetime >= maxLifetime - shrinkTime) {
+        radius += DRONE_RESPAWN_GUIDE_MAX_RADIUS * ((drone->respawnGuideLifetime - (e->frameRate * DRONE_RESPAWN_GUIDE_HOLD_TIME)) / shrinkTime);
+    }
+
+    DrawCircleLinesV(b2VecToRayVec(e, drone->pos), radius * e->renderScale, getDroneColor(drone->idx));
+
+    if (!ending) {
+        drone->respawnGuideLifetime--;
+    }
+}
+
 b2RayResult droneAimingAt(const env *e, droneEntity *drone) {
     const b2Vec2 rayEnd = b2MulAdd(drone->pos, 150.0f, drone->lastAim);
     const b2Vec2 translation = b2Sub(rayEnd, drone->pos);
@@ -375,10 +563,10 @@ b2RayResult droneAimingAt(const env *e, droneEntity *drone) {
     return b2World_CastRayClosest(e->worldID, drone->pos, translation, filter);
 }
 
-void renderDroneGuides(env *e, droneEntity *drone, const uint8_t droneIdx, const bool ending) {
+void renderDroneGuides(env *e, droneEntity *drone, const bool ending) {
     const float rayX = b2XToRayX(e, drone->pos.x);
     const float rayY = b2YToRayY(e, drone->pos.y);
-    const Color droneColor = getDroneColor(droneIdx);
+    const Color droneColor = getDroneColor(drone->idx);
 
     // render thruster move guide
     if (!b2VecEqual(drone->lastMove, b2Vec2_zero)) {
@@ -484,9 +672,9 @@ void renderDroneTrail(const env *e, const droneEntity *drone, Color droneColor) 
     }
 }
 
-void renderDrone(const env *e, const droneEntity *drone, const int droneIdx) {
+void renderDrone(const env *e, const droneEntity *drone) {
     const Vector2 raylibPos = b2VecToRayVec(e, drone->pos);
-    const Color droneColor = getDroneColor(droneIdx);
+    const Color droneColor = getDroneColor(drone->idx);
     renderDroneTrail(e, drone, droneColor);
     DrawCircleV(raylibPos, DRONE_RADIUS * e->renderScale, droneColor);
     DrawCircleV(raylibPos, DRONE_RADIUS * 0.8f * e->renderScale, BLACK);
@@ -608,6 +796,10 @@ void renderProjectiles(env *e) {
     }
 }
 
+// TODO:
+// - add drone death animations
+// - add info UI on sides:
+//   - teams, weapon type, ammo, cooldown, type of player
 void _renderEnv(env *e, const bool starting, const bool ending, const int8_t winner, const int8_t winningTeam) {
     BeginDrawing();
 
@@ -634,20 +826,28 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
     }
 
     renderBrakeTrails(e, ending);
+    renderDronePieces(e, ending);
 
     for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
         if (drone->dead) {
             continue;
         }
-        renderDroneGuides(e, drone, i, ending);
+        renderDroneRespawnGuides(e, drone, ending);
+    }
+    for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
+        droneEntity *drone = safe_array_get_at(e->drones, i);
+        if (drone->dead) {
+            continue;
+        }
+        renderDroneGuides(e, drone, ending);
     }
     for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
         const droneEntity *drone = safe_array_get_at(e->drones, i);
         if (drone->dead) {
             continue;
         }
-        renderDrone(e, drone, i);
+        renderDrone(e, drone);
     }
 
     for (size_t i = 0; i < cc_array_size(e->walls); i++) {
@@ -670,9 +870,9 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
         renderDroneUI(e, drone);
     }
 
-    if (!b2VecEqual(e->debugPoint, b2Vec2_zero)) {
-        DrawCircleV(b2VecToRayVec(e, e->debugPoint), DRONE_RADIUS * 0.5f * e->renderScale, WHITE);
-    }
+    // if (!b2VecEqual(e->debugPoint, b2Vec2_zero)) {
+    //     DrawCircleV(b2VecToRayVec(e, e->debugPoint), DRONE_RADIUS * 0.5f * e->renderScale, WHITE);
+    // }
 
     EndDrawing();
 }

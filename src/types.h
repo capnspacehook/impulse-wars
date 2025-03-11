@@ -33,6 +33,7 @@ enum entityType {
     PROJECTILE_ENTITY,
     DRONE_ENTITY,
     SHIELD_ENTITY,
+    DRONE_PIECE_ENTITY,
 };
 
 // the category bit that will be set on each entity's shape; this is
@@ -44,6 +45,7 @@ enum shapeCategory {
     WEAPON_PICKUP_SHAPE = 8,
     DRONE_SHAPE = 16,
     SHIELD_SHAPE = 32,
+    DRONE_PIECE_SHAPE = 64,
 };
 
 // general purpose entity object
@@ -194,6 +196,7 @@ typedef struct projectileEntity {
 
     entity *ent;
 
+    // for rendering
     trailPoints trailPoints;
 } projectileEntity;
 
@@ -221,6 +224,21 @@ typedef struct shieldEntity {
 
     entity *ent;
 } shieldEntity;
+
+typedef struct dronePieceEntity {
+    uint8_t droneIdx;
+
+    b2BodyId bodyID;
+    b2ShapeId shapeID;
+    b2Vec2 pos;
+    b2Rot rot;
+    b2Vec2 vertices[3];
+    bool isShieldPiece;
+
+    entity *ent;
+
+    uint16_t lifetime;
+} dronePieceEntity;
 
 typedef struct droneEntity {
     b2BodyId bodyID;
@@ -257,10 +275,12 @@ typedef struct droneEntity {
     uint8_t livesLeft;
     bool dead;
 
-    trailPoints trailPoints;
-
     shieldEntity *shield;
     entity *ent;
+
+    // for rendering
+    trailPoints trailPoints;
+    uint16_t respawnGuideLifetime;
 } droneEntity;
 
 // stats for the whole episode
@@ -371,6 +391,7 @@ typedef struct env {
     CC_Array *pickups;
     CC_Array *projectiles;
     CC_Array *explodingProjectiles;
+    CC_Array *dronePieces;
 
     pathingInfo *mapPathing;
 
@@ -384,15 +405,16 @@ typedef struct env {
     uint8_t suddenDeathWallCounter;
     bool suddenDeathWallsPlaced;
 
+    bool humanInput;
+    uint8_t humanDroneInput;
+    uint8_t connectedControllers;
+
     rayClient *client;
     float renderScale;
     CC_Array *brakeTrailPoints;
     // used for rendering explosions
     CC_Array *explosions;
     b2Vec2 debugPoint;
-    bool humanInput;
-    uint8_t humanDroneInput;
-    uint8_t connectedControllers;
 } env;
 
 #endif

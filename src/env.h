@@ -620,6 +620,7 @@ env *initEnv(env *e, uint8_t numDrones, uint8_t numAgents, uint8_t *obs, bool di
     cc_array_new(&e->brakeTrailPoints);
     cc_array_new(&e->explosions);
     cc_array_new(&e->explodingProjectiles);
+    cc_array_new(&e->dronePieces);
 
     e->mapPathing = fastCalloc(NUM_MAPS, sizeof(pathingInfo));
     for (uint8_t i = 0; i < NUM_MAPS; i++) {
@@ -648,7 +649,7 @@ void clearEnv(env *e) {
 
     for (uint8_t i = 0; i < e->numDrones; i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
-        destroyDrone(drone);
+        destroyDrone(e, drone);
     }
 
     for (size_t i = 0; i < cc_array_size(e->floatingWalls); i++) {
@@ -676,6 +677,11 @@ void clearEnv(env *e) {
         fastFree(explosion);
     }
 
+    for (size_t i = 0; i < cc_array_size(e->dronePieces); i++) {
+        dronePieceEntity *piece = safe_array_get_at(e->dronePieces, i);
+        destroyDronePiece(piece);
+    }
+
     cc_array_remove_all(e->drones);
     cc_array_remove_all(e->floatingWalls);
     cc_array_remove_all(e->pickups);
@@ -683,6 +689,7 @@ void clearEnv(env *e) {
     cc_array_remove_all(e->explodingProjectiles);
     cc_array_remove_all(e->brakeTrailPoints);
     cc_array_remove_all(e->explosions);
+    cc_array_remove_all(e->dronePieces);
 }
 
 void destroyEnv(env *e) {
@@ -714,6 +721,7 @@ void destroyEnv(env *e) {
     cc_array_destroy(e->brakeTrailPoints);
     cc_array_destroy(e->explosions);
     cc_array_destroy(e->explodingProjectiles);
+    cc_array_destroy(e->dronePieces);
 
     b2DestroyWorld(e->worldID);
 }
