@@ -377,7 +377,7 @@ void computeObs(env *e) {
         droneEntity *agentDrone = safe_array_get_at(e->drones, agentIdx);
         // if the drone is dead, only compute observations if it died
         // this step and it isn't out of bounds
-        if (agentDrone->dead && (!agentDrone->diedThisStep || agentDrone->mapCellIdx == -1)) {
+        if (agentDrone->livesLeft == 0 && (!agentDrone->diedThisStep || agentDrone->mapCellIdx == -1)) {
             continue;
         }
 
@@ -436,7 +436,7 @@ void computeObs(env *e) {
             }
 
             droneEntity *enemyDrone = safe_array_get_at(e->drones, i);
-            if (enemyDrone->dead) {
+            if (enemyDrone->livesLeft == 0) {
                 processedDrones++;
                 continue;
             }
@@ -477,7 +477,8 @@ void computeObs(env *e) {
             continuousObs[continuousObsOffset++] = scaleValue(enemyDrone->burstCooldown, DRONE_BURST_COOLDOWN, true);
             continuousObs[continuousObsOffset++] = (float)enemyDrone->chargingBurst;
             continuousObs[continuousObsOffset++] = scaleValue(enemyDrone->burstCharge, DRONE_ENERGY_MAX, true);
-            continuousObs[continuousObsOffset++] = 1; // is drone alive
+            continuousObs[continuousObsOffset++] = scaleValue(enemyDrone->livesLeft, DRONE_LIVES, true);
+            continuousObs[continuousObsOffset++] = !enemyDrone->dead;
 
             processedDrones++;
             ASSERTF(continuousObsOffset == ENEMY_DRONE_OBS_OFFSET + (e->numDrones - 1) + (processedDrones * ENEMY_DRONE_OBS_SIZE), "offset: %d", continuousObsOffset);
@@ -514,6 +515,8 @@ void computeObs(env *e) {
         continuousObs[continuousObsOffset++] = hitShot;
         continuousObs[continuousObsOffset++] = tookShot;
         continuousObs[continuousObsOffset++] = agentDrone->stepInfo.ownShotTaken;
+        continuousObs[continuousObsOffset++] = scaleValue(agentDrone->livesLeft, DRONE_LIVES, true);
+        continuousObs[continuousObsOffset++] = !agentDrone->dead;
 
         ASSERTF(continuousObsOffset == ENEMY_DRONE_OBS_OFFSET + ((e->numDrones - 1) * ENEMY_DRONE_OBS_SIZE) + DRONE_OBS_SIZE, "offset: %d", continuousObsOffset);
         continuousObs[continuousObsOffset] = scaleValue(e->stepsLeft, e->totalSteps, true);
@@ -1176,7 +1179,7 @@ void stepEnv(env *e) {
             uint8_t deadDrones = 0;
             for (uint8_t i = 0; i < e->numDrones; i++) {
                 droneEntity *drone = safe_array_get_at(e->drones, i);
-                if (!drone->dead) {
+                if (drone->livesLeft != 0) {
                     droneStep(e, drone);
                     lastAlive = i;
 

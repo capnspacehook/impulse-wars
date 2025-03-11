@@ -245,17 +245,18 @@ bool isOverlappingCircleInLineOfSight(const env *e, const entity *ent, const b2V
 // will be returned
 bool findOpenPos(env *e, const enum shapeCategory shapeType, b2Vec2 *emptyPos, int8_t quad) {
     uint8_t checkedCells[BITNSLOTS(MAX_CELLS)] = {0};
-    const size_t nCells = cc_array_size(e->cells);
+    const size_t nCells = cc_array_size(e->cells) - 1;
     uint16_t attempts = 0;
 
     while (true) {
         if (attempts == nCells) {
             return false;
         }
+        attempts++;
 
         uint16_t cellIdx;
         if (quad == -1) {
-            cellIdx = randInt(&e->randState, 0, nCells - 1);
+            cellIdx = randInt(&e->randState, 0, nCells);
         } else {
             const float minX = e->map->spawnQuads[quad].min.x;
             const float minY = e->map->spawnQuads[quad].min.y;
@@ -269,7 +270,6 @@ bool findOpenPos(env *e, const enum shapeCategory shapeType, b2Vec2 *emptyPos, i
             continue;
         }
         bitSet(checkedCells, cellIdx);
-        attempts++;
 
         const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
         if (cell->ent != NULL) {
@@ -290,6 +290,7 @@ bool findOpenPos(env *e, const enum shapeCategory shapeType, b2Vec2 *emptyPos, i
                 continue;
             }
         } else if (shapeType == DRONE_SHAPE) {
+            // TODO: handle sudden death
             if (!e->map->droneSpawns[cellIdx]) {
                 continue;
             }
@@ -310,7 +311,7 @@ bool findOpenPos(env *e, const enum shapeCategory shapeType, b2Vec2 *emptyPos, i
 
         const b2QueryFilter filter = {
             .categoryBits = shapeType,
-            .maskBits = FLOATING_WALL_SHAPE | DRONE_SHAPE,
+            .maskBits = FLOATING_WALL_SHAPE | WEAPON_PICKUP_SHAPE | DRONE_SHAPE,
         };
         if (!isOverlappingAABB(e, cell->pos, MIN_SPAWN_DISTANCE, filter)) {
             *emptyPos = cell->pos;
@@ -545,7 +546,11 @@ void createDroneShield(const env *e, droneEntity *drone, const int8_t groupIdx) 
     shield->bodyID = shieldBodyID;
     shield->pos = drone->pos;
     shield->health = DRONE_SHIELD_HEALTH;
-    shield->duration = DRONE_SHIELD_START_DURATION;
+    float duration = DRONE_SHIELD_START_DURATION;
+    if (drone->livesLeft != DRONE_LIVES) {
+        duration = DRONE_SHIELD_RESPAWN_DURATION;
+    }
+    shield->duration = duration;
 
     entity *shieldEnt = fastCalloc(1, sizeof(entity));
     shieldEnt->type = SHIELD_ENTITY;
@@ -616,6 +621,7 @@ void createDrone(env *e, const uint8_t idx) {
     drone->pos = droneBodyDef.position;
     drone->mapCellIdx = entityPosToCellIdx(e, droneBodyDef.position);
     drone->lastAim = (b2Vec2){.x = 0.0f, .y = -1.0f};
+    drone->livesLeft = DRONE_LIVES;
     memset(&drone->stepInfo, 0x0, sizeof(droneStepInfo));
 
     entity *ent = fastCalloc(1, sizeof(entity));
@@ -654,24 +660,36 @@ void destroyDrone(droneEntity *drone) {
     fastFree(drone);
 }
 
-void killDrone(env *e, droneEntity *drone) {
-    if (drone->dead) {
+void droneChangeWeapon(const env *e, droneEntity *drone, const enum weaponType newWeapon) {
+    // top up ammo but change nothing else if the weapon is the same
+    if (drone->weaponInfo->type != newWeapon) {
+        drone->weaponCooldown = 0.0f;
+        drone->weaponCharge = 0.0f;
+        drone->heat = 0;
+    }
+    drone->weaponInfo = weaponInfos[newWeapon];
+    drone->ammo = weaponAmmo(e->defaultWeapon->type, drone->weaponInfo->type);
+}
+
+void killDrone(const env *e, droneEntity *drone) {
+    if (drone->dead || drone->livesLeft == 0) {
         return;
     }
     DEBUG_LOGF("drone %d died", drone->idx);
 
+    drone->livesLeft--;
     drone->dead = true;
     drone->diedThisStep = true;
-    // if there are 2 drones total the episode is over
-    if (e->numDrones == 2) {
-        return;
-    }
+    drone->respawnWait = DRONE_RESPAWN_WAIT;
 
     b2Body_Disable(drone->bodyID);
+    droneChangeWeapon(e, drone, e->defaultWeapon->type);
     drone->braking = false;
     drone->chargingBurst = false;
     drone->energyFullyDepleted = false;
     drone->shotThisStep = false;
+    drone->velocity = b2Vec2_zero;
+    drone->lastVelocity = b2Vec2_zero;
 }
 
 void droneAddEnergy(droneEntity *drone, float energy) {
@@ -680,6 +698,27 @@ void droneAddEnergy(droneEntity *drone, float energy) {
         drone->burstCharge = clamp(drone->burstCharge + energy);
     } else {
         drone->energyLeft = clamp(drone->energyLeft + energy);
+    }
+}
+
+void respawnDrone(env *e, droneEntity *drone) {
+    b2Vec2 pos;
+    if (!findOpenPos(e, DRONE_SHAPE, &pos, -1)) {
+        ERROR("no open position for drone");
+    }
+    b2Body_SetTransform(drone->bodyID, pos, b2Rot_identity);
+    b2Body_Enable(drone->bodyID);
+    b2Body_SetLinearDamping(drone->bodyID, DRONE_LINEAR_DAMPING);
+
+    drone->dead = false;
+    drone->pos = pos;
+
+    droneAddEnergy(drone, DRONE_ENERGY_RESPAWN_REFILL);
+
+    createDroneShield(e, drone, -(drone->idx + 1));
+
+    if (e->client != NULL) {
+        drone->trailPoints.length = 0;
     }
 }
 
@@ -1297,17 +1336,6 @@ void droneMove(droneEntity *drone, b2Vec2 direction) {
     b2Body_ApplyForceToCenter(drone->bodyID, force, true);
 }
 
-void droneChangeWeapon(const env *e, droneEntity *drone, const enum weaponType newWeapon) {
-    // top up ammo but change nothing else if the weapon is the same
-    if (drone->weaponInfo->type != newWeapon) {
-        drone->weaponCooldown = 0.0f;
-        drone->weaponCharge = 0.0f;
-        drone->heat = 0;
-    }
-    drone->weaponInfo = weaponInfos[newWeapon];
-    drone->ammo = weaponAmmo(e->defaultWeapon->type, drone->weaponInfo->type);
-}
-
 void droneShoot(env *e, droneEntity *drone, const b2Vec2 aim, const bool chargingWeapon) {
     ASSERT(drone->ammo != 0);
 
@@ -1358,7 +1386,6 @@ void droneShoot(env *e, droneEntity *drone, const b2Vec2 aim, const bool chargin
 
     if (drone->ammo == 0) {
         droneChangeWeapon(e, drone, e->defaultWeapon->type);
-        drone->weaponCooldown = drone->weaponInfo->coolDown;
     }
 }
 
@@ -1503,6 +1530,14 @@ float castCircleCallback(b2ShapeId shapeId, b2Vec2 point, b2Vec2 normal, float f
 }
 
 void droneStep(env *e, droneEntity *drone) {
+    if (drone->dead) {
+        drone->respawnWait -= e->deltaTime;
+        if (drone->respawnWait <= 0.0f) {
+            respawnDrone(e, drone);
+        }
+        return;
+    }
+
     // manage weapon charge and heat
     if (drone->weaponCooldown != 0.0f) {
         drone->weaponCooldown = fmaxf(drone->weaponCooldown - e->deltaTime, 0.0f);
@@ -1537,7 +1572,7 @@ void droneStep(env *e, droneEntity *drone) {
     shieldEntity *shield = drone->shield;
     if (shield != NULL) {
         shield->duration = fmaxf(shield->duration - e->deltaTime, 0.0f);
-        if (shield->duration == 0.0f || shield->health == 0.0f) {
+        if (shield->duration == 0.0f || shield->health <= 0.0f) {
             destroyDroneShield(shield);
         }
     }
@@ -1765,7 +1800,9 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
         return false;
     } else if (ent->type == SHIELD_ENTITY) {
         // always allow projectiles to bounce off shields, and update shield health
-        // TODO: decrease shield health
+        shieldEntity *shield = ent->entity;
+        const float damage = projectile->lastSpeed * projectile->weaponInfo->mass * DRONE_SHIELD_HEALTH_IMPULSE_COEF;
+        shield->health -= damage;
         return false;
     }
 
@@ -1776,7 +1813,8 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
             droneEntity *shooterDrone = safe_array_get_at(e->drones, projectile->droneIdx);
 
             if (shooterDrone->team != hitDrone->team) {
-                droneAddEnergy(shooterDrone, projectile->weaponInfo->energyRefill);
+                const float impulseEnergy = projectile->lastSpeed * projectile->weaponInfo->mass * projectile->weaponInfo->energyRefillCoef;
+                droneAddEnergy(shooterDrone, impulseEnergy);
             }
             // add 1 so we can differentiate between no weapon and weapon 0
             shooterDrone->stepInfo.shotHit[hitDrone->idx] = projectile->weaponInfo->type + 1;

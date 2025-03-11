@@ -89,7 +89,7 @@
 #endif
 
 #define MASS(density, radius) ((density) * PI * (radius) * (radius))
-#define INV_MASS(density, radius) (1.0f / MASS(density, radius))
+#define INV_MASS(mass) (1.0f / (mass))
 // given a mass and radius, calculate the density such that the density
 // and radius will result in the same mass as what's given
 #define MATCHING_DENSITY(mass, radius) ((mass) / (PI * (radius) * (radius)))

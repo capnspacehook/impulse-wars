@@ -24,7 +24,9 @@ const uint8_t NUM_MAPS = 9;
 
 #define MAX_NEAREST_WALLS 8
 
-const uint8_t ROUND_STEPS = 60;
+const uint8_t DRONE_LIVES = 3;
+const float DRONE_RESPAWN_WAIT = 2.0f;
+const uint8_t ROUND_STEPS = 90;
 const uint8_t SUDDEN_DEATH_STEPS = 5;
 
 const uint8_t MAX_DRONES = _MAX_DRONES;
@@ -88,9 +90,9 @@ const uint8_t PROJECTILE_OBS_SIZE = NUM_PROJECTILE_OBS * PROJECTILE_INFO_OBS_SIZ
 const uint16_t PROJECTILE_INFO_OBS_OFFSET = WEAPON_PICKUP_POS_OBS_OFFSET + WEAPON_PICKUP_OBS_SIZE;
 
 const uint16_t ENEMY_DRONE_OBS_OFFSET = PROJECTILE_INFO_OBS_OFFSET + PROJECTILE_OBS_SIZE;
-const uint8_t ENEMY_DRONE_OBS_SIZE = 23;
+const uint8_t ENEMY_DRONE_OBS_SIZE = 24;
 
-const uint8_t DRONE_OBS_SIZE = 20;
+const uint8_t DRONE_OBS_SIZE = 22;
 
 const uint8_t MISC_OBS_SIZE = 1;
 
@@ -156,7 +158,7 @@ const float DRONE_DRONE_SPAWN_DISTANCE_SQUARED = SQUARED(10.0f);
 #define DRONE_DENSITY 1.25f
 const float DRONE_RESTITUTION = 0.3f;
 const float DRONE_FRICTION = 0.1f;
-#define DRONE_INV_MASS INV_MASS(DRONE_DENSITY, DRONE_RADIUS)
+#define DRONE_INV_MASS INV_MASS(MASS(DRONE_DENSITY, DRONE_RADIUS))
 const float DRONE_MOVE_MAGNITUDE = 35.0f;
 const float DRONE_LINEAR_DAMPING = 1.0f;
 const float DRONE_MOVE_AIM_COEF = 0.1f;
@@ -167,6 +169,7 @@ const float DRONE_BRAKE_DRAIN_RATE = 0.5f;
 const float DRONE_ENERGY_REFILL_WAIT = 1.0f;
 const float DRONE_ENERGY_REFILL_EMPTY_WAIT = 3.0f;
 const float DRONE_ENERGY_REFILL_RATE = 0.03f;
+const float DRONE_ENERGY_RESPAWN_REFILL = 0.5f;
 
 const float DRONE_BURST_BASE_COST = 0.1f;
 const float DRONE_BURST_CHARGE_RATE = 0.6f;
@@ -178,7 +181,9 @@ const float DRONE_BURST_COOLDOWN = 0.5f;
 
 const float DRONE_SHIELD_RADIUS = DRONE_RADIUS * 1.5f;
 const float DRONE_SHIELD_HEALTH = 100.0f;
+const float DRONE_SHIELD_HEALTH_IMPULSE_COEF = 0.5f;
 const float DRONE_SHIELD_START_DURATION = 1.5f;
+const float DRONE_SHIELD_RESPAWN_DURATION = 3.0f;
 const float DRONE_SHIELD_EXPLOSION_REDUCTION = 0.5f;
 
 #define PROJECTILE_ENERGY_REFILL_COEF 0.001f
@@ -196,7 +201,8 @@ const float WEAPON_DISCARD_COST = 0.2f;
 #define STANDARD_MAX_DISTANCE 80.0f
 #define STANDARD_RADIUS 0.2
 #define STANDARD_DENSITY 3.25f
-#define STANDARD_INV_MASS INV_MASS(STANDARD_DENSITY, STANDARD_RADIUS)
+#define STANDARD_MASS MASS(STANDARD_DENSITY, STANDARD_RADIUS)
+#define STANDARD_INV_MASS INV_MASS(STANDARD_MASS)
 #define STANDARD_BOUNCE 2
 #define STANDARD_SPAWN_WEIGHT 0
 
@@ -210,7 +216,8 @@ const float WEAPON_DISCARD_COST = 0.2f;
 #define MACHINEGUN_MAX_DISTANCE 225.0f
 #define MACHINEGUN_RADIUS 0.15f
 #define MACHINEGUN_DENSITY 3.0f
-#define MACHINEGUN_INV_MASS INV_MASS(MACHINEGUN_DENSITY, MACHINEGUN_RADIUS)
+#define MACHINEGUN_MASS MASS(MACHINEGUN_DENSITY, MACHINEGUN_RADIUS)
+#define MACHINEGUN_INV_MASS INV_MASS(MACHINEGUN_MASS)
 #define MACHINEGUN_BOUNCE 1
 #define MACHINEGUN_ENERGY_REFILL_COEF 0.2f
 #define MACHINEGUN_SPAWN_WEIGHT 3.0f
@@ -225,7 +232,8 @@ const float WEAPON_DISCARD_COST = 0.2f;
 #define SNIPER_MAX_DISTANCE INFINITE
 #define SNIPER_RADIUS 0.5f
 #define SNIPER_DENSITY 2.0f
-#define SNIPER_INV_MASS INV_MASS(SNIPER_DENSITY, SNIPER_RADIUS)
+#define SNIPER_MASS MASS(SNIPER_DENSITY, SNIPER_RADIUS)
+#define SNIPER_INV_MASS INV_MASS(SNIPER_MASS)
 #define SNIPER_BOUNCE 0
 #define SNIPER_ENERGY_REFILL_COEF 1.2f
 #define SNIPER_SPAWN_WEIGHT 3.0f
@@ -240,7 +248,8 @@ const float WEAPON_DISCARD_COST = 0.2f;
 #define SHOTGUN_MAX_DISTANCE 100.0f
 #define SHOTGUN_RADIUS 0.15f
 #define SHOTGUN_DENSITY 2.5f
-#define SHOTGUN_INV_MASS INV_MASS(SHOTGUN_DENSITY, SHOTGUN_RADIUS)
+#define SHOTGUN_MASS MASS(SHOTGUN_DENSITY, SHOTGUN_RADIUS)
+#define SHOTGUN_INV_MASS INV_MASS(SHOTGUN_MASS)
 #define SHOTGUN_BOUNCE 1
 #define SHOTGUN_ENERGY_REFILL_COEF 0.5f
 #define SHOTGUN_SPAWN_WEIGHT 3.0f
@@ -255,7 +264,8 @@ const float WEAPON_DISCARD_COST = 0.2f;
 #define IMPLODER_MAX_DISTANCE INFINITE
 #define IMPLODER_RADIUS 0.8f
 #define IMPLODER_DENSITY 1.0f
-#define IMPLODER_INV_MASS INV_MASS(IMPLODER_DENSITY, IMPLODER_RADIUS)
+#define IMPLODER_MASS MASS(IMPLODER_DENSITY, IMPLODER_RADIUS)
+#define IMPLODER_INV_MASS INV_MASS(IMPLODER_MASS)
 #define IMPLODER_BOUNCE 0
 #define IMPLODER_SPAWN_WEIGHT 1.0f
 
@@ -269,7 +279,8 @@ const float WEAPON_DISCARD_COST = 0.2f;
 #define ACCELERATOR_MAX_DISTANCE INFINITE
 #define ACCELERATOR_RADIUS 0.5f
 #define ACCELERATOR_DENSITY 2.0f
-#define ACCELERATOR_INV_MASS INV_MASS(ACCELERATOR_DENSITY, ACCELERATOR_RADIUS)
+#define ACCELERATOR_MASS MASS(ACCELERATOR_DENSITY, ACCELERATOR_RADIUS)
+#define ACCELERATOR_INV_MASS INV_MASS(ACCELERATOR_MASS)
 #define ACCELERATOR_BOUNCE 100
 #define ACCELERATOR_BOUNCE_SPEED_COEF 1.07f
 #define ACCELERATOR_MAX_SPEED 500.f
@@ -285,7 +296,8 @@ const float WEAPON_DISCARD_COST = 0.2f;
 #define FLAK_CANNON_MAX_DISTANCE 100.0f
 #define FLAK_CANNON_RADIUS 0.3f
 #define FLAK_CANNON_DENSITY 1.0f
-#define FLAK_CANNON_INV_MASS INV_MASS(FLAK_CANNON_DENSITY, FLAK_CANNON_RADIUS)
+#define FLAK_CANNON_MASS MASS(FLAK_CANNON_DENSITY, FLAK_CANNON_RADIUS)
+#define FLAK_CANNON_INV_MASS INV_MASS(FLAK_CANNON_MASS)
 #define FLAK_CANNON_BOUNCE INFINITE
 #define FLAK_CANNON_SAFE_DISTANCE 25.0f
 #define FLAK_CANNON_PROXIMITY_RADIUS 2.0f
@@ -301,7 +313,8 @@ const float WEAPON_DISCARD_COST = 0.2f;
 #define MINE_LAUNCHER_MAX_DISTANCE INFINITE
 #define MINE_LAUNCHER_RADIUS 0.5f
 #define MINE_LAUNCHER_DENSITY 0.5f
-#define MINE_LAUNCHER_INV_MASS INV_MASS(MINE_LAUNCHER_DENSITY, MINE_LAUNCHER_RADIUS)
+#define MINE_LAUNCHER_MASS MASS(MINE_LAUNCHER_DENSITY, MINE_LAUNCHER_RADIUS)
+#define MINE_LAUNCHER_INV_MASS INV_MASS(MINE_LAUNCHER_MASS)
 #define MINE_LAUNCHER_BOUNCE INFINITE // this is to avoid mines sometimes exploding when hitting walls
 #define MINE_LAUNCHER_SPAWN_WEIGHT 2.0f
 #define MINE_LAUNCHER_PROXIMITY_RADIUS 7.5f
@@ -319,6 +332,7 @@ const weaponInformation standard = {
     .maxDistance = STANDARD_MAX_DISTANCE,
     .radius = STANDARD_RADIUS,
     .density = STANDARD_DENSITY,
+    .mass = STANDARD_MASS,
     .invMass = STANDARD_INV_MASS,
     .initialSpeed = STANDARD_FIRE_MAGNITUDE * STANDARD_INV_MASS,
     .maxBounces = STANDARD_BOUNCE + 1,
@@ -326,7 +340,7 @@ const weaponInformation standard = {
     .destroyedOnDroneHit = false,
     .explodesOnDroneHit = false,
     .proximityDetonates = false,
-    .energyRefill = (STANDARD_FIRE_MAGNITUDE * STANDARD_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF,
+    .energyRefillCoef = PROJECTILE_ENERGY_REFILL_COEF,
     .spawnWeight = STANDARD_SPAWN_WEIGHT,
 };
 
@@ -343,6 +357,7 @@ const weaponInformation machineGun = {
     .maxDistance = MACHINEGUN_MAX_DISTANCE,
     .radius = MACHINEGUN_RADIUS,
     .density = MACHINEGUN_DENSITY,
+    .mass = MACHINEGUN_MASS,
     .invMass = MACHINEGUN_INV_MASS,
     .initialSpeed = MACHINEGUN_FIRE_MAGNITUDE * MACHINEGUN_INV_MASS,
     .maxBounces = MACHINEGUN_BOUNCE + 1,
@@ -350,7 +365,7 @@ const weaponInformation machineGun = {
     .destroyedOnDroneHit = false,
     .explodesOnDroneHit = false,
     .proximityDetonates = false,
-    .energyRefill = ((MACHINEGUN_FIRE_MAGNITUDE * MACHINEGUN_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF) * MACHINEGUN_ENERGY_REFILL_COEF,
+    .energyRefillCoef = PROJECTILE_ENERGY_REFILL_COEF * MACHINEGUN_ENERGY_REFILL_COEF,
     .spawnWeight = MACHINEGUN_SPAWN_WEIGHT,
 };
 
@@ -367,6 +382,7 @@ const weaponInformation sniper = {
     .maxDistance = SNIPER_MAX_DISTANCE,
     .radius = SNIPER_RADIUS,
     .density = SNIPER_DENSITY,
+    .mass = SNIPER_MASS,
     .invMass = SNIPER_INV_MASS,
     .initialSpeed = SNIPER_FIRE_MAGNITUDE * SNIPER_INV_MASS,
     .maxBounces = SNIPER_BOUNCE + 1,
@@ -374,7 +390,7 @@ const weaponInformation sniper = {
     .destroyedOnDroneHit = true,
     .explodesOnDroneHit = false,
     .proximityDetonates = false,
-    .energyRefill = ((SNIPER_FIRE_MAGNITUDE * SNIPER_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF) * SNIPER_ENERGY_REFILL_COEF,
+    .energyRefillCoef = PROJECTILE_ENERGY_REFILL_COEF * SNIPER_ENERGY_REFILL_COEF,
     .spawnWeight = SNIPER_SPAWN_WEIGHT,
 };
 
@@ -391,6 +407,7 @@ const weaponInformation shotgun = {
     .maxDistance = SHOTGUN_MAX_DISTANCE,
     .radius = SHOTGUN_RADIUS,
     .density = SHOTGUN_DENSITY,
+    .mass = SHOTGUN_MASS,
     .invMass = SHOTGUN_INV_MASS,
     .initialSpeed = SHOTGUN_FIRE_MAGNITUDE * SHOTGUN_INV_MASS,
     .maxBounces = SHOTGUN_BOUNCE + 1,
@@ -398,7 +415,7 @@ const weaponInformation shotgun = {
     .destroyedOnDroneHit = false,
     .explodesOnDroneHit = false,
     .proximityDetonates = false,
-    .energyRefill = ((SHOTGUN_FIRE_MAGNITUDE * SHOTGUN_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF) * SHOTGUN_ENERGY_REFILL_COEF,
+    .energyRefillCoef = PROJECTILE_ENERGY_REFILL_COEF * SHOTGUN_ENERGY_REFILL_COEF,
     .spawnWeight = SHOTGUN_SPAWN_WEIGHT,
 };
 
@@ -415,6 +432,7 @@ const weaponInformation imploder = {
     .maxDistance = IMPLODER_MAX_DISTANCE,
     .radius = IMPLODER_RADIUS,
     .density = IMPLODER_DENSITY,
+    .mass = IMPLODER_MASS,
     .invMass = IMPLODER_INV_MASS,
     .initialSpeed = IMPLODER_FIRE_MAGNITUDE * IMPLODER_INV_MASS,
     .maxBounces = IMPLODER_BOUNCE + 1,
@@ -422,7 +440,7 @@ const weaponInformation imploder = {
     .destroyedOnDroneHit = true,
     .explodesOnDroneHit = true,
     .proximityDetonates = false,
-    .energyRefill = (IMPLODER_FIRE_MAGNITUDE * IMPLODER_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF,
+    .energyRefillCoef = PROJECTILE_ENERGY_REFILL_COEF,
     .spawnWeight = IMPLODER_SPAWN_WEIGHT,
 };
 
@@ -439,6 +457,7 @@ const weaponInformation accelerator = {
     .maxDistance = ACCELERATOR_MAX_DISTANCE,
     .radius = ACCELERATOR_RADIUS,
     .density = ACCELERATOR_DENSITY,
+    .mass = ACCELERATOR_MASS,
     .invMass = ACCELERATOR_INV_MASS,
     .initialSpeed = ACCELERATOR_FIRE_MAGNITUDE * ACCELERATOR_INV_MASS,
     .maxBounces = ACCELERATOR_BOUNCE + 1,
@@ -446,7 +465,7 @@ const weaponInformation accelerator = {
     .destroyedOnDroneHit = true,
     .explodesOnDroneHit = false,
     .proximityDetonates = false,
-    .energyRefill = ((ACCELERATOR_FIRE_MAGNITUDE * ACCELERATOR_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF) * ACCELERATOR_BOUNCE_SPEED_COEF,
+    .energyRefillCoef = PROJECTILE_ENERGY_REFILL_COEF,
     .spawnWeight = ACCELERATOR_SPAWN_WEIGHT,
 };
 
@@ -463,6 +482,7 @@ const weaponInformation flakCannon = {
     .maxDistance = FLAK_CANNON_MAX_DISTANCE,
     .radius = FLAK_CANNON_RADIUS,
     .density = FLAK_CANNON_DENSITY,
+    .mass = FLAK_CANNON_MASS,
     .invMass = FLAK_CANNON_INV_MASS,
     .initialSpeed = FLAK_CANNON_FIRE_MAGNITUDE * FLAK_CANNON_INV_MASS,
     .maxBounces = FLAK_CANNON_BOUNCE + 1,
@@ -470,7 +490,7 @@ const weaponInformation flakCannon = {
     .destroyedOnDroneHit = false,
     .explodesOnDroneHit = false,
     .proximityDetonates = true,
-    .energyRefill = (FLAK_CANNON_FIRE_MAGNITUDE * FLAK_CANNON_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF,
+    .energyRefillCoef = PROJECTILE_ENERGY_REFILL_COEF,
     .spawnWeight = FLAK_CANNON_SPAWN_WEIGHT,
 };
 
@@ -487,6 +507,7 @@ const weaponInformation mineLauncher = {
     .maxDistance = MINE_LAUNCHER_MAX_DISTANCE,
     .radius = MINE_LAUNCHER_RADIUS,
     .density = MINE_LAUNCHER_DENSITY,
+    .mass = MINE_LAUNCHER_MASS,
     .invMass = MINE_LAUNCHER_INV_MASS,
     .initialSpeed = MINE_LAUNCHER_FIRE_MAGNITUDE * MINE_LAUNCHER_INV_MASS,
     .maxBounces = MINE_LAUNCHER_BOUNCE + 1,
@@ -494,7 +515,7 @@ const weaponInformation mineLauncher = {
     .destroyedOnDroneHit = true,
     .explodesOnDroneHit = false,
     .proximityDetonates = true,
-    .energyRefill = (MINE_LAUNCHER_FIRE_MAGNITUDE * MINE_LAUNCHER_INV_MASS) * PROJECTILE_ENERGY_REFILL_COEF,
+    .energyRefillCoef = PROJECTILE_ENERGY_REFILL_COEF,
     .spawnWeight = MINE_LAUNCHER_SPAWN_WEIGHT,
 };
 

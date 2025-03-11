@@ -136,6 +136,7 @@ typedef struct weaponInformation {
     const float maxDistance;
     const float radius;
     const float density;
+    const float mass;
     const float invMass;
     const float initialSpeed;
     const uint8_t maxBounces;
@@ -143,7 +144,7 @@ typedef struct weaponInformation {
     const bool destroyedOnDroneHit;
     const bool explodesOnDroneHit;
     const bool proximityDetonates;
-    const float energyRefill;
+    const float energyRefillCoef;
     const float spawnWeight;
 } weaponInformation;
 
@@ -252,6 +253,8 @@ typedef struct droneEntity {
     b2Vec2 velocity;
     b2Vec2 lastVelocity;
     droneStepInfo stepInfo;
+    float respawnWait;
+    uint8_t livesLeft;
     bool dead;
 
     trailPoints trailPoints;
