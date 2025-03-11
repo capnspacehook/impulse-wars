@@ -94,17 +94,6 @@ logEntry aggregateAndClearLogBuffer(uint8_t numDrones, logBuffer *logs) {
 
 // returns a cell index that is closest to pos that isn't cellIdx
 uint16_t findNearestCell(const env *e, const b2Vec2 pos, const uint16_t cellIdx) {
-    uint8_t cellOffsets[8][2] = {
-        {-1, 0},  // left
-        {1, 0},   // right
-        {0, -1},  // up
-        {0, 1},   // down
-        {-1, -1}, // top-left
-        {1, -1},  // top-right
-        {-1, 1},  // bottom-left
-        {1, 1},   // bottom-right
-    };
-
     uint16_t closestCell = cellIdx;
     float minDistance = FLT_MAX;
     const uint8_t cellCol = cellIdx / e->map->columns;
@@ -1176,11 +1165,16 @@ void stepEnv(env *e) {
             int8_t lastAlive = -1;
             int8_t lastAliveTeam = -1;
             bool allAliveOnSameTeam = false;
+            bool roundOver = false;
             uint8_t deadDrones = 0;
             for (uint8_t i = 0; i < e->numDrones; i++) {
                 droneEntity *drone = safe_array_get_at(e->drones, i);
                 if (drone->livesLeft != 0) {
-                    droneStep(e, drone);
+                    if (!droneStep(e, drone)) {
+                        // couldn't find a respawn position, end the round
+                        deadDrones++;
+                        roundOver = true;
+                    }
                     lastAlive = i;
 
                     if (e->teamsEnabled) {
@@ -1205,7 +1199,9 @@ void stepEnv(env *e) {
 
             weaponPickupsStep(e);
 
-            bool roundOver = deadDrones >= e->numDrones - 1;
+            if (!roundOver) {
+                roundOver = deadDrones >= e->numDrones - 1;
+            }
             if (e->teamsEnabled && allAliveOnSameTeam) {
                 roundOver = true;
                 lastAlive = -1;

@@ -238,6 +238,17 @@ bool isOverlappingCircleInLineOfSight(const env *e, const entity *ent, const b2V
     return ctx.overlaps;
 }
 
+uint8_t cellOffsets[8][2] = {
+    {-1, 0},  // left
+    {1, 0},   // right
+    {0, -1},  // up
+    {0, 1},   // down
+    {-1, -1}, // top-left
+    {1, -1},  // top-right
+    {-1, 1},  // bottom-left
+    {1, 1},   // bottom-right
+};
+
 // returns true and sets emptyPos to the position of an empty cell
 // that is an appropriate distance away from other entities if one exists;
 // if quad is set to -1 a random valid position from anywhere on the map
@@ -247,9 +258,20 @@ bool findOpenPos(env *e, const enum shapeCategory shapeType, b2Vec2 *emptyPos, i
     uint8_t checkedCells[BITNSLOTS(MAX_CELLS)] = {0};
     const size_t nCells = cc_array_size(e->cells) - 1;
     uint16_t attempts = 0;
+    bool skipDistanceChecks = false;
 
     while (true) {
         if (attempts == nCells) {
+            // if we're trying to find a position for a drone and sudden
+            // death walls have been placed, try again this time ignoring
+            // distance checks; the drone must be spawned next
+            // to a death wall in this case
+            if (shapeType == DRONE_SHAPE && e->suddenDeathWallsPlaced && !skipDistanceChecks) {
+                attempts = 0;
+                memset(checkedCells, 0x0, BITNSLOTS(MAX_CELLS));
+                skipDistanceChecks = true;
+                continue;
+            }
             return false;
         }
         attempts++;
@@ -275,6 +297,9 @@ bool findOpenPos(env *e, const enum shapeCategory shapeType, b2Vec2 *emptyPos, i
         if (cell->ent != NULL) {
             continue;
         }
+        if (skipDistanceChecks) {
+            return true;
+        }
 
         if (shapeType == WEAPON_PICKUP_SHAPE) {
             // ensure pickups don't spawn too close to other pickups
@@ -290,22 +315,47 @@ bool findOpenPos(env *e, const enum shapeCategory shapeType, b2Vec2 *emptyPos, i
                 continue;
             }
         } else if (shapeType == DRONE_SHAPE) {
-            // TODO: handle sudden death
-            if (!e->map->droneSpawns[cellIdx]) {
-                continue;
-            }
-
-            // ensure drones don't spawn too close to other drones
-            bool tooClose = false;
-            for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
-                const droneEntity *drone = safe_array_get_at(e->drones, i);
-                if (b2DistanceSquared(cell->pos, drone->pos) < DRONE_DRONE_SPAWN_DISTANCE_SQUARED) {
-                    tooClose = true;
-                    break;
+            if (e->suddenDeathWallsPlaced) {
+                // if sudden death walls have been placed, ignore the
+                // spawn points as they may be covered by death walls;
+                // instead just try and find a cell that doesn't neighbor
+                // a death wall
+                const uint8_t cellCol = cellIdx / e->map->columns;
+                const uint8_t cellRow = cellIdx % e->map->columns;
+                bool deathWallNeighboring = false;
+                for (uint8_t i = 0; i < 8; i++) {
+                    const int8_t col = cellCol + cellOffsets[i][0];
+                    const int8_t row = cellRow + cellOffsets[i][1];
+                    if (row < 0 || row >= e->map->rows || col < 0 || col >= e->map->columns) {
+                        continue;
+                    }
+                    const int16_t testCellIdx = cellIndex(e, col, row);
+                    const mapCell *testCell = safe_array_get_at(e->cells, testCellIdx);
+                    if (testCell->ent != NULL && testCell->ent->type == DEATH_WALL_ENTITY) {
+                        deathWallNeighboring = true;
+                        break;
+                    }
                 }
-            }
-            if (tooClose) {
-                continue;
+                if (deathWallNeighboring) {
+                    continue;
+                }
+            } else {
+                if (!e->map->droneSpawns[cellIdx]) {
+                    continue;
+                }
+
+                // ensure drones don't spawn too close to other drones
+                bool tooClose = false;
+                for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
+                    const droneEntity *drone = safe_array_get_at(e->drones, i);
+                    if (b2DistanceSquared(cell->pos, drone->pos) < DRONE_DRONE_SPAWN_DISTANCE_SQUARED) {
+                        tooClose = true;
+                        break;
+                    }
+                }
+                if (tooClose) {
+                    continue;
+                }
             }
         }
 
@@ -701,10 +751,10 @@ void droneAddEnergy(droneEntity *drone, float energy) {
     }
 }
 
-void respawnDrone(env *e, droneEntity *drone) {
+bool respawnDrone(env *e, droneEntity *drone) {
     b2Vec2 pos;
     if (!findOpenPos(e, DRONE_SHAPE, &pos, -1)) {
-        ERROR("no open position for drone");
+        return false;
     }
     b2Body_SetTransform(drone->bodyID, pos, b2Rot_identity);
     b2Body_Enable(drone->bodyID);
@@ -720,6 +770,8 @@ void respawnDrone(env *e, droneEntity *drone) {
     if (e->client != NULL) {
         drone->trailPoints.length = 0;
     }
+
+    return true;
 }
 
 void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
@@ -1390,6 +1442,9 @@ void droneShoot(env *e, droneEntity *drone, const b2Vec2 aim, const bool chargin
 }
 
 void droneBrake(env *e, droneEntity *drone, const bool brake) {
+    if (drone->shield != NULL) {
+        return;
+    }
     // if the drone isn't braking or energy is fully depleted, return
     // unless the drone was braking during the last step
     if (!brake || drone->energyFullyDepleted) {
@@ -1432,7 +1487,7 @@ void droneBrake(env *e, droneEntity *drone, const bool brake) {
 }
 
 void droneChargeBurst(env *e, droneEntity *drone) {
-    if (drone->energyFullyDepleted || drone->burstCooldown != 0.0f || (!drone->chargingBurst && drone->energyLeft < DRONE_BURST_BASE_COST)) {
+    if (drone->energyFullyDepleted || drone->burstCooldown != 0.0f || drone->shield != NULL || (!drone->chargingBurst && drone->energyLeft < DRONE_BURST_BASE_COST)) {
         return;
     }
 
@@ -1529,13 +1584,18 @@ float castCircleCallback(b2ShapeId shapeId, b2Vec2 point, b2Vec2 normal, float f
     return fraction;
 }
 
-void droneStep(env *e, droneEntity *drone) {
+// update drone state, respawn the drone if necessary; false is returned
+// if no position could be found to respawn the drone at, and true otherwise
+bool droneStep(env *e, droneEntity *drone) {
     if (drone->dead) {
         drone->respawnWait -= e->deltaTime;
         if (drone->respawnWait <= 0.0f) {
-            respawnDrone(e, drone);
+            const bool foundPos = respawnDrone(e, drone);
+            if (!foundPos) {
+                return false;
+            }
         }
-        return;
+        return true;
     }
 
     // manage weapon charge and heat
@@ -1576,6 +1636,8 @@ void droneStep(env *e, droneEntity *drone) {
             destroyDroneShield(shield);
         }
     }
+
+    return true;
 }
 
 void projectilesStep(env *e) {

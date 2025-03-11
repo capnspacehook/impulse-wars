@@ -503,7 +503,9 @@ void renderDroneUI(const env *e, const droneEntity *drone) {
     const Vector2 energyMeterOrigin = {.x = b2XToRayX(e, drone->pos.x), .y = b2YToRayY(e, drone->pos.y)};
     float energyMeterEndAngle = 360.f * drone->energyLeft;
     Color energyMeterColor = RAYWHITE;
-    if (drone->energyFullyDepleted && drone->energyRefillWait != 0.0f) {
+    if (drone->shield != NULL) {
+        energyMeterColor = bambooBrown;
+    } else if (drone->energyFullyDepleted && drone->energyRefillWait != 0.0f) {
         energyMeterColor = bambooBrown;
         energyMeterEndAngle = 360.0f * (1.0f - (drone->energyRefillWait / (DRONE_ENERGY_REFILL_EMPTY_WAIT)));
     } else if (drone->energyFullyDepleted) {
