@@ -688,8 +688,20 @@ void createDrone(env *e, const uint8_t idx) {
     createDroneShield(e, drone, groupIdx);
 }
 
+void droneAddEnergy(droneEntity *drone, float energy) {
+    // if a burst is charging, add the energy to the burst charge
+    if (drone->chargingBurst) {
+        drone->burstCharge = clamp(drone->burstCharge + energy);
+    } else {
+        drone->energyLeft = clamp(drone->energyLeft + energy);
+    }
+}
+
 void destroyDroneShield(shieldEntity *shield) {
     droneEntity *drone = shield->drone;
+    if (shield->health <= 0.0f) {
+        droneAddEnergy(drone, DRONE_SHIELD_BREAK_ENERGY_COST);
+    }
     drone->shield = NULL;
 
     b2DestroyBody(shield->bodyID);
@@ -740,15 +752,6 @@ void killDrone(const env *e, droneEntity *drone) {
     drone->shotThisStep = false;
     drone->velocity = b2Vec2_zero;
     drone->lastVelocity = b2Vec2_zero;
-}
-
-void droneAddEnergy(droneEntity *drone, float energy) {
-    // if a burst is charging, add the energy to the burst charge
-    if (drone->chargingBurst) {
-        drone->burstCharge = clamp(drone->burstCharge + energy);
-    } else {
-        drone->energyLeft = clamp(drone->energyLeft + energy);
-    }
 }
 
 bool respawnDrone(env *e, droneEntity *drone) {
@@ -1093,8 +1096,8 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
     if (!isStaticWall) {
         parentSpeed *= b2Dot(direction, parentDirection);
     }
-    // don't change the direction of the explosion if this is a burst
-    // hitting a projectile or static wall to make it more predictable
+    // the parent entity's velocity affects the direction of the impulse
+    // depending on the speed
     const b2Vec2 baseImpulse = b2MulSV(fabsf(ctx->def->impulsePerLength), direction);
     direction = b2Normalize(b2Add(baseImpulse, parentVelocity));
 
@@ -1149,12 +1152,19 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
             drone->lastVelocity = drone->velocity;
             drone->velocity = b2Body_GetLinearVelocity(drone->bodyID);
 
+            shieldEntity *shield = drone->shield;
+
             // add energy to the drone that fired the projectile that is
             // currently exploding if it hit another drone
-            if (!ctx->isBurst && drone->team != ctx->parentDrone->team) {
+            if (!ctx->isBurst && drone->team != ctx->parentDrone->team && shield == NULL) {
                 const float energyRefill = computeHitStrength(drone) * EXPLOSION_ENERGY_REFILL_COEF;
                 droneAddEnergy(ctx->parentDrone, energyRefill);
+            } else if (shield != NULL) {
+                const float damage = fabsf(magnitude) * DRONE_SHIELD_HEALTH_EXPLOSION_COEF;
+                DEBUG_LOGF("shield explosion damage: %f", damage);
+                shield->health -= damage;
             }
+
             break;
         default:
             ERRORF("unknown entity type for burst impulse %d", entity->type);
@@ -1631,8 +1641,8 @@ bool droneStep(env *e, droneEntity *drone) {
 
     shieldEntity *shield = drone->shield;
     if (shield != NULL) {
-        shield->duration = fmaxf(shield->duration - e->deltaTime, 0.0f);
-        if (shield->duration == 0.0f || shield->health <= 0.0f) {
+        shield->duration -= e->deltaTime;
+        if (shield->duration <= 0.0f || shield->health <= 0.0f) {
             destroyDroneShield(shield);
         }
     }
@@ -1864,6 +1874,7 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
         // always allow projectiles to bounce off shields, and update shield health
         shieldEntity *shield = ent->entity;
         const float damage = projectile->lastSpeed * projectile->weaponInfo->mass * DRONE_SHIELD_HEALTH_IMPULSE_COEF;
+        DEBUG_LOGF("shield projectile damage: %f", damage);
         shield->health -= damage;
         return false;
     }
@@ -2030,6 +2041,7 @@ void handleContactEvents(env *e) {
                     killDrone(e, drone);
                 } else if (e2->type == SHIELD_ENTITY) {
                     shieldEntity *shield = e2->entity;
+                    shield->health = 0.0f;
                     destroyDroneShield(shield);
                     e2 = NULL;
                 }
@@ -2044,6 +2056,7 @@ void handleContactEvents(env *e) {
                     killDrone(e, drone);
                 } else if (e1->type == SHIELD_ENTITY) {
                     shieldEntity *shield = e1->entity;
+                    shield->health = 0.0f;
                     destroyDroneShield(shield);
                 }
             }

@@ -863,9 +863,6 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
         const uint8_t burst = e->discActions[offset + 4];
         ASSERT(burst <= 1);
         actions.chargingBurst = (bool)burst;
-        if (!actions.chargingBurst && drone->chargingBurst) {
-            actions.burst = true;
-        }
         return actions;
     }
 
@@ -880,9 +877,6 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
         }
         actions.brake = e->contActions[offset + 5] > 0.0f;
         actions.chargingBurst = e->contActions[offset + 6] > 0.0f;
-        if (!actions.chargingBurst && drone->chargingBurst) {
-            actions.burst = true;
-        }
     } else {
         actions.move = manualActions->move;
         actions.aim = manualActions->aim;
@@ -890,7 +884,6 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
         actions.shoot = manualActions->shoot;
         actions.brake = manualActions->brake;
         actions.chargingBurst = manualActions->chargingBurst;
-        actions.burst = manualActions->burst;
         actions.discardWeapon = manualActions->discardWeapon;
     }
 
@@ -982,8 +975,6 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, uint8_t gamepadIdx) {
 
         if (IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_RIGHT_TRIGGER_1) || IsGamepadButtonDown(gamepadIdx, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)) {
             actions.chargingBurst = true;
-        } else if (drone->chargingBurst && (IsGamepadButtonUp(gamepadIdx, GAMEPAD_BUTTON_RIGHT_TRIGGER_1) || IsGamepadButtonUp(gamepadIdx, GAMEPAD_BUTTON_RIGHT_FACE_DOWN))) {
-            actions.burst = true;
         }
 
         if (IsGamepadButtonPressed(gamepadIdx, GAMEPAD_BUTTON_RIGHT_FACE_LEFT)) {
@@ -1027,8 +1018,6 @@ agentActions getPlayerInputs(env *e, droneEntity *drone, uint8_t gamepadIdx) {
     }
     if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
         actions.chargingBurst = true;
-    } else if (drone->chargingBurst && IsMouseButtonUp(MOUSE_BUTTON_RIGHT)) {
-        actions.burst = true;
     }
 
     return computeActions(e, drone, &actions);
@@ -1125,8 +1114,7 @@ void stepEnv(env *e) {
                 }
                 if (actions.chargingBurst) {
                     droneChargeBurst(e, drone);
-                }
-                if (actions.burst) {
+                } else if (drone->chargingBurst) {
                     droneBurst(e, drone);
                 }
                 if (!b2VecEqual(actions.move, b2Vec2_zero)) {

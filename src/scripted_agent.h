@@ -303,7 +303,7 @@ void handleWallProximity(env *e, const droneEntity *drone, const wallEntity *wal
 
 void scriptedAgentBurst(const droneEntity *drone, agentActions *actions) {
     if (drone->chargingBurst) {
-        actions->burst = true;
+        return;
     } else {
         actions->chargingBurst = true;
     }

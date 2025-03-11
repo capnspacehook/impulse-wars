@@ -318,7 +318,6 @@ typedef struct agentActions {
     bool shoot;
     bool brake;
     bool chargingBurst;
-    bool burst;
     bool discardWeapon;
 } agentActions;
 

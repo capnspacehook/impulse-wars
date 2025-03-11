@@ -149,7 +149,7 @@ mapEntry roomsMap = {
     .randFloatingDeathWalls = 3,
     .hasSetFloatingWalls = false,
     .weaponPickups = 10,
-    .defaultWeapon = SHOTGUN_WEAPON,
+    .defaultWeapon = STANDARD_WEAPON,
 };
 
 const char xArenaLayout[] = {

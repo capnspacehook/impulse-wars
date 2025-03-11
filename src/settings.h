@@ -175,16 +175,18 @@ const float DRONE_BURST_BASE_COST = 0.1f;
 const float DRONE_BURST_CHARGE_RATE = 0.6f;
 const float DRONE_BURST_RADIUS_BASE = 4.0f;
 const float DRONE_BURST_RADIUS_MIN = 3.0f;
-const float DRONE_BURST_IMPACT_BASE = 125.0f;
-const float DRONE_BURST_IMPACT_MIN = 25.0f;
+const float DRONE_BURST_IMPACT_BASE = 140.0f;
+const float DRONE_BURST_IMPACT_MIN = 35.0f;
 const float DRONE_BURST_COOLDOWN = 0.5f;
 
 const float DRONE_SHIELD_RADIUS = DRONE_RADIUS * 1.5f;
 const float DRONE_SHIELD_HEALTH = 100.0f;
-const float DRONE_SHIELD_HEALTH_IMPULSE_COEF = 0.5f;
 const float DRONE_SHIELD_START_DURATION = 1.5f;
 const float DRONE_SHIELD_RESPAWN_DURATION = 3.0f;
 const float DRONE_SHIELD_EXPLOSION_REDUCTION = 0.5f;
+const float DRONE_SHIELD_HEALTH_IMPULSE_COEF = 0.5f;
+const float DRONE_SHIELD_HEALTH_EXPLOSION_COEF = 0.8;
+const float DRONE_SHIELD_BREAK_ENERGY_COST = -0.33f;
 
 #define PROJECTILE_ENERGY_REFILL_COEF 0.001f
 const float EXPLOSION_ENERGY_REFILL_COEF = 1.75f;
@@ -471,7 +473,7 @@ const weaponInformation accelerator = {
 
 const weaponInformation flakCannon = {
     .type = FLAK_CANNON_WEAPON,
-    .isPhysicsBullet = false,
+    .isPhysicsBullet = true,
     .canSleep = false,
     .numProjectiles = FLAK_CANNON_PROJECTILES,
     .fireMagnitude = FLAK_CANNON_FIRE_MAGNITUDE,
