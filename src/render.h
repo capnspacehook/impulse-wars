@@ -235,7 +235,7 @@ void renderTimer(const env *e, const char *timerStr, const Color color) {
     DrawText(timerStr, posX, e->client->scale, fontSize, color);
 }
 
-void renderUI(const env *e, const bool starting, const bool ending, const int8_t winner, const int8_t winningTeam) {
+void renderUI(const env *e, const bool starting) {
     // render drone info
     const uint8_t droneInfoStrSize = 64;
     char droneInfoStr[droneInfoStrSize];
@@ -322,23 +322,6 @@ void renderUI(const env *e, const bool starting, const bool ending, const int8_t
     } else if (e->stepsLeft > (ROUND_STEPS - 1) * e->frameRate) {
         renderTimer(e, "GO!", WHITE);
         return;
-    } else if (ending) {
-        if (winner == -1 && winningTeam == -1) {
-            renderTimer(e, "Tie", WHITE);
-            return;
-        }
-        const int bufferSize = 16;
-        char winStr[bufferSize];
-        Color color;
-        if (e->teamsEnabled) {
-            snprintf(winStr, bufferSize, "Team %d wins!", winningTeam + 1);
-            color = RAYWHITE;
-        } else {
-            snprintf(winStr, bufferSize, "Player %d wins!", winner + 1);
-            color = getDroneColor(winner);
-        }
-        renderTimer(e, winStr, color);
-        return;
     } else if (e->stepsLeft == 0) {
         renderTimer(e, "SUDDEN DEATH", WHITE);
         return;
@@ -378,7 +361,7 @@ void renderBrakeTrails(const env *e, const bool ending) {
     }
 }
 
-void renderExplosions(const env *e, const bool ending) {
+void renderExplosions(const env *e) {
     CC_ArrayIter iter;
     cc_array_iter_init(&iter, e->explosions);
     explosionInfo *explosion;
@@ -399,10 +382,7 @@ void renderExplosions(const env *e, const bool ending) {
 
         DrawCircleV(b2VecToRayVec(e, explosion->def.position), (explosion->def.radius + explosion->def.falloff) * e->renderScale, falloffColor);
         DrawCircleV(b2VecToRayVec(e, explosion->def.position), explosion->def.radius * e->renderScale, explosionColor);
-        // don't fade out explosions on the win screen
-        if (!ending) {
-            explosion->renderSteps = fmaxf(explosion->renderSteps - 1, 0);
-        }
+        explosion->renderSteps = fmaxf(explosion->renderSteps - 1, 0);
     }
 }
 
@@ -796,11 +776,58 @@ void renderProjectiles(env *e) {
     }
 }
 
+void renderBannerText(env *e, const bool starting, const int8_t winner, const int8_t winningTeam) {
+    const int bufferSize = 16;
+    char winStr[bufferSize];
+    memset(winStr, 0x0, bufferSize);
+    Color color = RAYWHITE;
+
+    if (starting) {
+        const char *text = "Ready?";
+        strncpy(winStr, text, strlen(text));
+    } else if (winner == -1 && winningTeam == -1) {
+        const char *text = "Tie";
+        strncpy(winStr, text, strlen(text));
+    } else if (e->teamsEnabled) {
+        snprintf(winStr, bufferSize, "Team %d wins!", winningTeam + 1);
+    } else {
+        snprintf(winStr, bufferSize, "Player %d wins!", winner + 1);
+        color = getDroneColor(winner);
+    }
+
+    uint16_t fontSize = 5 * e->client->scale;
+    uint16_t textWidth = MeasureText(winStr, fontSize);
+    uint16_t posX = (e->client->halfWidth - (textWidth / 2));
+    DrawText(winStr, posX, e->client->halfHeight, fontSize, color);
+}
+
+void minimalStepEnv(env *e) {
+    b2World_Step(e->worldID, e->deltaTime, e->box2dSubSteps);
+
+    handleBodyMoveEvents(e);
+    handleContactEvents(e);
+    handleSensorEvents(e);
+
+    projectilesStep(e);
+
+    for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
+        droneEntity *drone = safe_array_get_at(e->drones, i);
+        if (drone->dead) {
+            continue;
+        }
+        droneStep(e, drone);
+    }
+}
+
 // TODO:
 // - add drone death animations
 // - add info UI on sides:
 //   - teams, weapon type, ammo, cooldown, type of player
 void _renderEnv(env *e, const bool starting, const bool ending, const int8_t winner, const int8_t winningTeam) {
+    if (ending) {
+        minimalStepEnv(e);
+    }
+
     BeginDrawing();
 
     ClearBackground(BLACK);
@@ -808,7 +835,7 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
     DrawFPS(e->renderScale, e->renderScale);
 #endif
 
-    renderUI(e, starting, ending, winner, winningTeam);
+    renderUI(e, starting);
 
     // for (size_t i = 0; i < cc_array_size(e->cells); i++) {
     //     const mapCell *cell = safe_array_get_at(e->cells, i);
@@ -818,7 +845,7 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
     //     renderEmptyCell(e, cell->pos, i);
     // }
 
-    renderExplosions(e, ending);
+    renderExplosions(e);
 
     for (size_t i = 0; i < cc_array_size(e->pickups); i++) {
         const weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
@@ -870,6 +897,10 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
         renderDroneUI(e, drone);
     }
 
+    if (starting || ending) {
+        renderBannerText(e, starting, winner, winningTeam);
+    }
+
     // if (!b2VecEqual(e->debugPoint, b2Vec2_zero)) {
     //     DrawCircleV(b2VecToRayVec(e, e->debugPoint), DRONE_RADIUS * 0.5f * e->renderScale, WHITE);
     // }
@@ -879,8 +910,11 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
 
 void renderWait(env *e, const bool starting, const bool ending, const int8_t winner, const int8_t winningTeam, const float time) {
 #ifdef __EMSCRIPTEN__
-    _renderEnv(e, starting, ending, winner, winningTeam);
-    emscripten_sleep(time * 1000.0);
+    const double startTime = emscripten_get_now();
+    while (time > (emscripten_get_now() - startTime) / 1000.0) {
+        _renderEnv(e, starting, ending, winner, winningTeam);
+        emscripten_sleep(e->deltaTime * 1000.0);
+    }
 #else
     for (uint16_t i = 0; i < (uint16_t)(time * e->frameRate); i++) {
         _renderEnv(e, starting, ending, winner, winningTeam);
