@@ -27,7 +27,7 @@ int main(void) {
     rayClient *client = createRayClient();
     e->client = client;
 
-    initEnv(e, NUM_DRONES, 0, obs, true, contActions, discActions, rewards, masks, terminals, truncations, logs, -1, time(NULL), false, false, false);
+    initEnv(e, NUM_DRONES, 0, obs, true, contActions, discActions, rewards, masks, terminals, truncations, logs, -1, time(NULL), true, false, false);
     initMaps(e);
     setupEnv(e);
     e->humanInput = true;

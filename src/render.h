@@ -362,26 +362,43 @@ void renderBrakeTrails(const env *e, const bool ending) {
 }
 
 void renderExplosions(const env *e) {
+    const uint16_t maxRenderSteps = EXPLOSION_TIME * e->frameRate;
+
     CC_ArrayIter iter;
     cc_array_iter_init(&iter, e->explosions);
     explosionInfo *explosion;
     while (cc_array_iter_next(&iter, (void **)&explosion) != CC_ITER_END) {
         if (explosion->renderSteps == UINT16_MAX) {
-            explosion->renderSteps = EXPLOSION_TIME * e->frameRate;
+            explosion->renderSteps = maxRenderSteps;
         } else if (explosion->renderSteps == 0) {
             fastFree(explosion);
             cc_array_iter_remove(&iter, NULL);
             continue;
         }
 
-        const uint8_t alpha = (uint8_t)(255.0f * ((float)explosion->renderSteps / (EXPLOSION_TIME * e->frameRate)));
-        Color falloffColor = GRAY;
-        falloffColor.a = alpha;
-        Color explosionColor = RAYWHITE;
-        explosionColor.a = alpha;
+        const Vector2 explosionPos = b2VecToRayVec(e, explosion->def.position);
+        const float alpha = (float)explosion->renderSteps / maxRenderSteps;
 
-        DrawCircleV(b2VecToRayVec(e, explosion->def.position), (explosion->def.radius + explosion->def.falloff) * e->renderScale, falloffColor);
-        DrawCircleV(b2VecToRayVec(e, explosion->def.position), explosion->def.radius * e->renderScale, explosionColor);
+        // color bursts with a bit of the parent drone's color
+        if (explosion->isBurst) {
+            const Color falloffColor = Fade(RAYWHITE, alpha);
+            const Color explosionColor = Fade(GRAY, alpha);
+            const Color droneColor = Fade(getDroneColor(explosion->droneIdx), alpha);
+
+            BeginBlendMode(BLEND_ADDITIVE);
+            DrawCircleV(explosionPos, (explosion->def.radius + explosion->def.falloff) * e->renderScale, falloffColor);
+            DrawCircleV(explosionPos, (explosion->def.radius + explosion->def.falloff) * e->renderScale, droneColor);
+            DrawCircleV(explosionPos, explosion->def.radius * e->renderScale, explosionColor);
+            DrawCircleV(explosionPos, explosion->def.radius * e->renderScale, droneColor);
+            EndBlendMode();
+        } else {
+            const Color falloffColor = Fade(GRAY, alpha);
+            const Color explosionColor = Fade(RAYWHITE, alpha);
+
+            DrawCircleV(explosionPos, (explosion->def.radius + explosion->def.falloff) * e->renderScale, falloffColor);
+            DrawCircleV(explosionPos, explosion->def.radius * e->renderScale, explosionColor);
+        }
+
         explosion->renderSteps = fmaxf(explosion->renderSteps - 1, 0);
     }
 }
@@ -604,8 +621,7 @@ void renderDroneGuides(env *e, droneEntity *drone, const bool ending) {
             .width = aimGuideWidth * e->renderScale,
             .height = chargedAimGuideHeight * e->renderScale,
         };
-        Color chargedAimGuideColor = droneColor;
-        chargedAimGuideColor.a = 100;
+        const Color chargedAimGuideColor = Fade(droneColor, 100.0f / 255.0f);
         DrawRectanglePro(chargedAimGuide, (Vector2){.x = 0.0f, .y = (chargedAimGuideHeight / 2.0f) * e->renderScale}, aimAngle, chargedAimGuideColor);
     }
 
@@ -620,7 +636,7 @@ void renderDroneGuides(env *e, droneEntity *drone, const bool ending) {
 
 void renderDroneTrail(const env *e, const droneEntity *drone, Color droneColor) {
     if (drone->trailPoints.length < 2) {
-        return; // Need at least two points to form a trail.
+        return;
     }
 
     const float trailWidth = e->renderScale * DRONE_RADIUS;
@@ -630,21 +646,21 @@ void renderDroneTrail(const env *e, const droneEntity *drone, Color droneColor) 
         const Vector2 p0 = drone->trailPoints.points[i];
         const Vector2 p1 = drone->trailPoints.points[i + 1];
 
-        // Compute direction and a perpendicular vector.
+        // compute direction and a perpendicular vector
         Vector2 segment = Vector2Subtract(p1, p0);
         if (Vector2Length(segment) == 0) {
-            continue; // Avoid division by zero.
+            continue;
         }
         segment = Vector2Normalize(segment);
         const Vector2 perp = {-segment.y, segment.x};
 
-        // Compute four vertices for the quad segment.
+        // compute four vertices for the quad segment
         const Vector2 v0 = Vector2Add(p0, Vector2Scale(perp, trailWidth));
         const Vector2 v1 = Vector2Subtract(p0, Vector2Scale(perp, trailWidth));
         const Vector2 v2 = Vector2Add(p1, Vector2Scale(perp, trailWidth));
         const Vector2 v3 = Vector2Subtract(p1, Vector2Scale(perp, trailWidth));
 
-        // Draw the quad as two triangles.
+        // draw the quad as two triangles
         const float alpha0 = 0.5f * ((float)(i + 1) / numPoints);
         const float alpha1 = 0.5f * ((float)(i + 2) / numPoints);
         DrawTriangle(v0, v2, v1, Fade(droneColor, alpha0));
@@ -683,8 +699,8 @@ void renderDroneUI(const env *e, const droneEntity *drone) {
 
     // draw burst charge indicator
     if (drone->chargingBurst) {
-        Color burstChargeColor = RAYWHITE;
-        burstChargeColor.a = fminf((255.0f * drone->burstCharge) + 50.0f, 255.0f);
+        const float alpha = fminf(drone->burstCharge + (50.0f / 255.0f), 1.0f);
+        const Color burstChargeColor = Fade(RAYWHITE, alpha);
         const float burstChargeOuterRadius = ((DRONE_BURST_RADIUS_BASE * drone->burstCharge) + DRONE_BURST_RADIUS_MIN) * e->renderScale;
         const float burstChargeInnerRadius = burstChargeOuterRadius - (0.1f * e->renderScale);
         DrawRing(energyMeterOrigin, burstChargeInnerRadius, burstChargeOuterRadius, 0.0f, 360.0f, 1, burstChargeColor);

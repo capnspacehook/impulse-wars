@@ -904,7 +904,7 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
 
     b2ShapeId projectileShapeID = b2CreateCircleShape(projectileBodyID, &projectileShapeDef, &projectileCircle);
 
-    // add lateral drone velocity to projectile
+    // add a bit of lateral drone velocity to projectile
     b2Vec2 forwardVel = b2MulSV(b2Dot(drone->velocity, normAim), normAim);
     b2Vec2 lateralVel = b2Sub(drone->velocity, forwardVel);
     lateralVel = b2MulSV(projectileShapeDef.density * DRONE_MOVE_AIM_COEF, lateralVel);
@@ -1135,8 +1135,9 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
     }
     float perimeter = getShapeProjectedPerimeter(shapeID, localLine);
     float scale = 1.0f;
-    // ignore falloff for projectiles to avoid slowing them down to a crawl
-    if (output.distance > ctx->def->radius && entity->type != PROJECTILE_ENTITY) {
+    // scale the impulse magnitude down is the entity is outside the
+    // radius and inside the falloff
+    if (output.distance > ctx->def->radius) {
         scale = clamp((ctx->def->radius + ctx->def->falloff - output.distance) / ctx->def->falloff);
     }
 
@@ -1199,7 +1200,7 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
         case DEATH_WALL_ENTITY:
             wall->velocity = b2Body_GetLinearVelocity(wall->bodyID);
             if (isFloatingWall) {
-                // floating walls are the only bodies that can rotate
+                // floating walls are the only bodies that can visually rotate
                 b2Body_ApplyAngularImpulse(bodyID, magnitude, true);
             }
             break;
@@ -1623,6 +1624,8 @@ void droneBurst(env *e, droneEntity *drone) {
     if (e->client != NULL) {
         explosionInfo *explInfo = fastCalloc(1, sizeof(explosionInfo));
         explInfo->def = explosion;
+        explInfo->isBurst = true;
+        explInfo->droneIdx = drone->idx;
         explInfo->renderSteps = UINT16_MAX;
         cc_array_add(e->explosions, explInfo);
     }

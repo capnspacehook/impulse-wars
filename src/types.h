@@ -73,6 +73,7 @@ typedef struct mapBounds {
     b2Vec2 max;
 } mapBounds;
 
+// used for N near entities observations
 typedef struct nearEntity {
     uint16_t idx;
     void *entity;
@@ -328,6 +329,8 @@ typedef struct brakeTrailPoint {
 
 typedef struct explosionInfo {
     b2ExplosionDef def;
+    bool isBurst;
+    uint8_t droneIdx;
     uint16_t renderSteps;
 } explosionInfo;
 
