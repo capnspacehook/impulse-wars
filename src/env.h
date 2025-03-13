@@ -109,7 +109,7 @@ uint16_t findNearestCell(const env *e, const b2Vec2 pos, const uint16_t cellIdx)
         }
         const int16_t newCellIdx = cellIndex(e, newCellCol, newCellRow);
         const mapCell *cell = safe_array_get_at(e->cells, newCellIdx);
-        if (minDistance != fminf(minDistance, b2DistanceSquared(pos, cell->pos))) {
+        if (minDistance != min(minDistance, b2DistanceSquared(pos, cell->pos))) {
             closestCell = newCellIdx;
         }
     }
@@ -850,7 +850,7 @@ agentActions _computeActions(env *e, droneEntity *drone, const agentActions *man
             actions.move.y = discMoveToContMoveMap[1][move];
         }
         uint8_t aim = e->discActions[offset + 1];
-        ASSERT(move <= 16);
+        ASSERT(aim <= 16);
         if (aim != 0) {
             aim--;
             actions.aim.x = discAimToContAimMap[0][aim];

@@ -399,7 +399,7 @@ void renderExplosions(const env *e) {
             DrawCircleV(explosionPos, explosion->def.radius * e->renderScale, explosionColor);
         }
 
-        explosion->renderSteps = fmaxf(explosion->renderSteps - 1, 0);
+        explosion->renderSteps = max(explosion->renderSteps - 1, 0);
     }
 }
 
@@ -448,7 +448,7 @@ void renderWall(const env *e, const wallEntity *wall) {
     Vector2 origin = {.x = wall->extent.x * e->renderScale, .y = wall->extent.y * e->renderScale};
     float angle = 0.0f;
     if (wall->isFloating) {
-        angle = b2Rot_GetAngle(b2Body_GetRotation(wall->bodyID));
+        angle = b2Rot_GetAngle(wall->rot);
         angle *= RAD2DEG;
     }
 
@@ -609,7 +609,7 @@ void renderDroneGuides(env *e, droneEntity *drone, const bool ending) {
     const b2DistanceOutput output = b2ShapeDistance(&cache, &input, NULL, 0);
 
     float aimGuideWidth = getWeaponAimGuideWidth(drone->weaponInfo->type);
-    aimGuideWidth = fminf(aimGuideWidth, output.distance + 0.1f) + (DRONE_RADIUS * 2.0f);
+    aimGuideWidth = min(aimGuideWidth, output.distance + 0.1f) + (DRONE_RADIUS * 2.0f);
 
     // render laser aim guide
     const float aimAngle = RAD2DEG * b2Rot_GetAngle(b2MakeRot(b2Atan2(drone->lastAim.y, drone->lastAim.x)));
@@ -699,7 +699,7 @@ void renderDroneUI(const env *e, const droneEntity *drone) {
 
     // draw burst charge indicator
     if (drone->chargingBurst) {
-        const float alpha = fminf(drone->burstCharge + (50.0f / 255.0f), 1.0f);
+        const float alpha = min(drone->burstCharge + (50.0f / 255.0f), 1.0f);
         const Color burstChargeColor = Fade(RAYWHITE, alpha);
         const float burstChargeOuterRadius = ((DRONE_BURST_RADIUS_BASE * drone->burstCharge) + DRONE_BURST_RADIUS_MIN) * e->renderScale;
         const float burstChargeInnerRadius = burstChargeOuterRadius - (0.1f * e->renderScale);
@@ -818,6 +818,16 @@ void renderBannerText(env *e, const bool starting, const int8_t winner, const in
 }
 
 void minimalStepEnv(env *e) {
+    for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
+        droneEntity *drone = safe_array_get_at(e->drones, i);
+        if (drone->dead || drone->shield == NULL) {
+            continue;
+        }
+
+        // update shield velocity if its active
+        b2Body_SetLinearVelocity(drone->shield->bodyID, b2Body_GetLinearVelocity(drone->bodyID));
+    };
+
     b2World_Step(e->worldID, e->deltaTime, e->box2dSubSteps);
 
     handleBodyMoveEvents(e);

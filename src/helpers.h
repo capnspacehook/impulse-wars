@@ -182,7 +182,7 @@ static inline float logBasef(const float v, const float b) {
 
 // clamps between 0 and 1
 static inline float clamp(float f) {
-    return fminf(fmaxf(f, 0.0f), 1.0f);
+    return min(max(f, 0.0f), 1.0f);
 }
 
 // normalize value to be between 0 and max, or -max and max;
@@ -194,9 +194,9 @@ static inline float scaleValue(const float v, const float max, const bool minIsZ
 
     float scaled = v / max;
     if (minIsZero) {
-        return fmaxf(fminf(scaled, max), 0.0f);
+        return max(min(scaled, max), 0.0f);
     } else {
-        return fmaxf(fminf(scaled, max), -1.0f);
+        return max(min(scaled, max), -1.0f);
     }
 }
 

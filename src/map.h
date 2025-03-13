@@ -502,10 +502,10 @@ void computeMapBoundsAndQuadrants(env *e, mapEntry *map) {
     mapBounds bounds = {.min = {.x = FLT_MAX, .y = FLT_MAX}, .max = {.x = FLT_MIN, .y = FLT_MIN}};
     for (size_t i = 0; i < cc_array_size(e->walls); i++) {
         const wallEntity *wall = safe_array_get_at(e->walls, i);
-        bounds.min.x = fminf(wall->pos.x - wall->extent.x + WALL_THICKNESS, bounds.min.x);
-        bounds.min.y = fminf(wall->pos.y - wall->extent.y + WALL_THICKNESS, bounds.min.y);
-        bounds.max.x = fmaxf(wall->pos.x + wall->extent.x - WALL_THICKNESS, bounds.max.x);
-        bounds.max.y = fmaxf(wall->pos.y + wall->extent.y - WALL_THICKNESS, bounds.max.y);
+        bounds.min.x = min(wall->pos.x - wall->extent.x + WALL_THICKNESS, bounds.min.x);
+        bounds.min.y = min(wall->pos.y - wall->extent.y + WALL_THICKNESS, bounds.min.y);
+        bounds.max.x = max(wall->pos.x + wall->extent.x - WALL_THICKNESS, bounds.max.x);
+        bounds.max.y = max(wall->pos.y + wall->extent.y - WALL_THICKNESS, bounds.max.y);
     }
     map->bounds = bounds;
     map->spawnQuads[0] = (mapBounds){
