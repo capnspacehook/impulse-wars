@@ -114,14 +114,31 @@
 // uses dlmalloc by default so no need to change anything here
 #if !defined(NDEBUG) || defined(__EMSCRIPTEN__)
 #define fastMalloc(size) malloc(size)
+#define fastMallocFn malloc
 #define fastCalloc(nmemb, size) calloc(nmemb, size)
+#define fastCallocFn calloc
 #define fastFree(ptr) free(ptr)
+#define fastFreeFn free
 #else
 #include "include/dlmalloc.h"
 #define fastMalloc(size) dlmalloc(size)
+#define fastMallocFn dlmalloc
 #define fastCalloc(nmemb, size) dlcalloc(nmemb, size)
+#define fastCallocFn dlcalloc
 #define fastFree(ptr) dlfree(ptr)
+#define fastFreeFn dlfree
 #endif
+
+static inline void create_array(CC_Array **array, size_t initialCap) {
+    CC_ArrayConf conf;
+    cc_array_conf_init(&conf);
+    conf.capacity = initialCap;
+    conf.mem_alloc = fastMallocFn;
+    conf.mem_calloc = fastCallocFn;
+    conf.mem_free = fastFreeFn;
+
+    cc_array_new_conf(&conf, array);
+}
 
 // automatically checks that the index is valid and returns the value
 // so callers can use it as a constant expression

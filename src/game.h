@@ -11,6 +11,46 @@ void createExplosion(env *e, droneEntity *drone, const projectileEntity *project
 
 void updateTrailPoints(const env *e, trailPoints *tp, const uint8_t maxLen, const b2Vec2 pos);
 
+entity *createEntity(env *e, enum entityType type, void *entityData) {
+    int32_t id = b2AllocId(&e->idPool);
+    entity *ent = NULL;
+    if (id == (int64_t)cc_array_size(e->entities)) {
+        ent = fastCalloc(1, sizeof(entity));
+        ent->id = fastCalloc(1, sizeof(entityID));
+        cc_array_add(e->entities, ent);
+    } else {
+        ent = safe_array_get_at(e->entities, id);
+    }
+
+    ent->generation += 1;
+    ent->type = type;
+    ent->entity = entityData;
+    ent->id->id = id + 1,
+    ent->id->generation = ent->generation;
+
+    return ent;
+}
+
+void destroyEntity(env *e, entity *ent) {
+    b2FreeId(&e->idPool, ent->id->id - 1);
+    ent->id->id = 0;
+}
+
+// will return a pointer to an entity or NULL if the given entity ID is
+// invalid or orphaned
+entity *getEntityByID(const env *e, const entityID *id) {
+    if (id->id < 1 || (int64_t)cc_array_size(e->entities) < id->id) {
+        // invalid index
+        return NULL;
+    }
+    entity *ent = safe_array_get_at(e->entities, id->id - 1);
+    if (ent->id->id == 0 || ent->generation != id->generation) {
+        // orphaned entity
+        return NULL;
+    }
+    return ent;
+}
+
 static inline bool entityTypeIsWall(const enum entityType type) {
     // walls are the first 3 entity types
     return type <= DEATH_WALL_ENTITY;
@@ -151,7 +191,7 @@ b2DistanceOutput closestPoint(const entity *srcEnt, const entity *dstEnt) {
 }
 
 typedef struct behindWallContext {
-    const entity *srcEnt;
+    const entity *dstEnt;
     const enum entityType *targetType;
     bool hit;
 } behindWallContext;
@@ -164,7 +204,7 @@ float posBehindWallCallback(b2ShapeId shapeID, b2Vec2 point, b2Vec2 normal, floa
 
     behindWallContext *ctx = context;
     const entity *ent = b2Shape_GetUserData(shapeID);
-    if (ent == ctx->srcEnt || (ctx->targetType != NULL && ent->type == *ctx->targetType)) {
+    if (ent == ctx->dstEnt || (ctx->targetType != NULL && ent->type == *ctx->targetType)) {
         return -1;
     }
     ctx->hit = true;
@@ -172,21 +212,21 @@ float posBehindWallCallback(b2ShapeId shapeID, b2Vec2 point, b2Vec2 normal, floa
 }
 
 // returns true if there are shapes that match filter between startPos and endPos
-bool posBehindWall(const env *e, const b2Vec2 startPos, const b2Vec2 endPos, const entity *srcEnt, const b2QueryFilter filter, const enum entityType *targetType) {
-    const float rayDistance = b2Distance(startPos, endPos);
+bool posBehindWall(const env *e, const b2Vec2 srcPos, const b2Vec2 dstPos, const entity *dstEnt, const b2QueryFilter filter, const enum entityType *targetType) {
+    const float rayDistance = b2Distance(srcPos, dstPos);
     // if the two points are extremely close we can safely assume the
     // entity isn't behind a wall
     if (rayDistance <= 1.0f) {
         return false;
     }
 
-    const b2Vec2 translation = b2Sub(endPos, startPos);
+    const b2Vec2 translation = b2Sub(dstPos, srcPos);
     behindWallContext ctx = {
-        .srcEnt = srcEnt,
+        .dstEnt = dstEnt,
         .targetType = targetType,
         .hit = false,
     };
-    b2World_CastRay(e->worldID, startPos, translation, filter, posBehindWallCallback, &ctx);
+    b2World_CastRay(e->worldID, srcPos, translation, filter, posBehindWallCallback, &ctx);
     return ctx.hit;
 }
 
@@ -370,7 +410,7 @@ bool findOpenPos(env *e, const enum shapeCategory shapeType, b2Vec2 *emptyPos, i
     }
 }
 
-entity *createWall(const env *e, const b2Vec2 pos, const float width, const float height, int16_t cellIdx, const enum entityType type, const bool floating) {
+entity *createWall(env *e, const b2Vec2 pos, const float width, const float height, int16_t cellIdx, const enum entityType type, const bool floating) {
     ASSERT(cellIdx != -1);
     ASSERT(entityTypeIsWall(type));
 
@@ -415,11 +455,9 @@ entity *createWall(const env *e, const b2Vec2 pos, const float width, const floa
     wall->type = type;
     wall->isSuddenDeath = e->suddenDeathWallsPlaced;
 
-    entity *ent = fastCalloc(1, sizeof(entity));
-    ent->type = type;
-    ent->entity = wall;
-
+    entity *ent = createEntity(e, type, wall);
     wall->ent = ent;
+
     wallShapeDef.userData = ent;
     const b2Polygon wallPolygon = b2MakeBox(extent.x, extent.y);
     wall->shapeID = b2CreatePolygonShape(wallBodyID, &wallShapeDef, &wallPolygon);
@@ -434,8 +472,8 @@ entity *createWall(const env *e, const b2Vec2 pos, const float width, const floa
     return ent;
 }
 
-void destroyWall(const env *e, wallEntity *wall, const bool full) {
-    fastFree(wall->ent);
+void destroyWall(env *e, wallEntity *wall, const bool full) {
+    destroyEntity(e, wall->ent);
 
     if (full) {
         mapCell *cell = safe_array_get_at(e->cells, wall->mapCellIdx);
@@ -510,9 +548,7 @@ void createWeaponPickup(env *e) {
     pickup->floatingWallsTouching = 0;
     pickup->pos = pos;
 
-    entity *ent = fastCalloc(1, sizeof(entity));
-    ent->type = WEAPON_PICKUP_ENTITY;
-    ent->entity = pickup;
+    entity *ent = createEntity(e, WEAPON_PICKUP_ENTITY, pickup);
     pickup->ent = ent;
 
     const int16_t cellIdx = entityPosToCellIdx(e, pos);
@@ -528,8 +564,8 @@ void createWeaponPickup(env *e) {
     cc_array_add(e->pickups, pickup);
 }
 
-void destroyWeaponPickup(const env *e, weaponPickupEntity *pickup) {
-    fastFree(pickup->ent);
+void destroyWeaponPickup(env *e, weaponPickupEntity *pickup) {
+    destroyEntity(e, pickup->ent);
 
     mapCell *cell = safe_array_get_at(e->cells, pickup->mapCellIdx);
     cell->ent = NULL;
@@ -563,7 +599,7 @@ void disableWeaponPickup(env *e, weaponPickupEntity *pickup) {
     e->spawnedWeaponPickups[pickup->weapon]--;
 }
 
-void createDroneShield(const env *e, droneEntity *drone, const int8_t groupIdx) {
+void createDroneShield(env *e, droneEntity *drone, const int8_t groupIdx) {
     // the shield is comprised of 2 shapes over 2 bodies:
     // 1. a kinematic body that allows the parent drone to be unaffected
     // by collisions since kinematic bodies have essentially infinite mass
@@ -602,18 +638,15 @@ void createDroneShield(const env *e, droneEntity *drone, const int8_t groupIdx) 
     }
     shield->duration = duration;
 
-    entity *shieldEnt = fastCalloc(1, sizeof(entity));
-    shieldEnt->type = SHIELD_ENTITY;
-    shieldEnt->entity = shield;
+    entity *ent = createEntity(e, SHIELD_ENTITY, shield);
+    shield->ent = ent;
 
+    shieldShapeDef.userData = ent;
     const b2Circle shieldCircle = {.center = b2Vec2_zero, .radius = DRONE_SHIELD_RADIUS};
-
-    shield->ent = shieldEnt;
-    shieldShapeDef.userData = shieldEnt;
     shield->shapeID = b2CreateCircleShape(shieldBodyID, &shieldShapeDef, &shieldCircle);
-    b2Body_SetUserData(shield->bodyID, shieldEnt);
+    b2Body_SetUserData(shield->bodyID, ent);
 
-    shieldBufferShapeDef.userData = shieldEnt;
+    shieldBufferShapeDef.userData = ent;
     shield->bufferShapeID = b2CreateCircleShape(drone->bodyID, &shieldBufferShapeDef, &shieldCircle);
 
     drone->shield = shield;
@@ -675,11 +708,9 @@ void createDrone(env *e, const uint8_t idx) {
     drone->respawnGuideLifetime = UINT16_MAX;
     memset(&drone->stepInfo, 0x0, sizeof(droneStepInfo));
 
-    entity *ent = fastCalloc(1, sizeof(entity));
-    ent->type = DRONE_ENTITY;
-    ent->entity = drone;
-
+    entity *ent = createEntity(e, DRONE_ENTITY, drone);
     drone->ent = ent;
+
     droneShapeDef.userData = ent;
     drone->shapeID = b2CreateCircleShape(droneBodyID, &droneShapeDef, &droneCircle);
     b2Body_SetUserData(drone->bodyID, ent);
@@ -711,9 +742,7 @@ void createDronePiece(env *e, droneEntity *drone, const bool fromShield) {
     piece->isShieldPiece = fromShield;
     piece->lifetime = UINT16_MAX;
 
-    entity *ent = fastCalloc(1, sizeof(entity));
-    ent->type = DRONE_PIECE_ENTITY;
-    ent->entity = piece;
+    entity *ent = createEntity(e, DRONE_PIECE_ENTITY, piece);
     piece->ent = ent;
 
     b2BodyDef pieceBodyDef = b2DefaultBodyDef();
@@ -752,9 +781,9 @@ void createDronePiece(env *e, droneEntity *drone, const bool fromShield) {
     cc_array_add(e->dronePieces, piece);
 }
 
-void destroyDronePiece(dronePieceEntity *piece) {
+void destroyDronePiece(env *e, dronePieceEntity *piece) {
     b2DestroyBody(piece->bodyID);
-    fastFree(piece->ent);
+    destroyEntity(e, piece->ent);
     fastFree(piece);
 }
 
@@ -768,7 +797,7 @@ void destroyDroneShield(env *e, shieldEntity *shield, const bool createPieces) {
 
     b2DestroyBody(shield->bodyID);
     b2DestroyShape(shield->bufferShapeID, false);
-    fastFree(shield->ent);
+    destroyEntity(e, shield->ent);
     fastFree(shield);
 
     if (!createPieces || health > 0.0f) {
@@ -782,7 +811,7 @@ void destroyDroneShield(env *e, shieldEntity *shield, const bool createPieces) {
 }
 
 void destroyDrone(env *e, droneEntity *drone) {
-    fastFree(drone->ent);
+    destroyEntity(e, drone->ent);
 
     shieldEntity *shield = drone->shield;
     if (shield != NULL) {
@@ -923,18 +952,18 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     projectile->lastVelocity = projectile->velocity;
     projectile->speed = b2Length(projectile->velocity);
     projectile->lastSpeed = projectile->speed;
+    if (projectile->weaponInfo->type == BLACK_HOLE_WEAPON) {
+        create_array(&projectile->entsInBlackHole, 4);
+    }
     cc_array_add(e->projectiles, projectile);
 
-    entity *ent = fastCalloc(1, sizeof(entity));
-    ent->type = PROJECTILE_ENTITY;
-    ent->entity = projectile;
-
+    entity *ent = createEntity(e, PROJECTILE_ENTITY, projectile);
     projectile->ent = ent;
     b2Body_SetUserData(projectile->bodyID, ent);
     b2Shape_SetUserData(projectile->shapeID, ent);
 
     // create a sensor shape if needed
-    if (projectile->weaponInfo->proximityDetonates) {
+    if (projectile->weaponInfo->hasSensor) {
         projectile->sensorID = weaponSensor(projectile->bodyID, projectile->weaponInfo->type);
         b2Shape_SetUserData(projectile->sensorID, ent);
     }
@@ -1004,6 +1033,21 @@ void createProjectileExplosion(env *e, projectileEntity *projectile, const bool 
     ASSERT(res == CC_OK);
 }
 
+// ensures projectiles don't slow down when an impluse is applied to them
+void fixProjectileSpeed(projectileEntity *projectile) {
+    b2Vec2 newVel = b2Body_GetLinearVelocity(projectile->bodyID);
+    float newSpeed = b2Length(newVel);
+    if (newSpeed < projectile->lastSpeed) {
+        newSpeed = projectile->lastSpeed;
+        newVel = b2MulSV(newSpeed, b2Normalize(newVel));
+        b2Body_SetLinearVelocity(projectile->bodyID, newVel);
+    }
+
+    projectile->velocity = newVel;
+    projectile->lastSpeed = newSpeed;
+    projectile->speed = newSpeed;
+}
+
 typedef struct explosionCtx {
     env *e;
     const bool isBurst;
@@ -1026,7 +1070,6 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
     droneEntity *drone = NULL;
     wallEntity *wall = NULL;
     bool isStaticWall = false;
-    bool isFloatingWall = false;
     b2Transform transform;
 
     switch (entity->type) {
@@ -1070,7 +1113,6 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
     case DEATH_WALL_ENTITY:
         wall = entity->entity;
         isStaticWall = !wall->isFloating;
-        isFloatingWall = wall->isFloating;
         // normal explosions don't affect static walls
         if (!ctx->isBurst && isStaticWall) {
             return true;
@@ -1193,18 +1235,15 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
     if (isStaticWall) {
         b2Body_ApplyLinearImpulseToCenter(ctx->parentDrone->bodyID, impulse, true);
     } else {
-        b2Body_ApplyLinearImpulseToCenter(bodyID, impulse, true);
         switch (entity->type) {
         case STANDARD_WALL_ENTITY:
         case BOUNCY_WALL_ENTITY:
         case DEATH_WALL_ENTITY:
+            b2Body_ApplyLinearImpulse(bodyID, impulse, output.pointA, true);
             wall->velocity = b2Body_GetLinearVelocity(wall->bodyID);
-            if (isFloatingWall) {
-                // floating walls are the only bodies that can visually rotate
-                b2Body_ApplyAngularImpulse(bodyID, magnitude, true);
-            }
             break;
         case PROJECTILE_ENTITY:
+            b2Body_ApplyLinearImpulseToCenter(bodyID, impulse, true);
             // mine launcher projectiles explode when caught in another
             // explosion, explode this mine only once
             if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON && ctx->def->impulsePerLength > 0.0f) {
@@ -1212,20 +1251,11 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
                 break;
             }
 
-            // ensure projectiles don't slow down
-            b2Vec2 newVel = b2Body_GetLinearVelocity(projectile->bodyID);
-            float newSpeed = b2Length(newVel);
-            if (newSpeed < projectile->lastSpeed) {
-                newSpeed = projectile->lastSpeed;
-                newVel = b2MulSV(newSpeed, b2Normalize(newVel));
-                b2Body_SetLinearVelocity(projectile->bodyID, newVel);
-            }
+            fixProjectileSpeed(projectile);
 
-            projectile->velocity = newVel;
-            projectile->lastSpeed = newSpeed;
-            projectile->speed = newSpeed;
             break;
         case DRONE_ENTITY:
+            b2Body_ApplyLinearImpulseToCenter(bodyID, impulse, true);
             drone->lastVelocity = drone->velocity;
             drone->velocity = b2Body_GetLinearVelocity(drone->bodyID);
 
@@ -1280,7 +1310,7 @@ void destroyProjectile(env *e, projectileEntity *projectile, const bool processE
         createProjectileExplosion(e, projectile, true);
     }
 
-    fastFree(projectile->ent);
+    destroyEntity(e, projectile->ent);
 
     b2DestroyBody(projectile->bodyID);
 
@@ -1291,6 +1321,14 @@ void destroyProjectile(env *e, projectileEntity *projectile, const bool processE
     }
 
     e->stats[projectile->droneIdx].shotDistances[projectile->droneIdx] += projectile->distance;
+
+    if (projectile->entsInBlackHole != NULL) {
+        for (uint8_t i = 0; i < cc_array_size(projectile->entsInBlackHole); i++) {
+            entityID *id = safe_array_get_at(projectile->entsInBlackHole, i);
+            fastFree(id);
+        }
+        cc_array_destroy(projectile->entsInBlackHole);
+    }
 
     fastFree(projectile);
 }
@@ -1412,7 +1450,6 @@ void handleSuddenDeath(env *e) {
         });
 
     // mark drones as dead if they touch a newly placed wall
-    uint8_t deadDrones = 0;
     for (uint8_t i = 0; i < e->numDrones; i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
         const b2QueryFilter filter = {
@@ -1421,12 +1458,7 @@ void handleSuddenDeath(env *e) {
         };
         if (isOverlappingAABB(e, drone->pos, DRONE_RADIUS, filter)) {
             killDrone(e, drone);
-            deadDrones++;
         }
-    }
-    // if all but one or all drones are dead, the episode is over
-    if (deadDrones >= e->numDrones - 1) {
-        return;
     }
 
     // make floating walls static bodies if they are now overlapping with
@@ -1730,11 +1762,106 @@ bool droneStep(env *e, droneEntity *drone) {
     return true;
 }
 
+void handleBlackHolePull(env *e, projectileEntity *projectile) {
+    ASSERT(projectile->weaponInfo->type == BLACK_HOLE_WEAPON);
+
+    CC_ArrayIter entIter;
+    cc_array_iter_init(&entIter, projectile->entsInBlackHole);
+    entityID *id;
+    while (cc_array_iter_next(&entIter, (void **)&id) != CC_ITER_END) {
+        // check if the entity is still valid
+        const entity *ent = getEntityByID(e, id);
+        if (ent == NULL) {
+            fastFree(id);
+            enum cc_stat res = cc_array_iter_remove_fast(&entIter, NULL);
+            MAYBE_UNUSED(res);
+            ASSERT(res == CC_OK);
+            continue;
+        }
+        const b2DistanceOutput output = closestPoint(projectile->ent, ent);
+        const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE};
+        if (posBehindWall(e, projectile->pos, output.pointB, ent, filter, NULL)) {
+            continue;
+        }
+
+        b2BodyId bodyID;
+        b2ShapeId shapeID;
+        b2Rot rot;
+
+        wallEntity *wall;
+        droneEntity *drone;
+        projectileEntity *proj;
+        bool hasShield = false;
+
+        switch (ent->type) {
+        case STANDARD_WALL_ENTITY:
+        case BOUNCY_WALL_ENTITY:
+        case DEATH_WALL_ENTITY:
+            wall = ent->entity;
+            bodyID = wall->bodyID;
+            shapeID = wall->shapeID;
+            rot = wall->rot;
+            break;
+        case DRONE_ENTITY:
+            drone = ent->entity;
+            bodyID = drone->bodyID;
+            shapeID = drone->shapeID;
+            hasShield = drone->shield != NULL;
+            break;
+        case PROJECTILE_ENTITY:
+            proj = ent->entity;
+            bodyID = proj->bodyID;
+            shapeID = proj->shapeID;
+            break;
+        default:
+            ERRORF("unknown entity type %d for black hole suck", ent->type);
+        }
+
+        b2Vec2 direction = b2Normalize(b2Sub(output.pointB, projectile->pos));
+
+        b2Vec2 localLine = b2Vec2_zero;
+        if (entityTypeIsWall(ent->type)) {
+            // the localLine isn't used in perimeter calculations for circles
+            localLine = b2InvRotateVector(rot, b2LeftPerp(direction));
+        }
+        const float perimeter = getShapeProjectedPerimeter(shapeID, localLine);
+
+        const float scale = 1.0f - (output.distance / BLACK_HOLE_PROXIMITY_RADIUS);
+
+        // the projecile's velocity affects the direction
+        // and magnitude of the force
+        b2Vec2 parentVelocity = projectile->velocity;
+        float parentSpeed = projectile->speed;
+        if (projectile->contacts != 0) {
+            parentVelocity = projectile->lastVelocity;
+            parentSpeed = projectile->lastSpeed;
+        }
+        const b2Vec2 parentDirection = b2Normalize(parentVelocity);
+        parentSpeed *= b2Dot(direction, parentDirection);
+        // the parent entity's velocity affects the direction of the force
+        // depending on the speed
+        const b2Vec2 baseForce = b2MulSV(-1.0f * BLACK_HOLE_PULL_MAGNITUDE, direction);
+        direction = b2Normalize(b2Add(baseForce, parentVelocity));
+
+        float magnitude = (BLACK_HOLE_PULL_MAGNITUDE + (-1.0f * parentSpeed)) * perimeter * scale;
+        if (hasShield) {
+            magnitude *= DRONE_SHIELD_EXPLOSION_REDUCTION;
+        }
+        const b2Vec2 force = b2MulSV(magnitude, direction);
+
+        if (entityTypeIsWall(ent->type)) {
+            b2Body_ApplyForce(bodyID, force, output.pointB, true);
+        } else {
+            b2Body_ApplyForceToCenter(bodyID, force, true);
+        }
+    }
+}
+
 void projectilesStep(env *e) {
-    CC_ArrayIter iter;
-    cc_array_iter_init(&iter, e->projectiles);
+    CC_ArrayIter projIter;
+    cc_array_iter_init(&projIter, e->projectiles);
     projectileEntity *projectile;
-    while (cc_array_iter_next(&iter, (void **)&projectile) != CC_ITER_END) {
+    while (cc_array_iter_next(&projIter, (void **)&projectile) != CC_ITER_END) {
         if (projectile->needsToBeDestroyed) {
             continue;
         }
@@ -1751,6 +1878,7 @@ void projectilesStep(env *e) {
             for (uint8_t i = 0; i < projectile->numDronesBehindWalls; i++) {
                 const uint8_t droneIdx = projectile->dronesBehindWalls[i];
                 const droneEntity *drone = safe_array_get_at(e->drones, droneIdx);
+                // TODO: do we need the closest point here?
                 const b2DistanceOutput output = closestPoint(projectile->ent, drone->ent);
                 const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE};
                 if (posBehindWall(e, projectile->pos, output.pointB, NULL, filter, NULL)) {
@@ -1760,7 +1888,7 @@ void projectilesStep(env *e) {
                 // we have to destroy the projectile using the iterator so
                 // we can continue to iterate correctly
                 destroyProjectile(e, projectile, true, false);
-                enum cc_stat res = cc_array_iter_remove_fast(&iter, NULL);
+                enum cc_stat res = cc_array_iter_remove_fast(&projIter, NULL);
                 MAYBE_UNUSED(res);
                 ASSERT(res == CC_OK);
                 destroyed = true;
@@ -1771,15 +1899,18 @@ void projectilesStep(env *e) {
             }
         }
 
+        if (projectile->entsInBlackHole != NULL) {
+            handleBlackHolePull(e, projectile);
+        }
+
         if (maxDistance == INFINITE) {
             continue;
         }
-
         if (projectile->distance >= maxDistance) {
             // we have to destroy the projectile using the iterator so
             // we can continue to iterate correctly
             destroyProjectile(e, projectile, true, false);
-            enum cc_stat res = cc_array_iter_remove_fast(&iter, NULL);
+            enum cc_stat res = cc_array_iter_remove_fast(&projIter, NULL);
             MAYBE_UNUSED(res);
             ASSERT(res == CC_OK);
             continue;
@@ -1969,7 +2100,9 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
         return false;
     }
 
-    projectile->bounces++;
+    if (projectile->weaponInfo->type != BLACK_HOLE_WEAPON || ent->type != DRONE_ENTITY) {
+        projectile->bounces++;
+    }
     if (ent->type == DRONE_ENTITY) {
         droneEntity *hitDrone = ent->entity;
         if (projectile->droneIdx != hitDrone->idx) {
@@ -2215,7 +2348,7 @@ void handleWeaponPickupBeginTouch(env *e, const entity *sensor, entity *visitor)
 }
 
 // explode proximity detonating projectiles
-void handleProjectileBeginTouch(env *e, const entity *sensor, const entity *visitor) {
+void handleProjectileBeginTouch(env *e, const entity *sensor, entity *visitor) {
     projectileEntity *projectile = sensor->entity;
 
     switch (projectile->weaponInfo->type) {
@@ -2242,6 +2375,22 @@ void handleProjectileBeginTouch(env *e, const entity *sensor, const entity *visi
 
         destroyProjectile(e, projectile, true, true);
         destroyExplodedProjectiles(e);
+        break;
+    case BLACK_HOLE_WEAPON:
+        if (visitor->type == DRONE_ENTITY) {
+            const droneEntity *drone = visitor->entity;
+            if (projectile->droneIdx == drone->idx && projectile->distance < BLACK_HOLE_PARENT_IGNORE_DISTANCE) {
+                return;
+            }
+        }
+
+        // copy the entity ID so it won't be changed if the entity is
+        // destroyed and reused later
+        const entityID *visitorID = visitor->id;
+        entityID *id = fastCalloc(1, sizeof(entityID));
+        id->id = visitorID->id;
+        id->generation = visitorID->generation;
+        cc_array_add(projectile->entsInBlackHole, id);
         break;
     default:
         ERRORF("invalid projectile type %d for begin touch event", sensor->type);
@@ -2275,12 +2424,36 @@ void handleWeaponPickupEndTouch(const entity *sensor, entity *visitor) {
     }
 }
 
-void handleProjectileEndTouch(const entity *sensor) {
+void handleProjectileEndTouch(const entity *sensor, entity *visitor) {
     projectileEntity *projectile = sensor->entity;
-    if (projectile->numDronesBehindWalls == 0 || projectile->weaponInfo->type != MINE_LAUNCHER_WEAPON) {
-        return;
+
+    switch (projectile->weaponInfo->type) {
+    case FLAK_CANNON_WEAPON:
+        break;
+    case MINE_LAUNCHER_WEAPON:
+        if (projectile->numDronesBehindWalls == 0) {
+            return;
+        }
+        projectile->numDronesBehindWalls--;
+        break;
+    case BLACK_HOLE_WEAPON:
+        if (visitor == NULL) {
+            return;
+        }
+
+        const entityID *visitorID = visitor->id;
+        for (uint8_t i = 0; i < cc_array_size(projectile->entsInBlackHole); ++i) {
+            entityID *id = safe_array_get_at(projectile->entsInBlackHole, i);
+            if (id->id == visitorID->id) {
+                fastFree(id);
+                cc_array_remove_fast_at(projectile->entsInBlackHole, i, NULL);
+                return;
+            }
+        }
+        break;
+    default:
+        ERRORF("invalid projectile type %d for end touch event", projectile->weaponInfo->type);
     }
-    projectile->numDronesBehindWalls--;
 }
 
 void handleSensorEvents(env *e) {
@@ -2321,19 +2494,20 @@ void handleSensorEvents(env *e) {
         }
         entity *s = b2Shape_GetUserData(event->sensorShapeId);
         ASSERT(s != NULL);
+        entity *v = NULL;
+        if (b2Shape_IsValid(event->visitorShapeId)) {
+            v = b2Shape_GetUserData(event->visitorShapeId);
+            ASSERT(v != NULL);
+        }
+
         if (s->type == PROJECTILE_ENTITY) {
-            handleProjectileEndTouch(s);
+            handleProjectileEndTouch(s, v);
             continue;
         }
 
-        if (!b2Shape_IsValid(event->visitorShapeId)) {
-            DEBUG_LOG("could not find visitor shape for end touch event");
-            continue;
+        if (v != NULL) {
+            handleWeaponPickupEndTouch(s, v);
         }
-        entity *v = b2Shape_GetUserData(event->visitorShapeId);
-        ASSERT(v != NULL);
-
-        handleWeaponPickupEndTouch(s, v);
     }
 }
 

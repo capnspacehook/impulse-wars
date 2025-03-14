@@ -218,18 +218,18 @@ float weaponIdealRangeSquared(const droneEntity *drone) {
         return SQUARED(20.0f);
     case MACHINEGUN_WEAPON:
         return SQUARED(30.0f);
-    case SNIPER_WEAPON:
-        return FLT_MAX;
     case SHOTGUN_WEAPON:
         return SQUARED(20.0f);
     case IMPLODER_WEAPON:
         return SQUARED(30.0f);
-    case ACCELERATOR_WEAPON:
-        return FLT_MAX;
     case FLAK_CANNON_WEAPON:
         return SQUARED(FLAK_CANNON_SAFE_DISTANCE + 5.0f);
+    case SNIPER_WEAPON:
+    case ACCELERATOR_WEAPON:
     case MINE_LAUNCHER_WEAPON:
+    case BLACK_HOLE_WEAPON:
         return FLT_MAX;
+
     default:
         ERRORF("unknown weapon type %d", drone->weaponInfo->type);
     }

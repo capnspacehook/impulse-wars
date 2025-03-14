@@ -148,6 +148,9 @@ char *getWeaponAbreviation(const enum weaponType type) {
     case MINE_LAUNCHER_WEAPON:
         name = "MINE";
         break;
+    case BLACK_HOLE_WEAPON:
+        name = "BLKH";
+        break;
     default:
         ERRORF("unknown weapon pickup type %d", type);
     }
@@ -181,6 +184,9 @@ char *getWeaponName(const enum weaponType type) {
     case MINE_LAUNCHER_WEAPON:
         name = "Mine Launcher";
         break;
+    case BLACK_HOLE_WEAPON:
+        name = "Black Hole";
+        break;
     default:
         ERRORF("unknown weapon pickup type %d", type);
     }
@@ -194,6 +200,7 @@ float getWeaponAimGuideWidth(const enum weaponType type) {
     case ACCELERATOR_WEAPON:
         return 5.0f;
     case FLAK_CANNON_WEAPON:
+    case BLACK_HOLE_WEAPON:
         return 7.5f;
     case MACHINEGUN_WEAPON:
     case MINE_LAUNCHER_WEAPON:
@@ -222,6 +229,8 @@ Color getProjectileColor(const enum weaponType type) {
         return ORANGE;
     case MINE_LAUNCHER_WEAPON:
         return BROWN;
+    case BLACK_HOLE_WEAPON:
+        return GRAY;
     default:
         ERRORF("unknown weapon when getting projectile color %d", type);
     }
@@ -485,7 +494,7 @@ b2Vec2 b2RotatedPolygonVec(const float cosA, const float sinA, const b2Vec2 pos,
     };
 }
 
-void renderDronePieces(const env *e, const bool ending) {
+void renderDronePieces(env *e, const bool ending) {
     const float maxLifetime = e->frameRate * DRONE_PIECE_LIFETIME;
 
     CC_ArrayIter iter;
@@ -524,7 +533,7 @@ void renderDronePieces(const env *e, const bool ending) {
 
         piece->lifetime--;
         if (piece->lifetime == 0) {
-            destroyDronePiece(piece);
+            destroyDronePiece(e, piece);
             cc_array_iter_remove_fast(&iter, NULL);
         }
     }
@@ -788,6 +797,10 @@ void renderProjectiles(env *e) {
         const Color color = getProjectileColor(projectile->weaponInfo->type);
         renderProjectileTrail(e, projectile, color);
         DrawCircleV(b2VecToRayVec(e, projectile->pos), e->renderScale * projectile->weaponInfo->radius, color);
+
+        // if (projectile->weaponInfo->type == BLACK_HOLE_WEAPON) {
+        //     DrawCircleV(b2VecToRayVec(e, projectile->pos), e->renderScale * BLACK_HOLE_PROXIMITY_RADIUS, Fade(GRAY, 0.2f));
+        // }
     }
 }
 

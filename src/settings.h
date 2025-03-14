@@ -329,6 +329,24 @@ const float DRONE_PIECE_MAX_SPEED = 15.0f;
 #define MINE_LAUNCHER_SPAWN_WEIGHT 2.0f
 #define MINE_LAUNCHER_PROXIMITY_RADIUS 7.5f
 
+#define BLACK_HOLE_AMMO 3
+#define BLACK_HOLE_PROJECTILES 1
+#define BLACK_HOLE_RECOIL_MAGNITUDE 75.0f
+#define BLACK_HOLE_FIRE_MAGNITUDE 125.0f
+#define BLACK_HOLE_DAMPING 0.0f
+#define BLACK_HOLE_CHARGE 0.75f
+#define BLACK_HOLE_COOL_DOWN 1.0f
+#define BLACK_HOLE_MAX_DISTANCE INFINITE
+#define BLACK_HOLE_RADIUS 0.5f
+#define BLACK_HOLE_DENSITY 10.0f
+#define BLACK_HOLE_MASS MASS(BLACK_HOLE_DENSITY, BLACK_HOLE_RADIUS)
+#define BLACK_HOLE_INV_MASS INV_MASS(BLACK_HOLE_MASS)
+#define BLACK_HOLE_BOUNCE 0
+#define BLACK_HOLE_SPAWN_WEIGHT 3.0f
+#define BLACK_HOLE_PROXIMITY_RADIUS 10.0f
+#define BLACK_HOLE_PARENT_IGNORE_DISTANCE BLACK_HOLE_PROXIMITY_RADIUS * 1.5f
+#define BLACK_HOLE_PULL_MAGNITUDE -300.0f
+
 const weaponInformation standard = {
     .type = STANDARD_WEAPON,
     .isPhysicsBullet = true,
@@ -349,7 +367,7 @@ const weaponInformation standard = {
     .explosive = false,
     .destroyedOnDroneHit = false,
     .explodesOnDroneHit = false,
-    .proximityDetonates = false,
+    .hasSensor = false,
     .energyRefillCoef = PROJECTILE_ENERGY_REFILL_COEF,
     .spawnWeight = STANDARD_SPAWN_WEIGHT,
 };
@@ -374,7 +392,7 @@ const weaponInformation machineGun = {
     .explosive = false,
     .destroyedOnDroneHit = false,
     .explodesOnDroneHit = false,
-    .proximityDetonates = false,
+    .hasSensor = false,
     .energyRefillCoef = PROJECTILE_ENERGY_REFILL_COEF * MACHINEGUN_ENERGY_REFILL_COEF,
     .spawnWeight = MACHINEGUN_SPAWN_WEIGHT,
 };
@@ -399,7 +417,7 @@ const weaponInformation sniper = {
     .explosive = false,
     .destroyedOnDroneHit = true,
     .explodesOnDroneHit = false,
-    .proximityDetonates = false,
+    .hasSensor = false,
     .energyRefillCoef = PROJECTILE_ENERGY_REFILL_COEF * SNIPER_ENERGY_REFILL_COEF,
     .spawnWeight = SNIPER_SPAWN_WEIGHT,
 };
@@ -424,7 +442,7 @@ const weaponInformation shotgun = {
     .explosive = false,
     .destroyedOnDroneHit = false,
     .explodesOnDroneHit = false,
-    .proximityDetonates = false,
+    .hasSensor = false,
     .energyRefillCoef = PROJECTILE_ENERGY_REFILL_COEF * SHOTGUN_ENERGY_REFILL_COEF,
     .spawnWeight = SHOTGUN_SPAWN_WEIGHT,
 };
@@ -449,7 +467,7 @@ const weaponInformation imploder = {
     .explosive = true,
     .destroyedOnDroneHit = true,
     .explodesOnDroneHit = true,
-    .proximityDetonates = false,
+    .hasSensor = false,
     .energyRefillCoef = PROJECTILE_ENERGY_REFILL_COEF,
     .spawnWeight = IMPLODER_SPAWN_WEIGHT,
 };
@@ -474,7 +492,7 @@ const weaponInformation accelerator = {
     .explosive = false,
     .destroyedOnDroneHit = true,
     .explodesOnDroneHit = false,
-    .proximityDetonates = false,
+    .hasSensor = false,
     .energyRefillCoef = PROJECTILE_ENERGY_REFILL_COEF,
     .spawnWeight = ACCELERATOR_SPAWN_WEIGHT,
 };
@@ -499,7 +517,7 @@ const weaponInformation flakCannon = {
     .explosive = true,
     .destroyedOnDroneHit = false,
     .explodesOnDroneHit = false,
-    .proximityDetonates = true,
+    .hasSensor = true,
     .energyRefillCoef = PROJECTILE_ENERGY_REFILL_COEF,
     .spawnWeight = FLAK_CANNON_SPAWN_WEIGHT,
 };
@@ -524,9 +542,34 @@ const weaponInformation mineLauncher = {
     .explosive = true,
     .destroyedOnDroneHit = true,
     .explodesOnDroneHit = false,
-    .proximityDetonates = true,
+    .hasSensor = true,
     .energyRefillCoef = PROJECTILE_ENERGY_REFILL_COEF,
     .spawnWeight = MINE_LAUNCHER_SPAWN_WEIGHT,
+};
+
+const weaponInformation blackHole = {
+    .type = BLACK_HOLE_WEAPON,
+    .isPhysicsBullet = false,
+    .canSleep = false,
+    .numProjectiles = BLACK_HOLE_PROJECTILES,
+    .fireMagnitude = BLACK_HOLE_FIRE_MAGNITUDE,
+    .recoilMagnitude = BLACK_HOLE_RECOIL_MAGNITUDE,
+    .damping = BLACK_HOLE_DAMPING,
+    .charge = BLACK_HOLE_CHARGE,
+    .coolDown = BLACK_HOLE_COOL_DOWN,
+    .maxDistance = BLACK_HOLE_MAX_DISTANCE,
+    .radius = BLACK_HOLE_RADIUS,
+    .density = BLACK_HOLE_DENSITY,
+    .mass = BLACK_HOLE_MASS,
+    .invMass = BLACK_HOLE_INV_MASS,
+    .initialSpeed = BLACK_HOLE_FIRE_MAGNITUDE * BLACK_HOLE_INV_MASS,
+    .maxBounces = BLACK_HOLE_BOUNCE + 1,
+    .explosive = false,
+    .destroyedOnDroneHit = false,
+    .explodesOnDroneHit = false,
+    .hasSensor = true,
+    .energyRefillCoef = 0.0f,
+    .spawnWeight = BLACK_HOLE_SPAWN_WEIGHT,
 };
 
 #ifndef AUTOPXD
@@ -539,6 +582,7 @@ weaponInformation *weaponInfos[] = {
     (weaponInformation *)&accelerator,
     (weaponInformation *)&flakCannon,
     (weaponInformation *)&mineLauncher,
+    (weaponInformation *)&blackHole,
 };
 #endif
 
@@ -564,6 +608,8 @@ int8_t weaponAmmo(const enum weaponType defaultWep, const enum weaponType type) 
         return FLAK_CANNON_AMMO;
     case MINE_LAUNCHER_WEAPON:
         return MINE_LAUNCHER_AMMO;
+    case BLACK_HOLE_WEAPON:
+        return BLACK_HOLE_AMMO;
     default:
         ERRORF("unknown weapon type %d", type);
     }
@@ -587,8 +633,13 @@ b2ShapeId weaponSensor(const b2BodyId bodyID, const enum weaponType type) {
         sensorShapeDef.filter.maskBits = DRONE_SHAPE;
         sensorCircle.radius = MINE_LAUNCHER_PROXIMITY_RADIUS;
         break;
+    case BLACK_HOLE_WEAPON:
+        sensorShapeDef.filter.categoryBits = PROJECTILE_SHAPE;
+        sensorShapeDef.filter.maskBits = FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE;
+        sensorCircle.radius = BLACK_HOLE_PROXIMITY_RADIUS;
+        break;
     default:
-        ERRORF("unknown proximity detonating weapon type %d", type);
+        ERRORF("unknown weapon type with sensor %d", type);
     }
 
     return b2CreateCircleShape(bodyID, &sensorShapeDef, &sensorCircle);
@@ -616,6 +667,8 @@ float weaponFire(uint64_t *seed, const enum weaponType type) {
         return FLAK_CANNON_FIRE_MAGNITUDE;
     case MINE_LAUNCHER_WEAPON:
         return MINE_LAUNCHER_FIRE_MAGNITUDE;
+    case BLACK_HOLE_WEAPON:
+        return BLACK_HOLE_FIRE_MAGNITUDE;
     default:
         ERRORF("unknown weapon type %d", type);
         return 0;

@@ -97,6 +97,10 @@ function(configure_target target_name)
 		"${CMAKE_CURRENT_SOURCE_DIR}/src"
 		"${CMAKE_CURRENT_SOURCE_DIR}/src/include"
 	)
+
+	# Mark box2d as a system include directory to suppress warnings from it
+	target_include_directories(${target_name} SYSTEM PRIVATE "${box2d_SOURCE_DIR}/src")
+
 	target_link_libraries(${target_name} PRIVATE raylib box2d)
 
 	target_compile_options(${target_name} PRIVATE
@@ -123,7 +127,7 @@ if(DEFINED BUILD_PYTHON_MODULE)
 		COMMAND autopxd
 			-I "${CMAKE_CURRENT_SOURCE_DIR}/src"
 			-I "${CMAKE_CURRENT_SOURCE_DIR}/src/include"
-			-I "${box2d_SOURCE_DIR}/include" 
+			-I "${box2d_SOURCE_DIR}/include"
 			-I "${raylib_SOURCE_DIR}/src"
 			-D AUTOPXD
 			"${CMAKE_CURRENT_SOURCE_DIR}/src/env.h" impulse_wars.pxd.raw

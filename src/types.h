@@ -3,10 +3,15 @@
 
 #include "box2d/box2d.h"
 
-// autopxd2 can't parse raylib headers
+// autopxd2 can't parse internal box2d headers or raylib headers
 #ifndef AUTOPXD
+#include "id_pool.h"
 #include "raylib.h"
 #else
+typedef struct b2IdPool {
+    void *dummy;
+} b2IdPool;
+
 typedef struct Vector2 {
     float x;
     float y;
@@ -48,13 +53,20 @@ enum shapeCategory {
     DRONE_PIECE_SHAPE = 64,
 };
 
+typedef struct entityID {
+    int32_t id;
+    uint16_t generation;
+} entityID;
+
 // general purpose entity object
 typedef struct entity {
+    entityID *id;
+    uint32_t generation;
     enum entityType type;
     void *entity;
 } entity;
 
-#define _NUM_WEAPONS 8
+#define _NUM_WEAPONS 9
 const uint8_t NUM_WEAPONS = _NUM_WEAPONS;
 
 enum weaponType {
@@ -66,6 +78,7 @@ enum weaponType {
     ACCELERATOR_WEAPON,
     FLAK_CANNON_WEAPON,
     MINE_LAUNCHER_WEAPON,
+    BLACK_HOLE_WEAPON,
 };
 
 typedef struct mapBounds {
@@ -146,7 +159,7 @@ typedef struct weaponInformation {
     const bool explosive;
     const bool destroyedOnDroneHit;
     const bool explodesOnDroneHit;
-    const bool proximityDetonates;
+    const bool hasSensor;
     const float energyRefillCoef;
     const float spawnWeight;
 } weaponInformation;
@@ -193,6 +206,7 @@ typedef struct projectileEntity {
     bool setMine;
     uint8_t numDronesBehindWalls;
     uint8_t dronesBehindWalls[_MAX_DRONES];
+    CC_Array *entsInBlackHole;
     bool needsToBeDestroyed;
 
     entity *ent;
@@ -387,6 +401,8 @@ typedef struct env {
     int8_t lastSpawnQuad;
     uint8_t spawnedWeaponPickups[_NUM_WEAPONS];
     weaponInformation *defaultWeapon;
+    b2IdPool idPool;
+    CC_Array *entities;
     CC_Array *cells;
     CC_Array *walls;
     CC_Array *floatingWalls;

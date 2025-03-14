@@ -36,24 +36,22 @@ int main(void) {
     lastFrameTime = emscripten_get_now();
     emscripten_set_main_loop_arg(emscriptenStep, e, 0, true);
 #else
-    while (true) {
-        if (WindowShouldClose()) {
-            destroyEnv(e);
-            destroyMaps();
-            free(obs);
-            fastFree(contActions);
-            fastFree(discActions);
-            fastFree(rewards);
-            fastFree(masks);
-            fastFree(terminals);
-            fastFree(truncations);
-            destroyLogBuffer(logs);
-            fastFree(e);
-            destroyRayClient(client);
-            return 0;
-        }
-
+    while (!WindowShouldClose()) {
         stepEnv(e);
     }
+
+    destroyEnv(e);
+    destroyMaps();
+    free(obs);
+    fastFree(contActions);
+    fastFree(discActions);
+    fastFree(rewards);
+    fastFree(masks);
+    fastFree(terminals);
+    fastFree(truncations);
+    destroyLogBuffer(logs);
+    fastFree(e);
+    destroyRayClient(client);
+    return 0;
 #endif
 }
