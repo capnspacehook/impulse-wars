@@ -6,6 +6,7 @@
 // autopxd2 can't parse raylib headers
 #ifndef AUTOPXD
 #include "raylib.h"
+#include "rlights.h"
 #else
 typedef struct Vector2 {
     float x;
@@ -320,6 +321,9 @@ typedef struct rayClient {
     uint16_t height;
     uint16_t halfWidth;
     uint16_t halfHeight;
+    Camera3D camera;
+    Light lights[4];
+    Shader shader
 } rayClient;
 
 typedef struct brakeTrailPoint {

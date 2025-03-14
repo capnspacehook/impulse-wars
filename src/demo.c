@@ -32,6 +32,19 @@ int main(void) {
     setupEnv(e);
     e->humanInput = true;
 
+    // Hack hack hack
+    Vector2 rayCenter = b2VecToRayVec(e, b2Vec2_zero);
+    rayCenter.x = 0.0f;
+    rayCenter.y = 0.0f;
+    client->camera = (Camera3D){
+        .position = (Vector3){.x = 75.0f, .y = 150.0f, .z = 75.0f},
+        .target = (Vector3){.x = rayCenter.x, .y = 0.0f, .z = rayCenter.y},
+        .up = (Vector3){.x = 0.0f, .y = 1.0f, .z = 0.0f},
+        .fovy = 135.0f,
+        .projection = CAMERA_ORTHOGRAPHIC,
+    };
+
+
 #ifdef __EMSCRIPTEN__
     lastFrameTime = emscripten_get_now();
     emscripten_set_main_loop_arg(emscriptenStep, e, 0, true);
