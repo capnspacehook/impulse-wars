@@ -1,7 +1,6 @@
 #ifndef IMPULSE_WARS_GAME_H
 #define IMPULSE_WARS_GAME_H
 
-#include "env.h"
 #include "helpers.h"
 #include "settings.h"
 #include "types.h"
@@ -1852,6 +1851,7 @@ void handleBodyMoveEvents(env *e) {
         droneEntity *drone;
         shieldEntity *shield;
         dronePieceEntity *piece;
+        int16_t mapIdx;
 
         // if the new position is out of bounds, destroy the entity unless
         // a drone is out of bounds, then just kill it
@@ -1860,25 +1860,27 @@ void handleBodyMoveEvents(env *e) {
         case BOUNCY_WALL_ENTITY:
         case DEATH_WALL_ENTITY:
             wall = ent->entity;
-            wall->mapCellIdx = entityPosToCellIdx(e, newPos);
-            if (wall->mapCellIdx == -1) {
+            mapIdx = entityPosToCellIdx(e, newPos);
+            if (mapIdx == -1) {
                 DEBUG_LOGF("invalid position for floating wall: (%f, %f) destroying", newPos.x, newPos.y);
                 cc_array_remove_fast(e->floatingWalls, wall, NULL);
                 destroyWall(e, wall, false);
                 continue;
             }
+            wall->mapCellIdx = mapIdx;
             wall->pos = newPos;
             wall->rot = event->transform.q;
             wall->velocity = b2Body_GetLinearVelocity(wall->bodyID);
             break;
         case PROJECTILE_ENTITY:
             proj = ent->entity;
-            proj->mapCellIdx = entityPosToCellIdx(e, newPos);
-            if (proj->mapCellIdx == -1) {
+            mapIdx = entityPosToCellIdx(e, newPos);
+            if (mapIdx == -1) {
                 DEBUG_LOGF("invalid position for projectile: (%f, %f) destroying", newPos.x, newPos.y);
                 destroyProjectile(e, proj, false, true);
                 continue;
             }
+            proj->mapCellIdx = mapIdx;
             proj->lastPos = proj->pos;
             proj->pos = newPos;
             proj->lastVelocity = proj->velocity;
@@ -1898,12 +1900,13 @@ void handleBodyMoveEvents(env *e) {
             break;
         case DRONE_ENTITY:
             drone = ent->entity;
-            drone->mapCellIdx = entityPosToCellIdx(e, newPos);
-            if (drone->mapCellIdx == -1) {
+            mapIdx = entityPosToCellIdx(e, newPos);
+            if (mapIdx == -1) {
                 DEBUG_LOGF("invalid position for drone: (%f, %f) killing it", newPos.x, newPos.y);
                 killDrone(e, drone);
                 continue;
             }
+            drone->mapCellIdx = mapIdx;
             drone->lastPos = drone->pos;
             drone->pos = newPos;
             drone->lastVelocity = drone->velocity;

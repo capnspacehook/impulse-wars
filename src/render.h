@@ -3,7 +3,6 @@
 
 #include "raymath.h"
 
-#include "env.h"
 #include "helpers.h"
 
 bool droneControlledByHuman(const env *e, uint8_t i);
