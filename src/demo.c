@@ -36,11 +36,12 @@ int main(void) {
     Vector2 rayCenter = b2VecToRayVec(e, b2Vec2_zero);
     rayCenter.x = 0.0f;
     rayCenter.y = 0.0f;
+    float dist = 100.0f;
     client->camera = (Camera3D){
-        .position = (Vector3){.x = 75.0f, .y = 150.0f, .z = 75.0f},
-        .target = (Vector3){.x = rayCenter.x, .y = 0.0f, .z = rayCenter.y},
+        .position = (Vector3){.x = dist*sqrt(6.0f)/4.0f, .y = dist/2, .z = dist*sqrt(6)/4.0f},
+        .target = (Vector3){.x = 0.0f, .y = 0.0f, .z = 0.0f},
         .up = (Vector3){.x = 0.0f, .y = 1.0f, .z = 0.0f},
-        .fovy = 135.0f,
+        .fovy = 90.0f,
         .projection = CAMERA_ORTHOGRAPHIC,
     };
 
@@ -49,24 +50,21 @@ int main(void) {
     lastFrameTime = emscripten_get_now();
     emscripten_set_main_loop_arg(emscriptenStep, e, 0, true);
 #else
-    while (true) {
-        if (WindowShouldClose()) {
-            destroyEnv(e);
-            destroyMaps();
-            free(obs);
-            fastFree(contActions);
-            fastFree(discActions);
-            fastFree(rewards);
-            fastFree(masks);
-            fastFree(terminals);
-            fastFree(truncations);
-            destroyLogBuffer(logs);
-            fastFree(e);
-            destroyRayClient(client);
-            return 0;
-        }
-
-        stepEnv(e);
+    while (!WindowShouldClose()) {
+         stepEnv(e);
     }
+    destroyEnv(e);
+    destroyMaps();
+    free(obs);
+    fastFree(contActions);
+    fastFree(discActions);
+    fastFree(rewards);
+    fastFree(masks);
+    fastFree(terminals);
+    fastFree(truncations);
+    destroyLogBuffer(logs);
+    fastFree(e);
+    destroyRayClient(client);
+    return 0;
 #endif
 }

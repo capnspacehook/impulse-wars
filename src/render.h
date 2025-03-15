@@ -21,6 +21,155 @@
 bool SHOW_LETTER_BOUNDRY = false;
 bool SHOW_TEXT_BOUNDRY = false;
 
+void DrawCubeTexture(Texture2D texture, Vector3 position, float width, float height, float length, Color color)
+{
+    float x = position.x;
+    float y = position.y;
+    float z = position.z;
+
+    // Set desired texture to be enabled while drawing following vertex data
+    rlSetTexture(texture.id);
+
+    // Vertex data transformation can be defined with the commented lines,
+    // but in this example we calculate the transformed vertex data directly when calling rlVertex3f()
+    //rlPushMatrix();
+        // NOTE: Transformation is applied in inverse order (scale -> rotate -> translate)
+        //rlTranslatef(2.0f, 0.0f, 0.0f);
+        //rlRotatef(45, 0, 1, 0);
+        //rlScalef(2.0f, 2.0f, 2.0f);
+
+        rlBegin(RL_QUADS);
+            rlColor4ub(color.r, color.g, color.b, color.a);
+            // Front Face
+            rlNormal3f(0.0f, 0.0f, 1.0f);       // Normal Pointing Towards Viewer
+            rlTexCoord2f(0.0f, 0.0f); rlVertex3f(x - width/2, y - height/2, z + length/2);  // Bottom Left Of The Texture and Quad
+            rlTexCoord2f(1.0f, 0.0f); rlVertex3f(x + width/2, y - height/2, z + length/2);  // Bottom Right Of The Texture and Quad
+            rlTexCoord2f(1.0f, 1.0f); rlVertex3f(x + width/2, y + height/2, z + length/2);  // Top Right Of The Texture and Quad
+            rlTexCoord2f(0.0f, 1.0f); rlVertex3f(x - width/2, y + height/2, z + length/2);  // Top Left Of The Texture and Quad
+            // Back Face
+            rlNormal3f(0.0f, 0.0f, - 1.0f);     // Normal Pointing Away From Viewer
+            rlTexCoord2f(1.0f, 0.0f); rlVertex3f(x - width/2, y - height/2, z - length/2);  // Bottom Right Of The Texture and Quad
+            rlTexCoord2f(1.0f, 1.0f); rlVertex3f(x - width/2, y + height/2, z - length/2);  // Top Right Of The Texture and Quad
+            rlTexCoord2f(0.0f, 1.0f); rlVertex3f(x + width/2, y + height/2, z - length/2);  // Top Left Of The Texture and Quad
+            rlTexCoord2f(0.0f, 0.0f); rlVertex3f(x + width/2, y - height/2, z - length/2);  // Bottom Left Of The Texture and Quad
+            // Top Face
+            rlNormal3f(0.0f, 1.0f, 0.0f);       // Normal Pointing Up
+            rlTexCoord2f(0.0f, 1.0f); rlVertex3f(x - width/2, y + height/2, z - length/2);  // Top Left Of The Texture and Quad
+            rlTexCoord2f(0.0f, 0.0f); rlVertex3f(x - width/2, y + height/2, z + length/2);  // Bottom Left Of The Texture and Quad
+            rlTexCoord2f(1.0f, 0.0f); rlVertex3f(x + width/2, y + height/2, z + length/2);  // Bottom Right Of The Texture and Quad
+            rlTexCoord2f(1.0f, 1.0f); rlVertex3f(x + width/2, y + height/2, z - length/2);  // Top Right Of The Texture and Quad
+            // Bottom Face
+            rlNormal3f(0.0f, - 1.0f, 0.0f);     // Normal Pointing Down
+            rlTexCoord2f(1.0f, 1.0f); rlVertex3f(x - width/2, y - height/2, z - length/2);  // Top Right Of The Texture and Quad
+            rlTexCoord2f(0.0f, 1.0f); rlVertex3f(x + width/2, y - height/2, z - length/2);  // Top Left Of The Texture and Quad
+            rlTexCoord2f(0.0f, 0.0f); rlVertex3f(x + width/2, y - height/2, z + length/2);  // Bottom Left Of The Texture and Quad
+            rlTexCoord2f(1.0f, 0.0f); rlVertex3f(x - width/2, y - height/2, z + length/2);  // Bottom Right Of The Texture and Quad
+            // Right face
+            rlNormal3f(1.0f, 0.0f, 0.0f);       // Normal Pointing Right
+            rlTexCoord2f(1.0f, 0.0f); rlVertex3f(x + width/2, y - height/2, z - length/2);  // Bottom Right Of The Texture and Quad
+            rlTexCoord2f(1.0f, 1.0f); rlVertex3f(x + width/2, y + height/2, z - length/2);  // Top Right Of The Texture and Quad
+            rlTexCoord2f(0.0f, 1.0f); rlVertex3f(x + width/2, y + height/2, z + length/2);  // Top Left Of The Texture and Quad
+            rlTexCoord2f(0.0f, 0.0f); rlVertex3f(x + width/2, y - height/2, z + length/2);  // Bottom Left Of The Texture and Quad
+            // Left Face
+            rlNormal3f( - 1.0f, 0.0f, 0.0f);    // Normal Pointing Left
+            rlTexCoord2f(0.0f, 0.0f); rlVertex3f(x - width/2, y - height/2, z - length/2);  // Bottom Left Of The Texture and Quad
+            rlTexCoord2f(1.0f, 0.0f); rlVertex3f(x - width/2, y - height/2, z + length/2);  // Bottom Right Of The Texture and Quad
+            rlTexCoord2f(1.0f, 1.0f); rlVertex3f(x - width/2, y + height/2, z + length/2);  // Top Right Of The Texture and Quad
+            rlTexCoord2f(0.0f, 1.0f); rlVertex3f(x - width/2, y + height/2, z - length/2);  // Top Left Of The Texture and Quad
+        rlEnd();
+    //rlPopMatrix();
+
+    rlSetTexture(0);
+}
+
+// Draw cube with texture piece applied to all faces
+void DrawCubeTextureRec(Texture2D texture, Rectangle source, Vector3 position, float width, float height, float length, Color color)
+{
+    float x = position.x;
+    float y = position.y;
+    float z = position.z;
+    float texWidth = (float)texture.width;
+    float texHeight = (float)texture.height;
+
+    // Set desired texture to be enabled while drawing following vertex data
+    rlSetTexture(texture.id);
+
+    // We calculate the normalized texture coordinates for the desired texture-source-rectangle
+    // It means converting from (tex.width, tex.height) coordinates to [0.0f, 1.0f] equivalent 
+    rlBegin(RL_QUADS);
+        rlColor4ub(color.r, color.g, color.b, color.a);
+
+        // Front face
+        rlNormal3f(0.0f, 0.0f, 1.0f);
+        rlTexCoord2f(source.x/texWidth, (source.y + source.height)/texHeight);
+        rlVertex3f(x - width/2, y - height/2, z + length/2);
+        rlTexCoord2f((source.x + source.width)/texWidth, (source.y + source.height)/texHeight);
+        rlVertex3f(x + width/2, y - height/2, z + length/2);
+        rlTexCoord2f((source.x + source.width)/texWidth, source.y/texHeight);
+        rlVertex3f(x + width/2, y + height/2, z + length/2);
+        rlTexCoord2f(source.x/texWidth, source.y/texHeight);
+        rlVertex3f(x - width/2, y + height/2, z + length/2);
+
+        // Back face
+        rlNormal3f(0.0f, 0.0f, - 1.0f);
+        rlTexCoord2f((source.x + source.width)/texWidth, (source.y + source.height)/texHeight);
+        rlVertex3f(x - width/2, y - height/2, z - length/2);
+        rlTexCoord2f((source.x + source.width)/texWidth, source.y/texHeight);
+        rlVertex3f(x - width/2, y + height/2, z - length/2);
+        rlTexCoord2f(source.x/texWidth, source.y/texHeight);
+        rlVertex3f(x + width/2, y + height/2, z - length/2);
+        rlTexCoord2f(source.x/texWidth, (source.y + source.height)/texHeight);
+        rlVertex3f(x + width/2, y - height/2, z - length/2);
+
+        // Top face
+        rlNormal3f(0.0f, 1.0f, 0.0f);
+        rlTexCoord2f(source.x/texWidth, source.y/texHeight);
+        rlVertex3f(x - width/2, y + height/2, z - length/2);
+        rlTexCoord2f(source.x/texWidth, (source.y + source.height)/texHeight);
+        rlVertex3f(x - width/2, y + height/2, z + length/2);
+        rlTexCoord2f((source.x + source.width)/texWidth, (source.y + source.height)/texHeight);
+        rlVertex3f(x + width/2, y + height/2, z + length/2);
+        rlTexCoord2f((source.x + source.width)/texWidth, source.y/texHeight);
+        rlVertex3f(x + width/2, y + height/2, z - length/2);
+
+        // Bottom face
+        rlNormal3f(0.0f, - 1.0f, 0.0f);
+        rlTexCoord2f((source.x + source.width)/texWidth, source.y/texHeight);
+        rlVertex3f(x - width/2, y - height/2, z - length/2);
+        rlTexCoord2f(source.x/texWidth, source.y/texHeight);
+        rlVertex3f(x + width/2, y - height/2, z - length/2);
+        rlTexCoord2f(source.x/texWidth, (source.y + source.height)/texHeight);
+        rlVertex3f(x + width/2, y - height/2, z + length/2);
+        rlTexCoord2f((source.x + source.width)/texWidth, (source.y + source.height)/texHeight);
+        rlVertex3f(x - width/2, y - height/2, z + length/2);
+
+        // Right face
+        rlNormal3f(1.0f, 0.0f, 0.0f);
+        rlTexCoord2f((source.x + source.width)/texWidth, (source.y + source.height)/texHeight);
+        rlVertex3f(x + width/2, y - height/2, z - length/2);
+        rlTexCoord2f((source.x + source.width)/texWidth, source.y/texHeight);
+        rlVertex3f(x + width/2, y + height/2, z - length/2);
+        rlTexCoord2f(source.x/texWidth, source.y/texHeight);
+        rlVertex3f(x + width/2, y + height/2, z + length/2);
+        rlTexCoord2f(source.x/texWidth, (source.y + source.height)/texHeight);
+        rlVertex3f(x + width/2, y - height/2, z + length/2);
+
+        // Left face
+        rlNormal3f( - 1.0f, 0.0f, 0.0f);
+        rlTexCoord2f(source.x/texWidth, (source.y + source.height)/texHeight);
+        rlVertex3f(x - width/2, y - height/2, z - length/2);
+        rlTexCoord2f((source.x + source.width)/texWidth, (source.y + source.height)/texHeight);
+        rlVertex3f(x - width/2, y - height/2, z + length/2);
+        rlTexCoord2f((source.x + source.width)/texWidth, source.y/texHeight);
+        rlVertex3f(x - width/2, y + height/2, z + length/2);
+        rlTexCoord2f(source.x/texWidth, source.y/texHeight);
+        rlVertex3f(x - width/2, y + height/2, z - length/2);
+
+    rlEnd();
+
+    rlSetTexture(0);
+}
+
 
 static void DrawTextCodepoint3D(Font font, int codepoint, Vector3 position, float fontSize, bool backface, Color tint)
 {
@@ -232,12 +381,14 @@ rayClient *createRayClient() {
     SetTargetFPS(EVAL_FRAME_RATE);
 #endif
 
+    client->texture = LoadTexture("resources/cubicmap_atlas.png");
+
     char* vsPath = TextFormat("shaders/gls%i/lighting.vs", GLSL_VERSION);
     char* fsPath = TextFormat("shaders/gls%i/lighting.fs", GLSL_VERSION);
     client->shader = LoadShader(vsPath, fsPath);
-    client->shader.locs[SHADER_LOC_VERTEX_POSITION] = GetShaderLocation(client->shader, "viewPos");
+    client->shader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(client->shader, "viewPos");
     int ambientLoc = GetShaderLocation(client->shader, "ambient");
-    float ambient[4] = { 0.1f, 0.1f, 0.1f, 1.0f };
+    float ambient[4] = { 0.2f, 0.2f, 0.2f, 1.0f };
     SetShaderValue(client->shader, ambientLoc, ambient, SHADER_UNIFORM_VEC4);
 
     for (int i = 0; i < MAX_LIGHTS; i++) {
@@ -249,6 +400,18 @@ rayClient *createRayClient() {
         );
     }
 
+    vsPath = TextFormat("shaders/gls%i/bloom.vs", GLSL_VERSION);
+    fsPath = TextFormat("shaders/gls%i/bloom.fs", GLSL_VERSION);
+    client->bloom = LoadShader(vsPath, fsPath);
+    client->bloomPosLoc = GetShaderLocation(client->bloom, "pos");
+ 
+    vsPath = TextFormat("shaders/gls%i/grid.vs", GLSL_VERSION);
+    fsPath = TextFormat("shaders/gls%i/grid.fs", GLSL_VERSION);
+    client->grid = LoadShader(vsPath, fsPath);
+    for (int i = 0; i < 4; i++) {
+        client->gridPosLoc[i] = GetShaderLocation(client->grid, TextFormat("pos[%i]", i));
+        client->gridColorLoc[i] = GetShaderLocation(client->grid, TextFormat("color[%i]", i));
+    }
     return client;
 }
 
@@ -311,7 +474,7 @@ void setEnvRenderScale(env *e) {
 Color getDroneColor(const uint8_t droneIdx) {
     switch (droneIdx) {
     case 0:
-        return barolo;
+        return PUFF_RED;
     case 1:
         return PUFF_GREEN;
     case 2:
@@ -660,15 +823,35 @@ void renderEmptyCell(const env *e, const b2Vec2 emptyCell, const size_t idx) {
 
 void renderWall(const env *e, const wallEntity *wall) {
     Color color = {0};
+    Rectangle texture_rect;
     switch (wall->type) {
     case STANDARD_WALL_ENTITY:
         color = PUFF_CYAN;
+        texture_rect = (Rectangle){
+            0.0f,
+            0.0f,
+            e->client->texture.width/2.0f,
+            e->client->texture.height/2.0f
+        };
         break;
     case BOUNCY_WALL_ENTITY:
         color = PUFF_YELLOW;
+        // TODO: Get a texture
+        texture_rect = (Rectangle){
+            0.0f,
+            e->client->texture.height/2.0f,
+            e->client->texture.width/2.0f,
+            e->client->texture.height/2.0f
+        };
         break;
     case DEATH_WALL_ENTITY:
         color = PUFF_RED;
+        texture_rect = (Rectangle){
+            e->client->texture.width/2.0f,
+            0.0f,
+            e->client->texture.width/2.0f,
+            e->client->texture.height/2.0f
+        };
         break;
     default:
         ERRORF("unknown wall type %d", wall->type);
@@ -707,45 +890,72 @@ void renderWall(const env *e, const wallEntity *wall) {
 
     Color faded = (Color){.r=0.2*color.r, .g=0.2*color.g, .b=0.2*color.b, .a=color.a};
 
-    EndShaderMode();
     rlPushMatrix();
         rlTranslatef(wall->pos.x, 0.0f, wall->pos.y);
         rlRotatef(-angle, 0.0f, 1.0f, 0.0f);
-        BeginShaderMode(e->client->shader);
+
+        float x = 2.0f*wall->extent.x;
+        float z = 2.0f*wall->extent.y;
+        /*
         DrawCubeV(
             (Vector3){.x = 0.0f, .y = y_start, .z = 0.0f},
-            (Vector3){.x = 2.0*wall->extent.x, .y = y_size, .z = 2.0*wall->extent.y},
+            (Vector3){.x = x, .y = y_size, .z = z},
             faded
         );
+        */
+
+        DrawCubeTextureRec(
+            e->client->texture,
+            texture_rect,
+            (Vector3){.x = 0.0f, .y = y_start, .z = 0.0f},
+            x, y_size, z, WHITE
+        );
+        // Draw cube with an applied texture, but only a defined rectangle piece of the texture
+        //DrawCubeTextureRec(texture, (Rectangle){ 0.0f, texture.height/2.0f, texture.width/2.0f, texture.height/2.0f }, 
+        //    (Vector3){ 2.0f, 1.0f, 0.0f }, 2.0f, 2.0f, 2.0f, WHITE);
+
+ 
+        /*
         DrawCubeWiresV(
             (Vector3){.x = 0.0f, .y = y_start, .z = 0.0f},
-            (Vector3){.x = 2.0*wall->extent.x, .y = y_size, .z = 2.0*wall->extent.y},
+            (Vector3){.x = x, .y = y_size, .z = z},
             color
         );
-        EndShaderMode();
+        */
     rlPopMatrix();
-    BeginShaderMode(e->client->shader);
 }
 
 void renderWeaponPickup(const env *e, const weaponPickupEntity *pickup) {
     if (pickup->respawnWait != 0.0f || pickup->floatingWallsTouching != 0) {
         return;
     }
+    Rectangle texture_rect = (Rectangle){
+        e->client->texture.width/2.0f,
+        e->client->texture.height/2.0f,
+        e->client->texture.width/2.0f,
+        e->client->texture.height/2.0f
+    };
+
     Vector3 start = (Vector3){
-        .x = pickup->pos.x,
-        .y = 0.5f,
-        .z = pickup->pos.y
+        .x = pickup->pos.x - PICKUP_THICKNESS/2.0f,
+        .y = 1.5f,
+        .z = pickup->pos.y - PICKUP_THICKNESS/2.0f
     };
     Vector3 size = (Vector3){.x = PICKUP_THICKNESS, .y=0.0f, .z=PICKUP_THICKNESS};
 
-    DrawCubeWiresV(start, size, PUFF_GREEN);
-    DrawCubeV(start, size, Fade(PUFF_GREEN, 0.2f));
-
+    //DrawCubeWiresV(start, size, PUFF_GREEN);
+    //DrawCubeV(start, size, Fade(PUFF_GREEN, 0.2f));
+    
+    DrawCubeTextureRec(
+        e->client->texture,
+        texture_rect,
+        (Vector3){.x = pickup->pos.x, .y = 0.5f, .z = pickup->pos.y},
+        PICKUP_THICKNESS, 1.0f, PICKUP_THICKNESS, WHITE
+    );
+ 
     const char *weaponName = getWeaponAbreviation(pickup->weapon);
     Font font = GetFontDefault();
-    EndShaderMode();
-    DrawText3D(font, weaponName, start, 8,  0.5f, -1.0f, false, PUFF_WHITE);
-    BeginShaderMode(e->client->shader);
+    DrawText3D(font, weaponName, start, 12,  0.5f, -1.0f, false, PUFF_WHITE);
 }
 
 b2Vec2 b2RotatedPolygonVec(const float cosA, const float sinA, const b2Vec2 pos, const b2Vec2 vertice) {
@@ -789,11 +999,21 @@ void renderDronePieces(const env *e, const bool ending) {
         //    b2VecToRayVec(e, v3),
         //    color);
 
+        float adj = 2.0 - piece->lifetime / maxLifetime;
+        if (adj < 1.0f) {
+            adj = 1.0f;
+        }
+        float r = fminf(adj * (float)color.r, 255.0f);
+        float g = fminf(adj * (float)color.g, 255.0f);
+        float b = fminf(adj * (float)color.b, 255.0f);
+        float a = color.a;
+        Color adjustedColor = (Color){.r = r, .g = g, .b = b, .a = a};
+ 
         DrawTriangle3D(
             (Vector3){.x = v1.x, .y = 0.5f, .z = v1.y},
             (Vector3){.x = v2.x, .y = 0.5f, .z = v2.y},
             (Vector3){.x = v3.x, .y = 0.5f, .z = v3.y},
-            color
+            adjustedColor
         );
      
         if (ending) {
@@ -823,13 +1043,14 @@ void renderDroneRespawnGuides(const env *e, droneEntity *drone, const bool endin
         radius += DRONE_RESPAWN_GUIDE_MAX_RADIUS * ((drone->respawnGuideLifetime - (e->frameRate * DRONE_RESPAWN_GUIDE_HOLD_TIME)) / shrinkTime);
     }
 
-    DrawSphereWires(
+    Color color = Fade(getDroneColor(drone->idx), 0.5f);
+    BeginBlendMode(BLEND_ADDITIVE);
+    DrawSphere(
         (Vector3){.x = drone->pos.x, .y = 0.0f, .z = drone->pos.y},
         radius,
-        10,
-        50,
-        getDroneColor(drone->idx)
+        color
     );
+    EndBlendMode();
 
     if (!ending) {
         drone->respawnGuideLifetime--;
@@ -903,6 +1124,10 @@ void renderDroneGuides(env *e, droneEntity *drone, const bool ending) {
     float aimGuideWidth = getWeaponAimGuideWidth(drone->weaponInfo->type);
     aimGuideWidth = fminf(aimGuideWidth, output.distance + 0.1f) + (DRONE_RADIUS * 2.0f);
 
+    if (drone->weaponInfo->type == SNIPER_WEAPON) {
+        aimGuideWidth = 6.0f;
+    }
+ 
     // render laser aim guide
     Vector3 aimStart = (Vector3){.x=drone->pos.x, .y=0.5, .z=drone->pos.y};
     Vector3 aimEnd = (Vector3){
@@ -910,7 +1135,15 @@ void renderDroneGuides(env *e, droneEntity *drone, const bool ending) {
         .y = 0.5,
         .z = drone->pos.y + aimGuideWidth*drone->lastAim.y
     };
-    
+
+    if (drone->weaponInfo->type == SNIPER_WEAPON) {
+        DrawLine3D(
+            aimStart,
+            aimEnd,
+            droneColor
+        );
+    }
+   
     // subtly light up the laser aim guide if the drone's weapon is fully charged
     if (drone->weaponInfo->charge != 0.0f && drone->weaponCharge == drone->weaponInfo->charge) {
         Rectangle chargedAimGuide = {
@@ -921,7 +1154,7 @@ void renderDroneGuides(env *e, droneEntity *drone, const bool ending) {
         };
         const Color chargedAimGuideColor = Fade(droneColor, 100.0f / 255.0f);
         //DrawRectanglePro(chargedAimGuide, (Vector2){.x = 0.0f, .y = (chargedAimGuideHeight / 2.0f) * e->renderScale}, aimAngle, chargedAimGuideColor);
-        DrawCylinderEx(
+        DrawCylinderWiresEx(
             aimStart,
             aimEnd,
             chargedAimGuideHeight,
@@ -938,7 +1171,7 @@ void renderDroneGuides(env *e, droneEntity *drone, const bool ending) {
         .height = aimGuideHeight * e->renderScale,
     };
     //DrawRectanglePro(aimGuide, (Vector2){.x = 0.0f, .y = (aimGuideHeight / 2.0f) * e->renderScale}, aimAngle, droneColor);
-    DrawCylinderEx(
+    DrawCylinderWiresEx(
         aimStart,
         aimEnd,
         aimGuideHeight,
@@ -1000,11 +1233,11 @@ void renderDrone(const env *e, const droneEntity *drone) {
     const Color droneColor = getDroneColor(drone->idx);
     renderDroneTrail(e, drone, droneColor);
 
-    DrawSphereEx(
-        (Vector3){.x = drone->pos.x, .y = 0.0f, .z = drone->pos.y},
+    DrawSphereWires(
+        (Vector3){.x = drone->pos.x, .y = 0.5f, .z = drone->pos.y},
         DRONE_RADIUS,
-        10,
-        10,
+        8,
+        8,
         droneColor
     );
     //DrawCircleV(raylibPos, DRONE_RADIUS * e->renderScale, droneColor);
@@ -1013,7 +1246,7 @@ void renderDrone(const env *e, const droneEntity *drone) {
     if (drone->shield != NULL) {
         //DrawCircleV(b2VecToRayVec(e, drone->shield->pos), DRONE_SHIELD_RADIUS * e->renderScale, Fade(droneColor, 0.5f));
         DrawSphereWires(
-            (Vector3){.x = drone->shield->pos.x, .y = 0.0f, .z = drone->shield->pos.y},
+            (Vector3){.x = drone->shield->pos.x, .y = 0.5f, .z = drone->shield->pos.y},
             DRONE_SHIELD_RADIUS,
             6,
             8,
@@ -1021,11 +1254,6 @@ void renderDrone(const env *e, const droneEntity *drone) {
         );
     }
 
-    Vector3* lightPos = &e->client->lights[drone->idx].position;
-    lightPos->x = drone->pos.x;
-    lightPos->y = 10.0f;
-    lightPos->z = drone->pos.y;
-    UpdateLightValues(e->client->shader, e->client->lights[drone->idx]);
 }
 
 void renderDroneUI(const env *e, const droneEntity *drone) {
@@ -1149,13 +1377,27 @@ void renderProjectiles(env *e) {
         projectileEntity *projectile = safe_array_get_at(e->projectiles, i);
 
         const Color color = getProjectileColor(projectile->weaponInfo->type);
-        renderProjectileTrail(e, projectile, color);
-        //DrawCircleV(b2VecToRayVec(e, projectile->pos), e->renderScale * projectile->weaponInfo->radius, color);
+        float adj = 2.0 - projectile->distance / 10.0f;
+        if (adj < 1.0f) {
+            adj = 1.0f;
+        }
+        float r = fminf(adj * (float)color.r, 255.0f);
+        float g = fminf(adj * (float)color.g, 255.0f);
+        float b = fminf(adj * (float)color.b, 255.0f);
+        float a = color.a;
+
+        Color adjustedColor = (Color){.r = r, .g = g, .b = b, .a = a};
+        renderProjectileTrail(e, projectile, adjustedColor);
+        //BeginShaderMode(e->client->bloom);
+        //float pos[3] = {projectile->pos.x, 0.0f, projec1tile->pos.y};
+        //SetShaderValue(e->client->bloom, e->client->bloomPosLoc, pos, SHADER_UNIFORM_VEC3);
+
         DrawSphere(
-            (Vector3){.x = projectile->pos.x, .y = 0.0f, .z = projectile->pos.y},
+            (Vector3){.x = projectile->pos.x, .y = 0.5f, .z = projectile->pos.y},
             projectile->weaponInfo->radius,
-            color
+            adjustedColor
         );
+        //EndShaderMode();
     }
 }
 
@@ -1207,22 +1449,61 @@ void minimalStepEnv(env *e) {
 // - add info UI on sides:
 //   - teams, weapon type, ammo, cooldown, type of player
 void _renderEnv(env *e, const bool starting, const bool ending, const int8_t winner, const int8_t winningTeam) {
+    e->client->lightIdx = 0;
     if (ending) {
         minimalStepEnv(e);
     }
 
-    /*
-    UpdateCamera(&e->client->camera, CAMERA_PERSPECTIVE);
+    //UpdateCamera(&e->client->camera, CAMERA_ORBITAL);
 
     Vector3 camVec = e->client->camera.position;
     float cameraPos[3] = { camVec.x, camVec.y, camVec.z };
     SetShaderValue(e->client->shader, e->client->shader.locs[SHADER_LOC_VECTOR_VIEW], 
                   cameraPos, SHADER_UNIFORM_VEC3);
-    for (int i = 0; i < MAX_LIGHTS; i++) UpdateLightValues(e->client->shader, e->client->lights[i]);
-    */
+    for (int i = 0; i < MAX_LIGHTS; i++) {
+        e->client->lights[i].enabled = false;
+    }
+
+    for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
+        const droneEntity *drone = safe_array_get_at(e->drones, i);
+        Light* light = &e->client->lights[e->client->lightIdx];
+        if (drone->dead) {
+            light->enabled = false;
+            float gridPos[2] = {-1000, -1000};
+            SetShaderValue(e->client->grid, e->client->gridPosLoc[drone->idx], gridPos, SHADER_UNIFORM_VEC2);
+            continue;
+        }
+        e->client->lightIdx++;
+        light->enabled = false;
+        light->position.x = drone->pos.x;
+        light->position.y = 5.0f;
+        light->position.z = drone->pos.y;
+        const Color droneColor = getDroneColor(drone->idx);
+        light->color = (Color){0.5*droneColor.r, 0.5*droneColor.g, 0.5*droneColor.b, droneColor.a};
+
+        float gridPos[2] = {drone->pos.x, drone->pos.y};
+        SetShaderValue(e->client->grid, e->client->gridPosLoc[drone->idx], gridPos, SHADER_UNIFORM_VEC2);
+        float gridColor[4] = {droneColor.r, droneColor.g, droneColor.b, droneColor.a};
+        SetShaderValue(e->client->grid, e->client->gridColorLoc[drone->idx], gridColor, SHADER_UNIFORM_VEC4);
+    }
+
+    for (size_t i = 0; i < cc_array_size(e->projectiles); i++) {
+        projectileEntity *projectile = safe_array_get_at(e->projectiles, i);
+        const Color color = getProjectileColor(projectile->weaponInfo->type);
+        Light* light = &e->client->lights[e->client->lightIdx];
+        e->client->lightIdx++;
+        light->enabled = true;
+        light->position.x = projectile->pos.x;
+        light->position.y = 0.0f;
+        light->position.z = projectile->pos.y;
+        light->color = (Color){0.05*color.r, 0.05*color.g, 0.05*color.b, color.a};
+    }
+
+    for (int i = 0; i < MAX_LIGHTS; i++) {
+        UpdateLightValues(e->client->shader, e->client->lights[i]);
+    }
 
     BeginDrawing();
-
     ClearBackground(PUFF_BACKGROUND);
 #ifndef __EMSCRIPTEN__
     DrawFPS(e->renderScale, e->renderScale);
@@ -1230,12 +1511,12 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
 
     renderUI(e, starting);
 
-    BeginShaderMode(e->client->shader);
     //float cameraPos[3] = {e->client->camera.position.x, e->client->camera.position.y, e->client->camera.position.z};
     //SetShaderValue(e->client->shader, e->client->shader.locs[SHADER_LOC_VECTOR_VIEW], 
     //              cameraPos, SHADER_UNIFORM_VEC3);
 
     BeginMode3D(e->client->camera);
+    BeginShaderMode(e->client->shader);
     
     /*
     for (size_t i = 0; i < cc_array_size(e->cells); i++) {
@@ -1255,7 +1536,7 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
     );
  
     float y = -WALL_THICKNESS;
-    Color color = (Color){.r = 0.2*PUFF_CYAN.r, .g = 0.2*PUFF_CYAN.g, .b = 0.2*PUFF_CYAN.b, .a = PUFF_CYAN.a};
+    Color color = (Color){.r = 0.8*PUFF_CYAN.r, .g = 0.8*PUFF_CYAN.g, .b = 0.8*PUFF_CYAN.b, .a = PUFF_CYAN.a};
 
     DrawPlane(
         (Vector3){.x = 0.0f, .y = -WALL_THICKNESS - 1.0f, .z = 0.0f},
@@ -1280,6 +1561,32 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
         );
     }
 
+    // Smaller higher grid
+    EndShaderMode();
+    BeginBlendMode(BLEND_ALPHA);
+    BeginShaderMode(e->client->grid);
+    y = 0.0f;
+    color = PUFF_BACKGROUND;
+    for (int i = 0; i < 2*e->map->columns; i++) {
+        float d = WALL_THICKNESS * e->map->columns;
+        DrawLine3D(
+            (Vector3){.x = -d/2.0f, .y = y, .z = WALL_THICKNESS/2.0f*i - d/2.0f},
+            (Vector3){.x = (d-WALL_THICKNESS/2.0f)/2.0f, .y = y, .z = WALL_THICKNESS/2.0f*i - d/2.0f},
+            color
+        );
+    }
+    for (int i = 0; i < 2*e->map->rows; i++) {
+        float d = WALL_THICKNESS * e->map->rows;
+        DrawLine3D(
+            (Vector3){.x = WALL_THICKNESS*i/2.0f - d/2.0f, .y = y, .z = -d/2.0f},
+            (Vector3){.x = WALL_THICKNESS*i/2.0f - d/2.0f, .y = y, .z = (d-WALL_THICKNESS/2.0f)/2.0f},
+            color
+        );
+    }
+    EndShaderMode();
+    EndBlendMode();
+
+
     for (size_t i = 0; i < cc_array_size(e->pickups); i++) {
         const weaponPickupEntity *pickup = safe_array_get_at(e->pickups, i);
         renderWeaponPickup(e, pickup);
@@ -1288,13 +1595,6 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
     renderBrakeTrails(e, ending);
     renderDronePieces(e, ending);
 
-    for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
-        droneEntity *drone = safe_array_get_at(e->drones, i);
-        if (drone->dead) {
-            continue;
-        }
-        renderDroneRespawnGuides(e, drone, ending);
-    }
     for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
         if (drone->dead) {
@@ -1320,11 +1620,24 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
         renderWall(e, wall);
     }
 
-    renderProjectiles(e);
-    renderExplosions(e);
+    for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
+        droneEntity *drone = safe_array_get_at(e->drones, i);
+        if (drone->dead) {
+            continue;
+        }
+        renderDroneRespawnGuides(e, drone, ending);
+    }
 
-    EndMode3D();
+
+    BeginBlendMode(BLEND_ALPHA);
+    renderProjectiles(e);
+    EndBlendMode();
+
+    BeginShaderMode(e->client->shader);
+    renderExplosions(e);
+    
     EndShaderMode();
+    EndMode3D();
 
     for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
         const droneEntity *drone = safe_array_get_at(e->drones, i);
