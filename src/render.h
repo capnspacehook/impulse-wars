@@ -345,7 +345,7 @@ void renderUI(const env *e, const bool starting) {
     renderTimer(e, timerStr, WHITE);
 }
 
-void renderBrakeTrails(const env *e, const bool ending) {
+void renderBrakeTrails(const env *e) {
     const float maxLifetime = 3.0f * e->frameRate;
     const float radius = 0.3f * e->renderScale;
 
@@ -363,9 +363,7 @@ void renderBrakeTrails(const env *e, const bool ending) {
 
         Color trailColor = Fade(GRAY, 0.133f * (trailPoint->lifetime / maxLifetime));
         DrawCircleV(b2VecToRayVec(e, trailPoint->pos), radius, trailColor);
-        if (!ending) {
-            trailPoint->lifetime--;
-        }
+        trailPoint->lifetime--;
     }
 }
 
@@ -494,7 +492,7 @@ b2Vec2 b2RotatedPolygonVec(const float cosA, const float sinA, const b2Vec2 pos,
     };
 }
 
-void renderDronePieces(env *e, const bool ending) {
+void renderDronePieces(env *e) {
     const float maxLifetime = e->frameRate * DRONE_PIECE_LIFETIME;
 
     CC_ArrayIter iter;
@@ -527,10 +525,6 @@ void renderDronePieces(env *e, const bool ending) {
             b2VecToRayVec(e, v3),
             color);
 
-        if (ending) {
-            continue;
-        }
-
         piece->lifetime--;
         if (piece->lifetime == 0) {
             destroyDronePiece(e, piece);
@@ -539,7 +533,7 @@ void renderDronePieces(env *e, const bool ending) {
     }
 }
 
-void renderDroneRespawnGuides(const env *e, droneEntity *drone, const bool ending) {
+void renderDroneRespawnGuides(const env *e, droneEntity *drone) {
     if (drone->respawnGuideLifetime == 0) {
         return;
     }
@@ -556,9 +550,7 @@ void renderDroneRespawnGuides(const env *e, droneEntity *drone, const bool endin
 
     DrawCircleLinesV(b2VecToRayVec(e, drone->pos), radius * e->renderScale, getDroneColor(drone->idx));
 
-    if (!ending) {
-        drone->respawnGuideLifetime--;
-    }
+    drone->respawnGuideLifetime--;
 }
 
 b2RayResult droneAimingAt(const env *e, droneEntity *drone) {
@@ -890,15 +882,15 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
         renderWeaponPickup(e, pickup);
     }
 
-    renderBrakeTrails(e, ending);
-    renderDronePieces(e, ending);
+    renderBrakeTrails(e);
+    renderDronePieces(e);
 
     for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
         if (drone->dead) {
             continue;
         }
-        renderDroneRespawnGuides(e, drone, ending);
+        renderDroneRespawnGuides(e, drone);
     }
     for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);

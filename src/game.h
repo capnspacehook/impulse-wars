@@ -752,7 +752,9 @@ void createDronePiece(env *e, droneEntity *drone, const bool fromShield) {
     pieceBodyDef.rotation = rot;
     pieceBodyDef.linearDamping = DRONE_PIECE_LINEAR_DAMPING;
     pieceBodyDef.angularDamping = DRONE_PIECE_ANGULAR_DAMPING;
-    pieceBodyDef.linearVelocity = b2MulSV(randFloat(&e->randState, DRONE_PIECE_MIN_SPEED, DRONE_PIECE_MAX_SPEED), direction);
+    const float bonus = 1.0f + min(b2Length(drone->velocity) / 15.0f, 5.0f);
+    const float speed = randFloat(&e->randState, DRONE_PIECE_MIN_SPEED, DRONE_PIECE_MAX_SPEED) * bonus;
+    pieceBodyDef.linearVelocity = b2MulSV(speed, direction);
     pieceBodyDef.angularVelocity = randFloat(&e->randState, -PI, PI);
     pieceBodyDef.userData = ent;
     piece->bodyID = b2CreateBody(e->worldID, &pieceBodyDef);
@@ -825,11 +827,11 @@ void destroyDrone(env *e, droneEntity *drone) {
 void droneChangeWeapon(const env *e, droneEntity *drone, const enum weaponType newWeapon) {
     // top up ammo but change nothing else if the weapon is the same
     if (drone->weaponInfo->type != newWeapon) {
+        drone->weaponInfo = weaponInfos[newWeapon];
         drone->weaponCooldown = 0.0f;
         drone->weaponCharge = 0.0f;
         drone->heat = 0;
     }
-    drone->weaponInfo = weaponInfos[newWeapon];
     drone->ammo = weaponAmmo(e->defaultWeapon->type, drone->weaponInfo->type);
 }
 
@@ -844,6 +846,10 @@ void killDrone(env *e, droneEntity *drone) {
     drone->diedThisStep = true;
     drone->respawnWait = DRONE_RESPAWN_WAIT;
 
+    for (uint8_t i = 0; i < DRONE_PIECE_COUNT; i++) {
+        createDronePiece(e, drone, false);
+    }
+
     b2Body_Disable(drone->bodyID);
     droneChangeWeapon(e, drone, e->defaultWeapon->type);
     drone->braking = false;
@@ -852,10 +858,6 @@ void killDrone(env *e, droneEntity *drone) {
     drone->shotThisStep = false;
     drone->velocity = b2Vec2_zero;
     drone->lastVelocity = b2Vec2_zero;
-
-    for (uint8_t i = 0; i < DRONE_PIECE_COUNT; i++) {
-        createDronePiece(e, drone, false);
-    }
 }
 
 bool respawnDrone(env *e, droneEntity *drone) {
@@ -1558,6 +1560,7 @@ void droneShoot(env *e, droneEntity *drone, const b2Vec2 aim, const bool chargin
 
     if (drone->ammo == 0) {
         droneChangeWeapon(e, drone, e->defaultWeapon->type);
+        drone->weaponCooldown = drone->weaponInfo->coolDown;
     }
 }
 

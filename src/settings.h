@@ -197,8 +197,8 @@ const float DRONE_PIECE_MIN_DISTANCE = 1.5f;
 const float DRONE_PIECE_MAX_DISTANCE = 3.0f;
 const float DRONE_PIECE_LINEAR_DAMPING = 1.0f;
 const float DRONE_PIECE_ANGULAR_DAMPING = 1.0f;
-const float DRONE_PIECE_MIN_SPEED = 10.0f;
-const float DRONE_PIECE_MAX_SPEED = 15.0f;
+const float DRONE_PIECE_MIN_SPEED = 5.0f;
+const float DRONE_PIECE_MAX_SPEED = 10.0f;
 
 // weapon projectile settings
 #define STANDARD_AMMO INFINITE
