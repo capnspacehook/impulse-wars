@@ -7,6 +7,7 @@
 #ifndef AUTOPXD
 #include "id_pool.h"
 #include "raylib.h"
+#include "rlights.h"
 #else
 typedef struct b2IdPool {
     void *dummy;
@@ -334,6 +335,16 @@ typedef struct rayClient {
     uint16_t height;
     uint16_t halfWidth;
     uint16_t halfHeight;
+    uint16_t lightIdx;
+    Camera3D camera;
+    Light lights[MAX_LIGHTS];
+    Shader shader;
+    Shader bloom;
+    int bloomPosLoc;
+    Shader grid;
+    int gridPosLoc[4];
+    int gridColorLoc[4];
+    Texture2D texture;
 } rayClient;
 
 typedef struct brakeTrailPoint {
