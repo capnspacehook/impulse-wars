@@ -1,7 +1,7 @@
 import numpy as np
 
-PUFF_BG = (6, 24, 24)
-PUFF_CYAN = (0, 187, 187)
+PUFF_BG = (0, 0, 0)
+PUFF_CYAN = (0, 121, 241)
 PUFF_RED = (187, 0, 0)
 PUFF_YELLOW = (160, 160, 0)
 PUFF_GREEN = (0, 187, 0)
@@ -33,5 +33,5 @@ img[128:128+b, 128:256] = PUFF_GREEN
 img[256-b:256, 128:256] = PUFF_GREEN
 
 from PIL import Image
-Image.fromarray(img).save('../docker/texture.png')
+Image.fromarray(img).save('wall_texture_map.png')
 
