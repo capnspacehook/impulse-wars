@@ -1,4 +1,5 @@
 import numpy as np
+from PIL import Image
 
 PUFF_BG = (0, 0, 0)
 PUFF_CYAN = (0, 121, 241)
@@ -9,7 +10,7 @@ PUFF_GREEN = (0, 187, 0)
 img = np.zeros((256, 256, 3), dtype=np.uint8)
 img[:] = PUFF_BG
 
-b = 4
+b = 6
 
 img[:128, :b] = PUFF_CYAN
 img[:128, 128-b:128] = PUFF_CYAN
@@ -32,6 +33,5 @@ img[128:256, 256-b:256] = PUFF_GREEN
 img[128:128+b, 128:256] = PUFF_GREEN
 img[256-b:256, 128:256] = PUFF_GREEN
 
-from PIL import Image
 Image.fromarray(img).save('wall_texture_map.png')
 

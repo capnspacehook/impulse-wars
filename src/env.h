@@ -969,6 +969,10 @@ void updateHumanInputToggle(env *e) {
 }
 
 agentActions getPlayerInputs(env *e, droneEntity *drone, uint8_t gamepadIdx) {
+    if (IsKeyPressed(KEY_R)) {
+        e->needsReset = true;
+    }
+
     agentActions actions = {0};
 
     bool controllerConnected = false;

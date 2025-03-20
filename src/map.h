@@ -516,7 +516,8 @@ void computeMapBoundsAndQuadrants(env *e, mapEntry *map) {
         .max = (b2Vec2){
             .x = 0.0f,
             .y = 0.0f,
-        }};
+        }
+    };
     map->spawnQuads[1] = (mapBounds){
         .min = (b2Vec2){
             .x = 0.0f,
@@ -525,7 +526,8 @@ void computeMapBoundsAndQuadrants(env *e, mapEntry *map) {
         .max = (b2Vec2){
             .x = map->bounds.max.x - WALL_THICKNESS,
             .y = 0.0f,
-        }};
+        }
+    };
     map->spawnQuads[2] = (mapBounds){
         .min = (b2Vec2){
             .x = map->bounds.min.x + WALL_THICKNESS,
@@ -534,7 +536,8 @@ void computeMapBoundsAndQuadrants(env *e, mapEntry *map) {
         .max = (b2Vec2){
             .x = 0.0f,
             .y = map->bounds.max.y - WALL_THICKNESS,
-        }};
+        }
+    };
     map->spawnQuads[3] = (mapBounds){
         .min = (b2Vec2){
             .x = 0.0f,
@@ -543,7 +546,8 @@ void computeMapBoundsAndQuadrants(env *e, mapEntry *map) {
         .max = (b2Vec2){
             .x = map->bounds.max.x - WALL_THICKNESS,
             .y = map->bounds.max.y - WALL_THICKNESS,
-        }};
+        }
+    };
 }
 
 #ifndef AUTOPXD

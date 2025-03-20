@@ -9,7 +9,7 @@
 void destroyProjectile(env *e, projectileEntity *projectile, const bool processExplosions, const bool full);
 void createExplosion(env *e, droneEntity *drone, const projectileEntity *projectile, const b2ExplosionDef *def);
 
-void updateTrailPoints(const env *e, trailPoints *tp, const uint8_t maxLen, const b2Vec2 pos);
+void updateTrailPoints(trailPoints *tp, const uint8_t maxLen, const b2Vec2 pos);
 
 entity *createEntity(env *e, enum entityType type, void *entityData) {
     int32_t id = b2AllocId(&e->idPool);
@@ -426,6 +426,7 @@ entity *createWall(env *e, const b2Vec2 pos, const float width, const float heig
 
     b2Vec2 extent = {.x = width / 2.0f, .y = height / 2.0f};
     b2ShapeDef wallShapeDef = b2DefaultShapeDef();
+    wallShapeDef.invokeContactCreation = false;
     wallShapeDef.density = WALL_DENSITY;
     wallShapeDef.restitution = STANDARD_WALL_RESTITUTION;
     wallShapeDef.friction = STANDARD_WALL_FRICTION;
@@ -826,7 +827,7 @@ void destroyDrone(env *e, droneEntity *drone) {
 
 void droneChangeWeapon(const env *e, droneEntity *drone, const enum weaponType newWeapon) {
     // top up ammo but change nothing else if the weapon is the same
-    if (drone->weaponInfo->type != newWeapon) {
+    if (drone->weaponInfo->type != newWeapon || drone->dead) {
         drone->weaponInfo = weaponInfos[newWeapon];
         drone->weaponCooldown = 0.0f;
         drone->weaponCharge = 0.0f;
@@ -1416,7 +1417,8 @@ void handleSuddenDeath(env *e) {
         (b2Vec2){
             .x = xWidth,
             .y = WALL_THICKNESS,
-        });
+        }
+    );
     // bottom walls
     createSuddenDeathWalls(
         e,
@@ -1427,7 +1429,8 @@ void handleSuddenDeath(env *e) {
         (b2Vec2){
             .x = xWidth,
             .y = WALL_THICKNESS,
-        });
+        }
+    );
     // left walls
     createSuddenDeathWalls(
         e,
@@ -1438,7 +1441,8 @@ void handleSuddenDeath(env *e) {
         (b2Vec2){
             .x = WALL_THICKNESS,
             .y = WALL_THICKNESS * (e->map->rows - (e->suddenDeathWallCounter * 2) - 2),
-        });
+        }
+    );
     // right walls
     createSuddenDeathWalls(
         e,
@@ -1449,7 +1453,8 @@ void handleSuddenDeath(env *e) {
         (b2Vec2){
             .x = WALL_THICKNESS,
             .y = WALL_THICKNESS * (e->map->rows - (e->suddenDeathWallCounter * 2) - 2),
-        });
+        }
+    );
 
     // mark drones as dead if they touch a newly placed wall
     for (uint8_t i = 0; i < e->numDrones; i++) {
@@ -2029,7 +2034,7 @@ void handleBodyMoveEvents(env *e) {
             }
 
             if (e->client != NULL) {
-                updateTrailPoints(e, &proj->trailPoints, MAX_PROJECTLE_TRAIL_POINTS, newPos);
+                updateTrailPoints(&proj->trailPoints, MAX_PROJECTLE_TRAIL_POINTS, newPos);
             }
             break;
         case DRONE_ENTITY:
@@ -2047,7 +2052,7 @@ void handleBodyMoveEvents(env *e) {
             drone->velocity = b2Body_GetLinearVelocity(drone->bodyID);
 
             if (e->client != NULL) {
-                updateTrailPoints(e, &drone->trailPoints, MAX_DRONE_TRAIL_POINTS, newPos);
+                updateTrailPoints(&drone->trailPoints, MAX_DRONE_TRAIL_POINTS, newPos);
             }
             break;
         case SHIELD_ENTITY:

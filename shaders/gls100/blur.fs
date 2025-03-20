@@ -17,38 +17,46 @@
  *   3. This notice may not be removed or altered from any source distribution.
  */
 
-#version 330 core
+// NOTE: The coefficients for the two-pass Gaussian blur were generated using:
+//       https://lisyarus.github.io/blog/posts/blur-coefficients-generator.html
 
-#define BLOOM_DISABLED 0
-#define BLOOM_ADDITIVE 1
-#define BLOOM_SOFT_LIGHT 2
+#version 100
 
 noperspective in vec2 fragTexCoord;
 
-uniform sampler2D uTexColor;
-uniform sampler2D uTexBloomBlur;
-
-uniform lowp int uBloomMode;
-uniform float uBloomIntensity;
+uniform sampler2D uTexture;
+uniform vec2 uTexelDir;
 
 out vec4 fragColor;
 
+const int SAMPLE_COUNT = 6;
+
+const float OFFSETS[6] = float[6](
+    -4.455269417428358,
+    -2.4751038298192056,
+    -0.4950160492928827,
+    1.485055021558738,
+    3.465172537482815,
+    5
+);
+
+const float WEIGHTS[6] = float[6](
+    0.14587920530480702,
+    0.19230308352110734,
+    0.21647621943673803,
+    0.20809835496561988,
+    0.17082879595769634,
+    0.06641434081403137
+);
+
 void main()
 {
-    // Sampling scene color texture
-    vec3 result = texture(uTexColor, fragTexCoord).rgb;
+    vec3 result = vec3(0.0);
 
-    // Apply bloom
-    vec3 bloom = texture(uTexBloomBlur, fragTexCoord).rgb;
-    bloom *= uBloomIntensity;
-
-    if (uBloomMode == BLOOM_SOFT_LIGHT) {
-        bloom = clamp(bloom.rgb, vec3(0.0), vec3(1.0));
-        result = max((result + bloom) - (result * bloom), vec3(0.0));
-    } else if (uBloomMode == BLOOM_ADDITIVE) {
-        result += bloom;
+    for (int i = 0; i < SAMPLE_COUNT; ++i)
+    {
+        result += texture(uTexture, fragTexCoord + uTexelDir * OFFSETS[i]).rgb * WEIGHTS[i];
     }
 
-    // Final color output
     fragColor = vec4(result, 1.0);
 }

@@ -335,16 +335,26 @@ typedef struct rayClient {
     uint16_t height;
     uint16_t halfWidth;
     uint16_t halfHeight;
-    uint16_t lightIdx;
-    Camera3D camera;
-    Light lights[MAX_LIGHTS];
-    Shader shader;
-    Shader bloom;
-    int bloomPosLoc;
-    Shader grid;
-    int gridPosLoc[4];
-    int gridColorLoc[4];
-    Texture2D texture;
+
+    Camera3D camera3D;
+    Camera2D camera2D;
+
+    Shader blurShader;
+    int32_t blurShaderDirLoc;
+    Shader bloomShader;
+    int32_t bloomIntensityLoc;
+    int32_t bloomTexColorLoc;
+    int32_t bloomTexBloomBlurLoc;
+    Shader gridShader;
+    int32_t gridShaderPosLoc[4];
+    int32_t gridShaderColorLoc[4];
+    Texture2D wallTexture;
+    RenderTexture2D blurSrcTexture;
+    RenderTexture2D blurDstTexture;
+    RenderTexture2D projRawTex;
+    RenderTexture2D projBloomTex;
+    RenderTexture2D droneRawTex;
+    RenderTexture2D droneBloomTex;
 } rayClient;
 
 typedef struct brakeTrailPoint {

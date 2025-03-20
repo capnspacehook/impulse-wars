@@ -1,39 +1,54 @@
+/*
+ * Copyright (c) 2025 Le Juez Victor
+ *
+ * This software is provided "as-is", without any express or implied warranty. In no event
+ * will the authors be held liable for any damages arising from the use of this software.
+ *
+ * Permission is granted to anyone to use this software for any purpose, including commercial
+ * applications, and to alter it and redistribute it freely, subject to the following restrictions:
+ *
+ *   1. The origin of this software must not be misrepresented; you must not claim that you
+ *   wrote the original software. If you use this software in a product, an acknowledgment
+ *   in the product documentation would be appreciated but is not required.
+ *
+ *   2. Altered source versions must be plainly marked as such, and must not be misrepresented
+ *   as being the original software.
+ *
+ *   3. This notice may not be removed or altered from any source distribution.
+ */
+
 #version 100
 
-precision mediump float;
+#define BLOOM_DISABLED 0
+#define BLOOM_ADDITIVE 1
+#define BLOOM_SOFT_LIGHT 2
 
-// Input vertex attributes (from vertex shader)
-varying vec2 fragTexCoord;
-varying vec4 fragColor;
+noperspective in vec2 fragTexCoord;
 
-// Input uniform values
-uniform sampler2D texture0;
-uniform vec4 colDiffuse;
+uniform sampler2D uTexColor;
+uniform sampler2D uTexBloomBlur;
 
-// NOTE: Add your custom variables here
+uniform lowp int uBloomMode;
+uniform float uBloomIntensity;
 
-const vec2 size = vec2(800, 450);   // render size
-const float samples = 5.0;          // pixels per axis; higher = bigger glow, worse performance
-const float quality = 2.5;             // lower = smaller glow, better quality
+out vec4 fragColor;
 
 void main()
 {
-    vec4 sum = vec4(0);
-    vec2 sizeFactor = vec2(1)/size*quality;
+    // Sampling scene color texture
+    vec3 result = texture(uTexColor, fragTexCoord).rgb;
 
-    // Texel color fetching from texture sampler
-    vec4 source = texture2D(texture0, fragTexCoord);
+    // Apply bloom
+    vec3 bloom = texture(uTexBloomBlur, fragTexCoord).rgb;
+    bloom *= uBloomIntensity;
 
-    const int range = 2;            // should be = (samples - 1)/2;
-
-    for (int x = -range; x <= range; x++)
-    {
-        for (int y = -range; y <= range; y++)
-        {
-            sum += texture2D(texture0, fragTexCoord + vec2(x, y)*sizeFactor);
-        }
+    if (uBloomMode == BLOOM_SOFT_LIGHT) {
+        bloom = clamp(bloom.rgb, vec3(0.0), vec3(1.0));
+        result = max((result + bloom) - (result * bloom), vec3(0.0));
+    } else if (uBloomMode == BLOOM_ADDITIVE) {
+        result += bloom;
     }
 
-    // Calculate final fragment color
-    gl_FragColor = ((sum/(samples*samples)) + source)*colDiffuse;
+    // Final color output
+    fragColor = vec4(result, 1.0);
 }
