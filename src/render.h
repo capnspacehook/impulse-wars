@@ -103,20 +103,20 @@ rayClient *createRayClient() {
     SetTargetFPS(EVAL_FRAME_RATE);
 #endif
 
-    // TODO: make cameras dynamic
-    client->camera3D = (Camera3D){
-        .position = (Vector3){.x = 0.0f, .y = 120.0f, .z = 0.0f},
+    client->camera = fastCalloc(1, sizeof(gameCamera));
+    client->camera->camera3D = (Camera3D){
+        .position = (Vector3){.x = 0.0f, .y = 100.0f, .z = 0.0f},
         .target = (Vector3){.x = 0.0f, .y = 0.0f, .z = 0.0f},
         .up = (Vector3){.x = 0.0f, .y = 0.0f, .z = -1.0f},
         .fovy = 45.0f,
         .projection = CAMERA_PERSPECTIVE,
     };
-
-    client->camera2D = (Camera2D){
-        .offset = (Vector2){.x = 0.0f, .y = 0.0f},
+    client->camera->camera2D = (Camera2D){
+        .offset = (Vector2){.x = client->width / 2.0f, .y = client->height / 2.0f},
         .target = (Vector2){.x = 0.0f, .y = 0.0f},
         .zoom = 1.0f,
     };
+    client->camera->orthographic = false;
 
     client->wallTexture = LoadTexture("resources/wall_texture_map.png");
     client->blurSrcTexture = LoadRenderTexture(client->width, client->height);
@@ -166,13 +166,135 @@ void destroyRayClient(rayClient *client) {
     UnloadShader(client->bloomShader);
 
     CloseWindow();
+    fastFree(client->camera);
     fastFree(client);
 }
 
-void setEnvRenderScale(env *e) {
+const float ZOOM_SPEED = 0.04f;
+const float PAN_SPEED = 0.04f;
+const float MAX_CAMERA_HEIGHT = 130.0f;
+const float MIN_CAMERA_HEIGHT = 60.0f;
+const float BOUNDS_PADDING = 4.0f;
+const float MAP_MAX_X_OFFSET = 25.0f;
+const float MAP_MAX_Y_OFFSET = 10.0f;
+
+void setCamera2DZoom(env *e) {
+    gameCamera *camera = e->client->camera;
+
+    float screenHeightInWorldUnits = 2.0f * tanf((camera->camera3D.fovy * DEG2RAD) / 2.0f) * camera->camera3D.position.y;
+    camera->camera2D.zoom = e->client->height / screenHeightInWorldUnits;
+}
+
+void setupEnvCamera(env *e) {
     const float BASE_ROWS = 21.0f;
     const float scale = e->client->scale * (BASE_ROWS / e->map->rows);
+    // TODO: remove this field?
     e->renderScale = scale;
+
+    gameCamera *camera = e->client->camera;
+    if (camera->orthographic) {
+        camera->camera3D.projection = CAMERA_ORTHOGRAPHIC;
+        camera->camera3D.position.x = 0.0f;
+        camera->camera3D.position.y = 25.0f;
+        camera->camera3D.position.z = -2.0f;
+        camera->camera3D.target.x = 0.0f;
+        camera->camera3D.target.y = 0.0f;
+        camera->camera3D.target.z = -2.0f;
+        camera->camera3D.fovy = (5.0f * e->map->rows) - 15.0f;
+
+        camera->camera2D.target.x = 0.0f;
+        camera->camera2D.target.y = -2.0f;
+        camera->camera2D.zoom = (float)e->client->height / camera->camera3D.fovy;
+    } else {
+        camera->targetPos = Vector2Zero();
+
+        camera->camera3D.projection = CAMERA_PERSPECTIVE;
+        camera->maxZoom = (5 * e->map->rows) + 10;
+        const float startingZoom = max((camera->maxZoom + MIN_CAMERA_HEIGHT) / 2.0f, MIN_CAMERA_HEIGHT);
+        camera->camera3D.position = (Vector3){.x = 0.0f, .y = startingZoom, .z = 0.0f};
+        camera->camera3D.target = (Vector3){.x = 0.0f, .y = 0.0f, .z = 0.0f};
+        camera->camera3D.fovy = 45.0f;
+
+        camera->camera2D.target.x = 0.0f;
+        camera->camera2D.target.y = 0.0f;
+        setCamera2DZoom(e);
+    }
+}
+
+Rectangle calculatePlayersBoundingBox(const env *e) {
+    float minX = FLT_MAX;
+    float minY = FLT_MAX;
+    float maxX = -FLT_MAX;
+    float maxY = -FLT_MAX;
+
+    for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
+        const droneEntity *drone = safe_array_get_at(e->drones, i);
+        if (drone->dead && drone->livesLeft == 0 && !drone->diedThisStep) {
+            continue;
+        }
+
+        minX = min(drone->pos.x, minX);
+        minY = min(drone->pos.y, minY);
+        maxX = max(drone->pos.x, maxX);
+        maxY = max(drone->pos.y, maxY);
+    }
+
+    Rectangle bounds = {
+        .x = (minX + maxX) / 2.0f,
+        .y = (minY + maxY) / 2.0f,
+        .width = (maxX - minX) + BOUNDS_PADDING,
+        .height = (maxY - minY) + BOUNDS_PADDING,
+    };
+    return bounds;
+}
+
+float calculateZoom(const env *e, Rectangle droneBounds) {
+    float boundsZoom = (droneBounds.width + droneBounds.height) * 0.5f;
+    boundsZoom += max(droneBounds.width, droneBounds.height) * 0.5f;
+
+    float fov = tanf((e->client->camera->camera3D.fovy * DEG2RAD) / 2.0f);
+    float zoom = boundsZoom / fov;
+    zoom = (MIN_CAMERA_HEIGHT + zoom) * 0.45f;
+    zoom = Clamp(zoom, MIN_CAMERA_HEIGHT, e->client->camera->maxZoom);
+
+    return zoom;
+}
+
+void updateCamera(env *e) {
+    gameCamera *camera = e->client->camera;
+
+    if (IsKeyPressed(KEY_TAB)) {
+        camera->orthographic = !camera->orthographic;
+        setupEnvCamera(e);
+    }
+    if (camera->orthographic) {
+        return;
+    }
+
+    const Rectangle droneBounds = calculatePlayersBoundingBox(e);
+    if (droneBounds.width == 0 && droneBounds.height == 0) {
+        return;
+    }
+
+    // smoothly move towards the center of players
+    const Vector2 centerPoint = {.x = droneBounds.x, .y = droneBounds.y};
+    camera->targetPos = Vector2Lerp(camera->targetPos, centerPoint, PAN_SPEED);
+    camera->targetPos.x = Clamp(camera->targetPos.x, e->map->bounds.min.x + MAP_MAX_X_OFFSET, e->map->bounds.max.x - MAP_MAX_X_OFFSET);
+    camera->targetPos.y = Clamp(camera->targetPos.y, e->map->bounds.min.y + MAP_MAX_Y_OFFSET, e->map->bounds.max.y - MAP_MAX_Y_OFFSET);
+
+    camera->camera3D.target.x = camera->targetPos.x;
+    camera->camera3D.target.z = camera->targetPos.y;
+
+    camera->camera3D.position.x = camera->targetPos.x;
+    camera->camera3D.position.z = camera->targetPos.y;
+
+    // smoothly zoom in or out
+    const float zoom = calculateZoom(e, droneBounds);
+    camera->camera3D.position.y = Lerp(camera->camera3D.position.y, zoom, ZOOM_SPEED);
+    setCamera2DZoom(e);
+
+    // update 2D camera
+    camera->camera2D.target = camera->targetPos;
 }
 
 Color getDroneColor(const uint8_t droneIdx) {
@@ -614,7 +736,7 @@ void renderUI(const env *e, const bool starting) {
 
         const char *droneNum = TextFormat("Drone %d", drone->idx + 1);
         const Vector2 textSize = MeasureTextEx(GetFontDefault(), droneNum, fontSize, fontSize / 10);
-        const uint16_t lineWidth = textSize.x + (3 * (e->renderScale * 2.5f));
+        const uint16_t lineWidth = textSize.x + (3 * (e->client->scale * 2.5f));
 
         uint16_t x = 0;
         uint16_t y = 0;
@@ -647,8 +769,8 @@ void renderUI(const env *e, const bool starting) {
         uint16_t lifeY = y + (textSize.y / 2);
         const Color droneColor = getDroneColor(drone->idx);
         for (uint8_t i = 0; i < drone->livesLeft; i++) {
-            lifeX += e->renderScale * 2.5f;
-            DrawCircleLines(lifeX, lifeY, e->renderScale, droneColor);
+            lifeX += e->client->scale * 2.5f;
+            DrawCircleLines(lifeX, lifeY, e->client->scale, droneColor);
         }
 
         y += textSize.y + e->client->scale;
@@ -883,15 +1005,6 @@ void renderWeaponPickup(const env *e, const weaponPickupEntity *pickup) {
         e->client->wallTexture.height / 2.0f,
     };
 
-    Vector3 start = (Vector3){
-        .x = pickup->pos.x - PICKUP_THICKNESS / 2.0f,
-        .y = 1.0f,
-        .z = pickup->pos.y - PICKUP_THICKNESS / 2.0f
-    };
-
-    // DrawCubeWiresV(start, size, PUFF_GREEN);
-    // DrawCubeV(start, size, Fade(PUFF_GREEN, 0.2f));
-
     DrawCubeTextureRec(
         e->client->wallTexture,
         textureRec,
@@ -903,7 +1016,13 @@ void renderWeaponPickup(const env *e, const weaponPickupEntity *pickup) {
     );
 
     const char *weaponName = getWeaponAbreviation(pickup->weapon);
-    DrawText3D(GetFontDefault(), weaponName, start, 12, 0.5f, -1.0f, false, PUFF_WHITE);
+    Vector3 textPos = (Vector3){
+        .x = pickup->pos.x - PICKUP_THICKNESS / 2.0f,
+        .y = 1.0f,
+        .z = pickup->pos.y - PICKUP_THICKNESS / 2.0f
+    };
+
+    DrawText3D(GetFontDefault(), weaponName, textPos, 12, 0.5f, -1.0f, false, PUFF_WHITE);
 }
 
 void renderDronePieces(env *e) {
@@ -961,9 +1080,6 @@ void renderDroneRespawnGuides(const env *e, droneEntity *drone) {
         return;
     }
 
-    Vector2 dronePos = GetWorldToScreen((Vector3){.x = drone->pos.x, .y = 0.0f, .z = drone->pos.y}, e->client->camera3D);
-    dronePos = GetWorldToScreen2D(dronePos, e->client->camera2D);
-
     const float maxLifetime = e->frameRate * (DRONE_RESPAWN_GUIDE_SHRINK_TIME + DRONE_RESPAWN_GUIDE_HOLD_TIME);
     const uint16_t shrinkTime = e->frameRate * DRONE_RESPAWN_GUIDE_SHRINK_TIME;
     if (drone->respawnGuideLifetime == UINT16_MAX) {
@@ -974,8 +1090,8 @@ void renderDroneRespawnGuides(const env *e, droneEntity *drone) {
     if (drone->respawnGuideLifetime >= maxLifetime - shrinkTime) {
         radius += DRONE_RESPAWN_GUIDE_MAX_RADIUS * ((drone->respawnGuideLifetime - (e->frameRate * DRONE_RESPAWN_GUIDE_HOLD_TIME)) / shrinkTime);
     }
-    radius *= 15.0f;
 
+    Vector2 dronePos = (Vector2){.x = drone->pos.x, .y = drone->pos.y};
     DrawCircleLinesV(dronePos, radius, getDroneColor(drone->idx));
 
     drone->respawnGuideLifetime--;
@@ -1058,7 +1174,7 @@ void renderDroneTrail(const droneEntity *drone) {
         return;
     }
 
-    const float trailWidth = DRONE_RADIUS * 1.1f;
+    const float trailWidth = DRONE_RADIUS;
     const float numPoints = drone->trailPoints.length;
     const Color droneColor = getDroneColor(drone->idx);
 
@@ -1131,14 +1247,23 @@ void renderDrone(const droneEntity *drone) {
     }
 }
 
-void renderDroneUI(const env *e, const droneEntity *drone) {
-    Vector2 dronePos = GetWorldToScreen((Vector3){.x = drone->pos.x, .y = 0.0f, .z = drone->pos.y}, e->client->camera3D);
-    dronePos = GetWorldToScreen2D(dronePos, e->client->camera2D);
+void renderDroneAmmo(const env *e, const droneEntity *drone) {
+    Vector2 worldPos = {.x = drone->pos.x, .y = drone->pos.y};
+    Vector2 screenPos = GetWorldToScreen2D(worldPos, e->client->camera->camera2D);
 
+    // draw ammo count
+    const float fontSize = 1.5f * e->client->camera->camera2D.zoom;
+    const char *ammoStr = TextFormat("%d", drone->ammo);
+    const Vector2 textSize = MeasureTextEx(GetFontDefault(), ammoStr, fontSize, fontSize / 10.0f);
+    const Vector2 textOrigin = {.x = screenPos.x - (textSize.x / 2), .y = screenPos.y + (1.3f * textSize.y)};
+    DrawTextEx(GetFontDefault(), ammoStr, textOrigin, fontSize, fontSize / 10.f, RAYWHITE);
+}
+
+void renderDroneUI(const droneEntity *drone) {
     // draw energy meter
-    const float energyMeterInnerRadius = 8.5f;
-    const float energyMeterOuterRadius = 4.25f;
-    const Vector2 energyMeterOrigin = {.x = dronePos.x, .y = dronePos.y};
+    const float energyMeterInnerRadius = 0.6f;
+    const float energyMeterOuterRadius = 0.3f;
+    const Vector2 energyMeterOrigin = {.x = drone->pos.x, .y = drone->pos.y};
     float energyMeterEndAngle = 360.f * drone->energyLeft;
     Color energyMeterColor = RAYWHITE;
     if (drone->shield != NULL) {
@@ -1149,24 +1274,16 @@ void renderDroneUI(const env *e, const droneEntity *drone) {
     } else if (drone->energyFullyDepleted) {
         energyMeterColor = GRAY;
     }
-    DrawRing(energyMeterOrigin, energyMeterInnerRadius, energyMeterOuterRadius, 0.0f, energyMeterEndAngle, 10, energyMeterColor);
+    DrawRing(energyMeterOrigin, energyMeterInnerRadius, energyMeterOuterRadius, 0.0f, energyMeterEndAngle, 32, energyMeterColor);
 
     // draw burst charge indicator
-    // TODO: draw radius not falloff
     if (drone->chargingBurst) {
         const float alpha = min(drone->burstCharge + (50.0f / 255.0f), 1.0f);
         const Color burstChargeColor = Fade(RAYWHITE, alpha);
-        const float burstChargeOuterRadius = 15.0f * ((DRONE_BURST_RADIUS_BASE * drone->burstCharge) + DRONE_BURST_RADIUS_MIN);
-        const float burstChargeInnerRadius = burstChargeOuterRadius - 1.0f;
+        const float burstChargeOuterRadius = (DRONE_BURST_RADIUS_BASE * drone->burstCharge) + DRONE_BURST_RADIUS_MIN;
+        const float burstChargeInnerRadius = burstChargeOuterRadius - 0.15f;
         DrawRing(energyMeterOrigin, burstChargeInnerRadius, burstChargeOuterRadius, 0.0f, 360.0f, 50, burstChargeColor);
     }
-
-    // draw ammo count
-    const uint8_t fontSize = 1.3f * e->renderScale;
-    const char *ammoStr = TextFormat("%d", drone->ammo);
-    const Vector2 textSize = MeasureTextEx(GetFontDefault(), ammoStr, fontSize, fontSize / 10);
-    float posX = dronePos.x - (textSize.x / 2);
-    DrawText(ammoStr, posX, dronePos.y + (1.5f * textSize.y), fontSize, WHITE);
 
     const float maxCharge = drone->weaponInfo->charge;
     if (maxCharge == 0) {
@@ -1174,17 +1291,17 @@ void renderDroneUI(const env *e, const droneEntity *drone) {
     }
 
     // draw charge meter
-    const Vector2 chargeMeterOrigin = {.x = dronePos.x, .y = dronePos.y + (2.2f * textSize.y)};
-    const float chargeMeterInnerRadius = 15.0f;
-    const float chargeMeterOuterRadius = 10.0f;
+    const Vector2 chargeMeterOrigin = {.x = drone->pos.x, .y = drone->pos.y + 3.3f};
+    const float chargeMeterInnerRadius = 1.0f;
+    const float chargeMeterOuterRadius = 0.5f;
     const float chargeMeterStartAngle = 157.5f;
     const float chargeMeterEndAngle = chargeMeterStartAngle - (135.0f * (drone->weaponCharge / drone->weaponInfo->charge));
 
     rlPushMatrix();
     rlTranslatef(chargeMeterOrigin.x, chargeMeterOrigin.y, 0.0f);
-    rlScalef(1.7f, 1.3f, 1.0f);
+    rlScalef(1.7f, 1.0f, 1.0f);
 
-    DrawRing(Vector2Zero(), chargeMeterInnerRadius, chargeMeterOuterRadius, chargeMeterStartAngle, chargeMeterEndAngle, 10, RAYWHITE);
+    DrawRing(Vector2Zero(), chargeMeterInnerRadius, chargeMeterOuterRadius, chargeMeterStartAngle, chargeMeterEndAngle, 32, RAYWHITE);
     DrawRingLines(Vector2Zero(), chargeMeterInnerRadius, chargeMeterOuterRadius, chargeMeterStartAngle, chargeMeterStartAngle - 135.0f, 10, RAYWHITE);
 
     rlPopMatrix();
@@ -1346,6 +1463,8 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
 
     // UpdateCamera(&e->client->camera3D, CAMERA_ORBITAL);
 
+    updateCamera(e);
+
     for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
         const droneEntity *drone = safe_array_get_at(e->drones, i);
         if (drone->dead) {
@@ -1364,7 +1483,7 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
     // apply bloom to parts of drones
     BeginTextureMode(e->client->droneRawTex);
     ClearBackground(BLACK);
-    BeginMode3D(e->client->camera3D);
+    BeginMode3D(e->client->camera->camera3D);
 
     for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
         const droneEntity *drone = safe_array_get_at(e->drones, i);
@@ -1388,7 +1507,7 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
     // apply bloom to projectiles
     BeginTextureMode(e->client->projRawTex);
     ClearBackground(BLACK);
-    BeginMode3D(e->client->camera3D);
+    BeginMode3D(e->client->camera->camera3D);
 
     BeginBlendMode(BLEND_ALPHA);
     for (size_t i = 0; i < cc_array_size(e->projectiles); i++) {
@@ -1411,12 +1530,10 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
     ClearBackground(BLACK);
 
 #ifndef __EMSCRIPTEN__
-    DrawFPS(e->renderScale, e->renderScale);
+    DrawFPS(e->client->scale, e->client->scale);
 #endif
 
-    renderUI(e, starting);
-
-    BeginMode3D(e->client->camera3D);
+    BeginMode3D(e->client->camera->camera3D);
 
     // draw a thicker grid below
     float y = (-3.0f * WALL_THICKNESS) - 1.0f;
@@ -1486,7 +1603,7 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
     DrawTextureRec(e->client->droneBloomTex.texture, (Rectangle){0.0f, 0.0f, e->client->width, -e->client->height}, Vector2Zero(), WHITE);
     EndBlendMode();
 
-    BeginMode3D(e->client->camera3D);
+    BeginMode3D(e->client->camera->camera3D);
 
     for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
@@ -1529,7 +1646,7 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
     DrawTextureRec(e->client->projBloomTex.texture, (Rectangle){0.0f, 0.0f, e->client->width, -e->client->height}, Vector2Zero(), WHITE);
     EndBlendMode();
 
-    BeginMode2D(e->client->camera2D);
+    BeginMode2D(e->client->camera->camera2D);
 
     for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
         droneEntity *drone = safe_array_get_at(e->drones, i);
@@ -1537,17 +1654,27 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
             continue;
         }
         renderDroneRespawnGuides(e, drone);
-        renderDroneUI(e, drone);
+        renderDroneUI(drone);
     }
 
     EndMode2D();
+
+    for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
+        droneEntity *drone = safe_array_get_at(e->drones, i);
+        if (drone->dead) {
+            continue;
+        }
+        renderDroneAmmo(e, drone);
+    }
+
+    renderUI(e, starting);
 
     if (starting || ending) {
         renderBannerText(e, starting, winner, winningTeam);
     }
 
     // if (!b2VecEqual(e->debugPoint, b2Vec2_zero)) {
-    //     DrawCircleV(b2VecToRayVec(e, e->debugPoint), DRONE_RADIUS * 0.5f * e->renderScale, WHITE);
+    //     DrawCircleV(b2VecToRayVec(e, e->debugPoint), DRONE_RADIUS * 0.5f * e->client->scale, WHITE);
     // }
 
     EndDrawing();

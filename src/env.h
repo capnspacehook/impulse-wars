@@ -549,7 +549,7 @@ void setupEnv(env *e) {
     }
 
     if (e->client != NULL) {
-        setEnvRenderScale(e);
+        setupEnvCamera(e);
         renderEnv(e, true, false, -1, -1);
     }
 

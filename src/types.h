@@ -329,6 +329,14 @@ typedef struct logBuffer {
     uint16_t capacity;
 } logBuffer;
 
+typedef struct gameCamera {
+    Camera3D camera3D;
+    Camera2D camera2D;
+    Vector2 targetPos;
+    float maxZoom;
+    bool orthographic;
+} gameCamera;
+
 typedef struct rayClient {
     float scale;
     uint16_t width;
@@ -336,8 +344,7 @@ typedef struct rayClient {
     uint16_t halfWidth;
     uint16_t halfHeight;
 
-    Camera3D camera3D;
-    Camera2D camera2D;
+    gameCamera *camera;
 
     Shader blurShader;
     int32_t blurShaderDirLoc;
