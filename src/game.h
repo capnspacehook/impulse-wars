@@ -1230,6 +1230,7 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
 
     float magnitude = (ctx->def->impulsePerLength + parentSpeed) * perimeter * scale * shieldReduction;
     if (isStaticWall) {
+        // TODO: tweak this, make it a bit stronger?
         // reduce the magnitude when pushing a drone away from a wall
         magnitude = log2f(magnitude) * 7.5f;
     }
@@ -1635,6 +1636,8 @@ void droneChargeBurst(env *e, droneEntity *drone) {
     }
 }
 
+// TODO: when a burst hits multiple static walls, they should only influence
+// the direction not the magnitude of the impulse
 void droneBurst(env *e, droneEntity *drone) {
     if (!drone->chargingBurst) {
         return;
@@ -2241,6 +2244,7 @@ void handleProjectileEndContact(const entity *proj, const entity *ent) {
     projectile->lastSpeed = newSpeed;
 }
 
+// TODO: drone on drone collisions should reduce shield health
 void handleContactEvents(env *e) {
     b2ContactEvents events = b2World_GetContactEvents(e->worldID);
     for (int i = 0; i < events.beginCount; ++i) {

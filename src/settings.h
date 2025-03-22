@@ -200,6 +200,9 @@ const float DRONE_PIECE_ANGULAR_DAMPING = 1.0f;
 const float DRONE_PIECE_MIN_SPEED = 5.0f;
 const float DRONE_PIECE_MAX_SPEED = 10.0f;
 
+// TODO: make shotgun, machinegun stronger?
+// TODO: increase impulse of imploder of entity it directly hits?
+// TODO: long charge single shot slow big explosion weapon?
 // weapon projectile settings
 #define STANDARD_AMMO INFINITE
 #define STANDARD_PROJECTILES 1

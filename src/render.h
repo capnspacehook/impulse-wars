@@ -719,7 +719,7 @@ static void DrawText3D(Font font, const char *text, Vector3 position, float font
 }
 
 void renderTimer(const env *e, const char *timerStr, const Color color) {
-    int fontSize = 2 * e->client->scale;
+    int fontSize = 2.5 * e->client->scale;
     int textWidth = MeasureText(timerStr, fontSize);
     int posX = (e->client->width - textWidth) / 2;
     DrawText(timerStr, posX, e->client->scale, fontSize, color);
@@ -908,6 +908,7 @@ void renderExplosions(const env *e) {
     }
 }
 
+// TODO: add bloom lines at drone level
 void renderWall(const env *e, const wallEntity *wall) {
     Color color = {0};
     Rectangle textureRec;
@@ -1147,9 +1148,9 @@ void renderDroneAimGuide(const env *e, const droneEntity *drone) {
     rlPopMatrix();
 }
 
-void renderDroneGuides(env *e, const droneEntity *drone) {
+void renderDroneGuides(env *e, const droneEntity *drone, const bool ending) {
     // render thruster move guide
-    if (!b2VecEqual(drone->lastMove, b2Vec2_zero)) {
+    if (!b2VecEqual(drone->lastMove, b2Vec2_zero) && !ending) {
         const float moveMagnitude = b2Length(drone->lastMove);
         const float thrusterAngle = RAD2DEG * b2Atan2(-drone->lastMove.y, -drone->lastMove.x);
         const float flickerWidth = randFloat(&e->randState, -0.05f, 0.05f);
@@ -1468,6 +1469,7 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
     for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
         const droneEntity *drone = safe_array_get_at(e->drones, i);
         if (drone->dead) {
+            // TODO: is there a better way to do this?
             float gridPos[2] = {-1000, -1000};
             SetShaderValue(e->client->gridShader, e->client->gridShaderPosLoc[drone->idx], gridPos, SHADER_UNIFORM_VEC2);
             continue;
@@ -1535,6 +1537,7 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
 
     BeginMode3D(e->client->camera->camera3D);
 
+    // TODO: fix for maps with different rows and columns
     // draw a thicker grid below
     float y = (-3.0f * WALL_THICKNESS) - 1.0f;
     Color color = (Color){.r = 94, .g = 59, .b = 136, .a = 128};
@@ -1618,7 +1621,7 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
         if (drone->dead) {
             continue;
         }
-        renderDroneGuides(e, drone);
+        renderDroneGuides(e, drone, ending);
     }
     for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
         const droneEntity *drone = safe_array_get_at(e->drones, i);
