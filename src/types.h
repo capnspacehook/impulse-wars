@@ -9,14 +9,16 @@
 #include "raylib.h"
 #include "rlights.h"
 #else
-typedef struct b2IdPool {
-    void *dummy;
-} b2IdPool;
-
 typedef struct Vector2 {
     float x;
     float y;
 } Vector2;
+
+typedef struct dummyStruct {
+    void *dummy;
+} dummyStruct;
+
+typedef struct dummyStruct b2IdPool, Camera3D, Camera2D, Shader, Texture2D, RenderTexture2D;
 #endif
 
 #include "include/cc_array.h"
