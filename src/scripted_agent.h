@@ -228,6 +228,7 @@ float weaponIdealRangeSquared(const droneEntity *drone) {
     case ACCELERATOR_WEAPON:
     case MINE_LAUNCHER_WEAPON:
     case BLACK_HOLE_WEAPON:
+    case NUKE_WEAPON:
         return FLT_MAX;
 
     default:

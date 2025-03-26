@@ -102,7 +102,7 @@ bool isOverlappingAABB(const env *e, const b2Vec2 pos, const float distance, con
     return ctx.overlaps;
 }
 
-// TODO: store this in shapes
+// TODO: store a shape proxy in entities?
 b2ShapeProxy makeDistanceProxyFromType(const enum entityType type, bool *isCircle) {
     b2ShapeProxy proxy = {0};
     switch (type) {
@@ -1141,9 +1141,7 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
 
     b2SimplexCache cache = {0};
     const b2DistanceOutput output = b2ShapeDistance(&cache, &input, NULL, 0);
-    // don't consider falloff for static walls so burst pushback isn't as
-    // surprising to players
-    if (output.distance > ctx->def->radius + ctx->def->falloff || (isStaticWall && output.distance > ctx->def->radius)) {
+    if (output.distance > ctx->def->radius) {
         return true;
     }
 
@@ -1179,12 +1177,8 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
         localLine = b2InvRotateVector(transform.q, b2LeftPerp(direction));
     }
     float perimeter = getShapeProjectedPerimeter(shapeID, localLine);
-    float scale = 1.0f;
-    // scale the impulse magnitude down is the entity is outside the
-    // radius and inside the falloff
-    if (output.distance > ctx->def->radius) {
-        scale = clamp((ctx->def->radius + ctx->def->falloff - output.distance) / ctx->def->falloff);
-    }
+    const float relDistance = output.distance / ctx->def->radius;
+    const float scale = 1.0f - (SQUARED(relDistance) * relDistance);
 
     // the parent drone or projecile's velocity affects the direction
     // and magnitude of the explosion
@@ -1235,6 +1229,7 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
         magnitude = log2f(magnitude) * 7.5f;
     }
     const b2Vec2 impulse = b2MulSV(magnitude, direction);
+    ASSERT(b2IsValidVec2(impulse));
 
     if (isStaticWall) {
         b2Body_ApplyLinearImpulseToCenter(ctx->parentDrone->bodyID, impulse, true);
@@ -1270,10 +1265,13 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
             if (!ctx->isBurst && drone->team != ctx->parentDrone->team && shield == NULL) {
                 const float energyRefill = computeHitStrength(drone) * EXPLOSION_ENERGY_REFILL_COEF;
                 droneAddEnergy(ctx->parentDrone, energyRefill);
-            } else if (shield != NULL) {
+            } else if (shield != NULL && shield->health > 0.0f) {
                 const float damage = fabsf(magnitude) * DRONE_SHIELD_HEALTH_EXPLOSION_COEF;
                 DEBUG_LOGF("shield explosion damage: %f", damage);
                 shield->health -= damage;
+                if (shield->health <= 0.0f) {
+                    droneAddEnergy(ctx->parentDrone, DRONE_SHIELD_BREAK_ENERGY_REFILL);
+                }
             }
 
             break;
@@ -1286,12 +1284,11 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
 }
 
 void createExplosion(env *e, droneEntity *drone, const projectileEntity *projectile, const b2ExplosionDef *def) {
-    const float fullRadius = def->radius + def->falloff;
     b2AABB aabb = {
-        .lowerBound.x = def->position.x - fullRadius,
-        .lowerBound.y = def->position.y - fullRadius,
-        .upperBound.x = def->position.x + fullRadius,
-        .upperBound.y = def->position.y + fullRadius,
+        .lowerBound.x = def->position.x - def->radius,
+        .lowerBound.y = def->position.y - def->radius,
+        .upperBound.x = def->position.x + def->radius,
+        .upperBound.y = def->position.y + def->radius,
     };
 
     b2QueryFilter filter = b2DefaultQueryFilter();
@@ -1638,6 +1635,8 @@ void droneChargeBurst(env *e, droneEntity *drone) {
 
 // TODO: when a burst hits multiple static walls, they should only influence
 // the direction not the magnitude of the impulse
+// TODO: burst for multiple steps to make deflecting projectiles easier, but
+// only apply impulses to entities once
 void droneBurst(env *e, droneEntity *drone) {
     if (!drone->chargingBurst) {
         return;
@@ -1648,7 +1647,6 @@ void droneBurst(env *e, droneEntity *drone) {
         .position = drone->pos,
         .radius = radius,
         .impulsePerLength = (DRONE_BURST_IMPACT_BASE * drone->burstCharge) + DRONE_BURST_IMPACT_MIN,
-        .falloff = radius / 2.0f,
         .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE,
     };
     createExplosion(e, drone, NULL, &explosion);
@@ -2105,9 +2103,18 @@ uint8_t handleProjectileBeginContact(env *e, const entity *proj, const entity *e
     } else if (ent->type == SHIELD_ENTITY) {
         // always allow projectiles to bounce off shields, and update shield health
         shieldEntity *shield = ent->entity;
+        if (shield->health <= 0.0f) {
+            return false;
+        }
+
         const float damage = projectile->lastSpeed * projectile->weaponInfo->mass * DRONE_SHIELD_HEALTH_IMPULSE_COEF;
         DEBUG_LOGF("shield projectile damage: %f", damage);
         shield->health -= damage;
+        if (shield->health <= 0.0f) {
+            droneEntity *parentDrone = safe_array_get_at(e->drones, projectile->droneIdx);
+            droneAddEnergy(parentDrone, DRONE_SHIELD_BREAK_ENERGY_REFILL);
+        }
+
         return false;
     }
 

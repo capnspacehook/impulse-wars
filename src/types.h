@@ -69,7 +69,7 @@ typedef struct entity {
     void *entity;
 } entity;
 
-#define _NUM_WEAPONS 9
+#define _NUM_WEAPONS 10
 const uint8_t NUM_WEAPONS = _NUM_WEAPONS;
 
 enum weaponType {
@@ -82,6 +82,7 @@ enum weaponType {
     FLAK_CANNON_WEAPON,
     MINE_LAUNCHER_WEAPON,
     BLACK_HOLE_WEAPON,
+    NUKE_WEAPON,
 };
 
 typedef struct mapBounds {

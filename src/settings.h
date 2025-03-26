@@ -173,8 +173,8 @@ const float DRONE_ENERGY_RESPAWN_REFILL = 0.5f;
 
 const float DRONE_BURST_BASE_COST = 0.1f;
 const float DRONE_BURST_CHARGE_RATE = 0.6f;
-const float DRONE_BURST_RADIUS_BASE = 4.0f;
-const float DRONE_BURST_RADIUS_MIN = 3.0f;
+const float DRONE_BURST_RADIUS_BASE = 5.0f;
+const float DRONE_BURST_RADIUS_MIN = 3.5f;
 const float DRONE_BURST_IMPACT_BASE = 140.0f;
 const float DRONE_BURST_IMPACT_MIN = 35.0f;
 const float DRONE_BURST_COOLDOWN = 0.5f;
@@ -187,6 +187,7 @@ const float DRONE_SHIELD_EXPLOSION_REDUCTION = 0.5f;
 const float DRONE_SHIELD_HEALTH_IMPULSE_COEF = 0.5f;
 const float DRONE_SHIELD_HEALTH_EXPLOSION_COEF = 0.8;
 const float DRONE_SHIELD_BREAK_ENERGY_COST = -0.33f;
+const float DRONE_SHIELD_BREAK_ENERGY_REFILL = 0.25f;
 
 #define PROJECTILE_ENERGY_REFILL_COEF 0.001f
 const float EXPLOSION_ENERGY_REFILL_COEF = 1.75f;
@@ -200,7 +201,6 @@ const float DRONE_PIECE_ANGULAR_DAMPING = 1.0f;
 const float DRONE_PIECE_MIN_SPEED = 5.0f;
 const float DRONE_PIECE_MAX_SPEED = 10.0f;
 
-// TODO: make shotgun, machinegun stronger?
 // TODO: increase impulse of imploder of entity it directly hits?
 // TODO: long charge single shot slow big explosion weapon?
 // weapon projectile settings
@@ -219,16 +219,16 @@ const float DRONE_PIECE_MAX_SPEED = 10.0f;
 #define STANDARD_BOUNCE 2
 #define STANDARD_SPAWN_WEIGHT 0
 
-#define MACHINEGUN_AMMO 35
+#define MACHINEGUN_AMMO 50
 #define MACHINEGUN_PROJECTILES 1
 #define MACHINEGUN_RECOIL_MAGNITUDE 12.8f
-#define MACHINEGUN_FIRE_MAGNITUDE 25.0f
+#define MACHINEGUN_FIRE_MAGNITUDE 30.0f
 #define MACHINEGUN_DAMPING 0.1f
 #define MACHINEGUN_CHARGE 0.0f
 #define MACHINEGUN_COOL_DOWN 0.07f
 #define MACHINEGUN_MAX_DISTANCE 225.0f
 #define MACHINEGUN_RADIUS 0.15f
-#define MACHINEGUN_DENSITY 3.0f
+#define MACHINEGUN_DENSITY 3.2f
 #define MACHINEGUN_MASS MASS(MACHINEGUN_DENSITY, MACHINEGUN_RADIUS)
 #define MACHINEGUN_INV_MASS INV_MASS(MACHINEGUN_MASS)
 #define MACHINEGUN_BOUNCE 1
@@ -254,7 +254,7 @@ const float DRONE_PIECE_MAX_SPEED = 10.0f;
 #define SHOTGUN_AMMO 8
 #define SHOTGUN_PROJECTILES 8
 #define SHOTGUN_RECOIL_MAGNITUDE 100.0f
-#define SHOTGUN_FIRE_MAGNITUDE 22.5f
+#define SHOTGUN_FIRE_MAGNITUDE 25.0f
 #define SHOTGUN_DAMPING 0.3f
 #define SHOTGUN_CHARGE 0.0f
 #define SHOTGUN_COOL_DOWN 0.8f
@@ -320,7 +320,7 @@ const float DRONE_PIECE_MAX_SPEED = 10.0f;
 #define MINE_LAUNCHER_PROJECTILES 1
 #define MINE_LAUNCHER_RECOIL_MAGNITUDE 20.0f
 #define MINE_LAUNCHER_FIRE_MAGNITUDE 25.0f
-#define MINE_LAUNCHER_DAMPING 0.25f
+#define MINE_LAUNCHER_DAMPING 0.2f
 #define MINE_LAUNCHER_CHARGE 0.0f
 #define MINE_LAUNCHER_COOL_DOWN 0.6f
 #define MINE_LAUNCHER_MAX_DISTANCE INFINITE
@@ -345,10 +345,25 @@ const float DRONE_PIECE_MAX_SPEED = 10.0f;
 #define BLACK_HOLE_MASS MASS(BLACK_HOLE_DENSITY, BLACK_HOLE_RADIUS)
 #define BLACK_HOLE_INV_MASS INV_MASS(BLACK_HOLE_MASS)
 #define BLACK_HOLE_BOUNCE 0
-#define BLACK_HOLE_SPAWN_WEIGHT 3.0f
+#define BLACK_HOLE_SPAWN_WEIGHT 2.0f
 #define BLACK_HOLE_PROXIMITY_RADIUS 10.0f
 #define BLACK_HOLE_PARENT_IGNORE_DISTANCE BLACK_HOLE_PROXIMITY_RADIUS * 1.5f
 #define BLACK_HOLE_PULL_MAGNITUDE -300.0f
+
+#define NUKE_AMMO 1
+#define NUKE_PROJECTILES 1
+#define NUKE_RECOIL_MAGNITUDE 150.0f
+#define NUKE_FIRE_MAGNITUDE 75.0f
+#define NUKE_DAMPING 0.0f
+#define NUKE_CHARGE 5.0f
+#define NUKE_COOL_DOWN 3.0f
+#define NUKE_MAX_DISTANCE INFINITE
+#define NUKE_RADIUS 0.8f
+#define NUKE_DENSITY 3.0f
+#define NUKE_MASS MASS(NUKE_DENSITY, NUKE_RADIUS)
+#define NUKE_INV_MASS INV_MASS(NUKE_MASS)
+#define NUKE_BOUNCE 0
+#define NUKE_SPAWN_WEIGHT 0.5f
 
 const weaponInformation standard = {
     .type = STANDARD_WEAPON,
@@ -575,6 +590,31 @@ const weaponInformation blackHole = {
     .spawnWeight = BLACK_HOLE_SPAWN_WEIGHT,
 };
 
+const weaponInformation nuke = {
+    .type = NUKE_WEAPON,
+    .isPhysicsBullet = false,
+    .canSleep = false,
+    .numProjectiles = NUKE_PROJECTILES,
+    .fireMagnitude = NUKE_FIRE_MAGNITUDE,
+    .recoilMagnitude = NUKE_RECOIL_MAGNITUDE,
+    .damping = NUKE_DAMPING,
+    .charge = NUKE_CHARGE,
+    .coolDown = NUKE_COOL_DOWN,
+    .maxDistance = NUKE_MAX_DISTANCE,
+    .radius = NUKE_RADIUS,
+    .density = NUKE_DENSITY,
+    .mass = NUKE_MASS,
+    .invMass = NUKE_INV_MASS,
+    .initialSpeed = NUKE_FIRE_MAGNITUDE * NUKE_INV_MASS,
+    .maxBounces = NUKE_BOUNCE + 1,
+    .explosive = true,
+    .destroyedOnDroneHit = true,
+    .explodesOnDroneHit = true,
+    .hasSensor = false,
+    .energyRefillCoef = PROJECTILE_ENERGY_REFILL_COEF,
+    .spawnWeight = NUKE_SPAWN_WEIGHT,
+};
+
 #ifndef AUTOPXD
 weaponInformation *weaponInfos[] = {
     (weaponInformation *)&standard,
@@ -586,6 +626,7 @@ weaponInformation *weaponInfos[] = {
     (weaponInformation *)&flakCannon,
     (weaponInformation *)&mineLauncher,
     (weaponInformation *)&blackHole,
+    (weaponInformation *)&nuke,
 };
 #endif
 
@@ -613,6 +654,8 @@ int8_t weaponAmmo(const enum weaponType defaultWep, const enum weaponType type) 
         return MINE_LAUNCHER_AMMO;
     case BLACK_HOLE_WEAPON:
         return BLACK_HOLE_AMMO;
+    case NUKE_WEAPON:
+        return NUKE_AMMO;
     default:
         ERRORF("unknown weapon type %d", type);
     }
@@ -672,6 +715,8 @@ float weaponFire(uint64_t *seed, const enum weaponType type) {
         return MINE_LAUNCHER_FIRE_MAGNITUDE;
     case BLACK_HOLE_WEAPON:
         return BLACK_HOLE_FIRE_MAGNITUDE;
+    case NUKE_WEAPON:
+        return NUKE_FIRE_MAGNITUDE;
     default:
         ERRORF("unknown weapon type %d", type);
         return 0;
@@ -682,14 +727,14 @@ b2Vec2 weaponAdjustAim(uint64_t *seed, const enum weaponType type, const uint16_
     switch (type) {
     case MACHINEGUN_WEAPON: {
         const float swayCoef = logBasef((heat / 5.0f) + 1, 180);
-        const float maxSway = 0.11f;
+        const float maxSway = 0.1f;
         const float swayX = randFloat(seed, maxSway * -swayCoef, maxSway * swayCoef);
         const float swayY = randFloat(seed, maxSway * -swayCoef, maxSway * swayCoef);
         b2Vec2 machinegunAim = {.x = normAim.x + swayX, .y = normAim.y + swayY};
         return b2Normalize(machinegunAim);
     }
     case SHOTGUN_WEAPON: {
-        const float maxOffset = 0.1f;
+        const float maxOffset = 0.11f;
         const float offsetX = randFloat(seed, -maxOffset, maxOffset);
         const float offsetY = randFloat(seed, -maxOffset, maxOffset);
         b2Vec2 shotgunAim = {.x = normAim.x + offsetX, .y = normAim.y + offsetY};
@@ -705,21 +750,22 @@ b2Vec2 weaponAdjustAim(uint64_t *seed, const enum weaponType type, const uint16_
 void weaponExplosion(const enum weaponType type, b2ExplosionDef *explosionDef) {
     switch (type) {
     case IMPLODER_WEAPON:
-        explosionDef->radius = 10.0f;
-        explosionDef->falloff = 5.0f;
-        explosionDef->impulsePerLength = -125.0f;
+        explosionDef->radius = 15.0f;
+        explosionDef->impulsePerLength = -200.0f;
         return;
     case FLAK_CANNON_WEAPON:
-        explosionDef->radius = 5.0;
-        explosionDef->falloff = 2.5f;
+        explosionDef->radius = 7.5f;
         // will typically be closer to 45 with projectile velocity
         // factored in
         explosionDef->impulsePerLength = 10.0f;
         return;
     case MINE_LAUNCHER_WEAPON:
-        explosionDef->radius = 12.5f;
-        explosionDef->falloff = 2.5f;
+        explosionDef->radius = 15.0f;
         explosionDef->impulsePerLength = 200.0f;
+        return;
+    case NUKE_WEAPON:
+        explosionDef->radius = 30.0f;
+        explosionDef->impulsePerLength = 300.0f;
         return;
     default:
         ERRORF("unknown weapon type %d for projectile explosion", type);
