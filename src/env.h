@@ -383,13 +383,31 @@ void computeObs(env *e) {
 
         computeNearObs(e, agentDrone, discreteObsStart, continuousObs);
 
+        // sort projectiles by distance to the current agent
+        const b2Vec2 agentPos = agentDrone->pos;
+        const size_t numProjectiles = cc_array_size(e->projectiles);
+        projectileEntity *sortedProjectiles[numProjectiles];
+        memcpy(sortedProjectiles, e->projectiles->buffer, numProjectiles * sizeof(projectileEntity *));
+
+        for (int16_t i = 1; i < (int64_t)numProjectiles; i++) {
+            projectileEntity *key = sortedProjectiles[i];
+            const float keyDistance = b2DistanceSquared(agentPos, key->pos);
+            int16_t j = i - 1;
+
+            while (j >= 0 && b2DistanceSquared(agentPos, sortedProjectiles[j]->pos) > keyDistance) {
+                sortedProjectiles[j + 1] = sortedProjectiles[j];
+                j = j - 1;
+            }
+
+            sortedProjectiles[j + 1] = key;
+        }
+
         // compute type and location of N projectiles
-        for (size_t i = 0; i < cc_array_size(e->projectiles); i++) {
-            // TODO: handle better
+        for (size_t i = 0; i < numProjectiles; i++) {
             if (i == NUM_PROJECTILE_OBS) {
                 break;
             }
-            const projectileEntity *projectile = safe_array_get_at(e->projectiles, i);
+            const projectileEntity *projectile = sortedProjectiles[i];
 
             discreteObsOffset = discreteObsStart + PROJECTILE_DRONE_OBS_OFFSET + i;
             ASSERTF(discreteObsOffset <= discreteObsStart + PROJECTILE_WEAPONS_OBS_OFFSET, "offset: %d", discreteObsOffset);
