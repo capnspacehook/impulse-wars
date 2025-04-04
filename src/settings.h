@@ -24,7 +24,7 @@ const uint8_t NUM_MAPS = 9;
 
 #define MAX_NEAREST_WALLS 8
 
-const uint8_t DRONE_LIVES = 3;
+const uint8_t DRONE_LIVES = 1;
 const float DRONE_RESPAWN_WAIT = 2.0f;
 const uint8_t ROUND_STEPS = 90;
 const uint8_t SUDDEN_DEATH_STEPS = 5;
@@ -774,9 +774,9 @@ void weaponExplosion(const enum weaponType type, b2ExplosionDef *explosionDef) {
 
 // insertion sort should be faster than quicksort for small arrays
 void insertionSort(nearEntity arr[], uint8_t size) {
-    for (int i = 1; i < size; i++) {
+    for (int16_t i = 1; i < size; i++) {
         nearEntity key = arr[i];
-        int j = i - 1;
+        int16_t j = i - 1;
 
         while (j >= 0 && arr[j].distanceSquared > key.distanceSquared) {
             arr[j + 1] = arr[j];

@@ -1051,13 +1051,28 @@ void fixProjectileSpeed(projectileEntity *projectile) {
     projectile->speed = newSpeed;
 }
 
+#define MAX_WALL_HITS 8
+
+typedef struct wallBurstImpulse {
+    float distance;
+    b2Vec2 direction;
+    float magnitude;
+    uint16_t wallCellIdx;
+} wallBurstImpulse;
+
 typedef struct explosionCtx {
     env *e;
     const bool isBurst;
     droneEntity *parentDrone;
     const projectileEntity *projectile;
     const b2ExplosionDef *def;
+
+    wallBurstImpulse wallImpulses[MAX_WALL_HITS];
+    int8_t closestWallIdx;
+    uint8_t wallsHit;
 } explosionCtx;
+
+const float COS_85_DEGREES = 0.087155743f;
 
 // b2World_Explode doesn't support filtering on shapes of the same category,
 // so we have to do it manually
@@ -1067,7 +1082,7 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
         return true;
     }
 
-    const explosionCtx *ctx = context;
+    explosionCtx *ctx = context;
     const entity *entity = b2Shape_GetUserData(shapeID);
     projectileEntity *projectile = NULL;
     droneEntity *drone = NULL;
@@ -1152,7 +1167,7 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
     if (!isImplosion) {
         filter.maskBits |= FLOATING_WALL_SHAPE;
     }
-    if (!isStaticWall && posBehindWall(ctx->e, ctx->def->position, output.pointA, entity, filter, NULL)) {
+    if (posBehindWall(ctx->e, ctx->def->position, output.pointA, entity, filter, NULL)) {
         return true;
     }
 
@@ -1224,63 +1239,155 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
 
     float magnitude = (ctx->def->impulsePerLength + parentSpeed) * perimeter * scale * shieldReduction;
     if (isStaticWall) {
-        // TODO: tweak this, make it a bit stronger?
+        // ensure this wall faces at least 85 degrees away from the
+        // closest hit wall to prevent multiple walls facing roughly
+        // the same direction greatly increasing the impulse magnitude
+        if (ctx->closestWallIdx == -1) {
+            ctx->closestWallIdx = 0;
+        } else {
+            const float closestWallDistance = ctx->wallImpulses[ctx->closestWallIdx].distance;
+            if (output.distance < closestWallDistance) {
+                ctx->closestWallIdx = ctx->wallsHit;
+
+                for (int8_t i = 0; i < ctx->wallsHit; i++) {
+                    const wallBurstImpulse impulse = ctx->wallImpulses[i];
+                    if (impulse.distance != output.distance && b2Dot(impulse.direction, direction) > COS_85_DEGREES) {
+                        ctx->wallImpulses[i] = ctx->wallImpulses[--ctx->wallsHit];
+                        i--;
+                    }
+                }
+            }
+        }
+
         // reduce the magnitude when pushing a drone away from a wall
-        magnitude = log2f(magnitude) * 7.5f;
+        magnitude = log2f(magnitude) * (5.0f + (25.0f * ctx->parentDrone->burstCharge));
+
+        ctx->wallImpulses[ctx->wallsHit++] = (wallBurstImpulse){
+            .distance = output.distance,
+            .direction = direction,
+            .magnitude = magnitude,
+            .wallCellIdx = wall->mapCellIdx,
+        };
+        return true;
     }
     const b2Vec2 impulse = b2MulSV(magnitude, direction);
     ASSERT(b2IsValidVec2(impulse));
 
-    if (isStaticWall) {
-        b2Body_ApplyLinearImpulseToCenter(ctx->parentDrone->bodyID, impulse, true);
-    } else {
-        switch (entity->type) {
-        case STANDARD_WALL_ENTITY:
-        case BOUNCY_WALL_ENTITY:
-        case DEATH_WALL_ENTITY:
-            b2Body_ApplyLinearImpulse(bodyID, impulse, output.pointA, true);
-            wall->velocity = b2Body_GetLinearVelocity(wall->bodyID);
+    switch (entity->type) {
+    case STANDARD_WALL_ENTITY:
+    case BOUNCY_WALL_ENTITY:
+    case DEATH_WALL_ENTITY:
+        b2Body_ApplyLinearImpulse(bodyID, impulse, output.pointA, true);
+        wall->velocity = b2Body_GetLinearVelocity(wall->bodyID);
+        break;
+    case PROJECTILE_ENTITY:
+        b2Body_ApplyLinearImpulseToCenter(bodyID, impulse, true);
+        // mine launcher projectiles explode when caught in another
+        // explosion, explode this mine only once
+        if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON && ctx->def->impulsePerLength > 0.0f) {
+            createProjectileExplosion(ctx->e, projectile, false);
             break;
-        case PROJECTILE_ENTITY:
-            b2Body_ApplyLinearImpulseToCenter(bodyID, impulse, true);
-            // mine launcher projectiles explode when caught in another
-            // explosion, explode this mine only once
-            if (projectile->weaponInfo->type == MINE_LAUNCHER_WEAPON && ctx->def->impulsePerLength > 0.0f) {
-                createProjectileExplosion(ctx->e, projectile, false);
-                break;
-            }
-
-            fixProjectileSpeed(projectile);
-
-            break;
-        case DRONE_ENTITY:
-            b2Body_ApplyLinearImpulseToCenter(bodyID, impulse, true);
-            drone->lastVelocity = drone->velocity;
-            drone->velocity = b2Body_GetLinearVelocity(drone->bodyID);
-
-            shieldEntity *shield = drone->shield;
-
-            // add energy to the drone that fired the projectile that is
-            // currently exploding if it hit another drone
-            if (!ctx->isBurst && drone->team != ctx->parentDrone->team && shield == NULL) {
-                const float energyRefill = computeHitStrength(drone) * EXPLOSION_ENERGY_REFILL_COEF;
-                droneAddEnergy(ctx->parentDrone, energyRefill);
-            } else if (shield != NULL && shield->health > 0.0f) {
-                const float damage = fabsf(magnitude) * DRONE_SHIELD_HEALTH_EXPLOSION_COEF;
-                DEBUG_LOGF("shield explosion damage: %f", damage);
-                shield->health -= damage;
-                if (shield->health <= 0.0f) {
-                    droneAddEnergy(ctx->parentDrone, DRONE_SHIELD_BREAK_ENERGY_REFILL);
-                }
-            }
-
-            break;
-        default:
-            ERRORF("unknown entity type for burst impulse %d", entity->type);
         }
+
+        fixProjectileSpeed(projectile);
+
+        break;
+    case DRONE_ENTITY:
+        b2Body_ApplyLinearImpulseToCenter(bodyID, impulse, true);
+        drone->lastVelocity = drone->velocity;
+        drone->velocity = b2Body_GetLinearVelocity(drone->bodyID);
+
+        shieldEntity *shield = drone->shield;
+
+        // add energy to the drone that fired the projectile that is
+        // currently exploding if it hit another drone
+        if (!ctx->isBurst && drone->team != ctx->parentDrone->team && shield == NULL) {
+            const float energyRefill = computeHitStrength(drone) * EXPLOSION_ENERGY_REFILL_COEF;
+            droneAddEnergy(ctx->parentDrone, energyRefill);
+        } else if (shield != NULL && shield->health > 0.0f) {
+            const float damage = fabsf(magnitude) * DRONE_SHIELD_HEALTH_EXPLOSION_COEF;
+            DEBUG_LOGF("shield explosion damage: %f", damage);
+            shield->health -= damage;
+            if (shield->health <= 0.0f) {
+                droneAddEnergy(ctx->parentDrone, DRONE_SHIELD_BREAK_ENERGY_REFILL);
+            }
+        }
+
+        break;
+    default:
+        ERRORF("unknown entity type for burst impulse %d", entity->type);
     }
 
     return true;
+}
+
+void applyDroneBurstImpulse(env *e, explosionCtx *ctx, const droneEntity *drone) {
+    wallBurstImpulse *hitWalls = ctx->wallImpulses;
+    uint8_t wallsHit = ctx->wallsHit;
+
+    // sort by distance
+    for (int8_t i = 1; i < wallsHit; i++) {
+        wallBurstImpulse key = hitWalls[i];
+        int j = i - 1;
+
+        while (j >= 0 && hitWalls[j].distance > key.distance) {
+            hitWalls[j + 1] = hitWalls[j];
+            j = j - 1;
+        }
+
+        hitWalls[j + 1] = key;
+    }
+
+    for (uint8_t i = 0; i < wallsHit; i++) {
+        const wallBurstImpulse impulseA = hitWalls[i];
+        if (impulseA.distance == FLT_MAX) {
+            continue;
+        }
+        for (uint8_t j = 0; j < wallsHit; j++) {
+            if (j == i) {
+                continue;
+            }
+            wallBurstImpulse impulseB = hitWalls[j];
+            if (impulseB.distance == FLT_MAX) {
+                continue;
+            }
+            const uint8_t cellIdxDiff = abs(impulseB.wallCellIdx - impulseA.wallCellIdx);
+            if (cellIdxDiff == e->map->columns) {
+                hitWalls[j].distance = FLT_MAX;
+                continue;
+            }
+            if (cellIdxDiff == 1) {
+                int8_t colA = impulseA.wallCellIdx / e->map->columns;
+                int8_t colB = impulseB.wallCellIdx / e->map->columns;
+                if (colA == colB) {
+                    hitWalls[j].distance = FLT_MAX;
+                }
+            }
+        }
+    }
+
+    uint8_t wallsUsed = 0;
+    float magnitude = 0.0f;
+    b2Vec2 direction = b2Vec2_zero;
+    for (uint8_t i = 0; i < wallsHit; i++) {
+        const wallBurstImpulse impulse = hitWalls[i];
+        if (impulse.distance == FLT_MAX) {
+            continue;
+        }
+
+        wallsUsed++;
+        magnitude += impulse.magnitude;
+        direction = b2Add(direction, impulse.direction);
+    }
+
+    if (wallsUsed > 2) {
+        DEBUG_LOG("more than 2 walls used");
+    }
+
+    DEBUG_LOGF("walls used: %d magnitude: %f final: %f", wallsUsed, magnitude, magnitude / (float)wallsUsed);
+    const b2Vec2 finalImpulse = b2MulSV(magnitude / (float)wallsUsed, b2Normalize(direction));
+    ASSERT(b2IsValidVec2(finalImpulse));
+    b2Body_ApplyLinearImpulseToCenter(drone->bodyID, finalImpulse, true);
 }
 
 void createExplosion(env *e, droneEntity *drone, const projectileEntity *projectile, const b2ExplosionDef *def) {
@@ -1295,14 +1402,23 @@ void createExplosion(env *e, droneEntity *drone, const projectileEntity *project
     filter.categoryBits = PROJECTILE_SHAPE;
     filter.maskBits = def->maskBits;
 
+    const bool isBurst = projectile == NULL;
     explosionCtx ctx = {
         .e = e,
-        .isBurst = projectile == NULL,
+        .isBurst = isBurst,
         .parentDrone = drone,
         .projectile = projectile,
         .def = def,
+        .wallImpulses = {0},
+        .closestWallIdx = -1,
+        .wallsHit = 0,
     };
     b2World_OverlapAABB(e->worldID, aabb, filter, explodeCallback, &ctx);
+
+    uint8_t wallsHit = ctx.wallsHit;
+    if (isBurst && wallsHit != 0) {
+        applyDroneBurstImpulse(e, &ctx, drone);
+    }
 }
 
 void destroyProjectile(env *e, projectileEntity *projectile, const bool processExplosions, const bool full) {
@@ -1633,10 +1749,6 @@ void droneChargeBurst(env *e, droneEntity *drone) {
     }
 }
 
-// TODO: when a burst hits multiple static walls, they should only influence
-// the direction not the magnitude of the impulse
-// TODO: burst for multiple steps to make deflecting projectiles easier, but
-// only apply impulses to entities once
 void droneBurst(env *e, droneEntity *drone) {
     if (!drone->chargingBurst) {
         return;
