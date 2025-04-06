@@ -314,7 +314,6 @@ bool findOpenPos(env *e, const enum shapeCategory shapeType, b2Vec2 *emptyPos, i
             }
             return false;
         }
-        attempts++;
 
         uint16_t cellIdx;
         if (quad == -1) {
@@ -332,6 +331,7 @@ bool findOpenPos(env *e, const enum shapeCategory shapeType, b2Vec2 *emptyPos, i
             continue;
         }
         bitSet(checkedCells, cellIdx);
+        attempts++;
 
         const mapCell *cell = safe_array_get_at(e->cells, cellIdx);
         if (cell->ent != NULL) {
@@ -399,9 +399,13 @@ bool findOpenPos(env *e, const enum shapeCategory shapeType, b2Vec2 *emptyPos, i
             }
         }
 
+        uint64_t maskBits = FLOATING_WALL_SHAPE | WEAPON_PICKUP_SHAPE | DRONE_SHAPE;
+        if (shapeType != FLOATING_WALL_SHAPE) {
+            maskBits &= ~shapeType;
+        }
         const b2QueryFilter filter = {
             .categoryBits = shapeType,
-            .maskBits = FLOATING_WALL_SHAPE | WEAPON_PICKUP_SHAPE | DRONE_SHAPE,
+            .maskBits = maskBits,
         };
         if (!isOverlappingAABB(e, cell->pos, MIN_SPAWN_DISTANCE, filter)) {
             *emptyPos = cell->pos;
