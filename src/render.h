@@ -1121,26 +1121,7 @@ void renderDroneAimGuide(const env *e, const droneEntity *drone) {
     ASSERT(b2Shape_IsValid(rayRes.shapeId));
     const entity *ent = b2Shape_GetUserData(rayRes.shapeId);
 
-    b2SimplexCache cache = {0};
-    bool shapeIsCircle = false;
-    b2ShapeProxy proxyA = {0};
-    if (ent->type == DRONE_ENTITY) {
-        proxyA.radius = DRONE_RADIUS;
-        shapeIsCircle = true;
-    } else {
-        proxyA.count = 1;
-        proxyA.points[0] = (b2Vec2){.x = 0.0f, .y = 0.0f};
-    }
-    const b2ShapeProxy proxyB = makeDistanceProxy(ent, &shapeIsCircle);
-    const b2DistanceInput input = {
-        .proxyA = proxyA,
-        .proxyB = proxyB,
-        .transformA = {.p = drone->pos, .q = b2Rot_identity},
-        .transformB = {.p = rayRes.point, .q = b2Rot_identity},
-        .useRadii = shapeIsCircle,
-    };
-    const b2DistanceOutput output = b2ShapeDistance(&cache, &input, NULL, 0);
-
+    const b2DistanceOutput output = closestPoint(drone->ent, ent);
     float aimGuideWidth = getWeaponAimGuideWidth(drone->weaponInfo->type);
     aimGuideWidth = min(aimGuideWidth, output.distance + 0.1f) + (DRONE_RADIUS * 2.0f);
 
@@ -1670,6 +1651,11 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
         renderDroneUI(drone);
     }
 
+    if (!b2VecEqual(e->debugPoint, b2Vec2_zero)) {
+        const Vector2 pos = {.x = e->debugPoint.x, .y = e->debugPoint.y};
+        DrawCircleV(pos, DRONE_RADIUS * 0.5f, WHITE);
+    }
+
     EndMode2D();
 
     for (uint8_t i = 0; i < cc_array_size(e->drones); i++) {
@@ -1685,10 +1671,6 @@ void _renderEnv(env *e, const bool starting, const bool ending, const int8_t win
     if (starting || ending) {
         renderBannerText(e, starting, winner, winningTeam);
     }
-
-    // if (!b2VecEqual(e->debugPoint, b2Vec2_zero)) {
-    //     DrawCircleV(b2VecToRayVec(e, e->debugPoint), DRONE_RADIUS * 0.5f * e->client->scale, WHITE);
-    // }
 
     EndDrawing();
 }

@@ -16,6 +16,27 @@ const float WALL_BRAKE_TIME = 0.5f;
 const float BURST_MIN_RADIUS_SQUARED = SQUARED(DRONE_BURST_RADIUS_MIN);
 const float MOVE_SPEED_SQUARED = SQUARED(5.0f);
 
+typedef struct castCircleCtx {
+    bool hit;
+    b2ShapeId shapeID;
+} castCircleCtx;
+
+float castCircleCallback(b2ShapeId shapeId, b2Vec2 point, b2Vec2 normal, float fraction, void *context) {
+    // these parameters are required by the callback signature
+    MAYBE_UNUSED(point);
+    MAYBE_UNUSED(normal);
+    if (!b2Shape_IsValid(shapeId)) {
+        // skip this shape if it isn't valid
+        return -1.0f;
+    }
+
+    castCircleCtx *ctx = context;
+    ctx->hit = true;
+    ctx->shapeID = shapeId;
+
+    return fraction;
+}
+
 static inline uint32_t pathOffset(const env *e, uint16_t srcCellIdx, uint16_t destCellIdx) {
     const uint8_t srcCol = srcCellIdx % e->map->columns;
     const uint8_t srcRow = srcCellIdx / e->map->columns;
@@ -25,8 +46,8 @@ static inline uint32_t pathOffset(const env *e, uint16_t srcCellIdx, uint16_t de
 }
 
 void pathfindBFS(const env *e, uint8_t *flatPaths, uint16_t destCellIdx) {
-    uint8_t(*paths)[e->map->columns] = (uint8_t(*)[e->map->columns])flatPaths;
-    int8_t(*buffer)[3] = (int8_t(*)[3])e->mapPathing[e->mapIdx].pathBuffer;
+    uint8_t (*paths)[e->map->columns] = (uint8_t (*)[e->map->columns])flatPaths;
+    int8_t (*buffer)[3] = (int8_t (*)[3])e->mapPathing[e->mapIdx].pathBuffer;
 
     uint16_t start = 0;
     uint16_t end = 1;
@@ -111,27 +132,6 @@ float distanceWithDamping(const env *e, const droneEntity *drone, const b2Vec2 d
     return speed * (damping / linearDamping) * (1.0f - powf(1.0f / damping, steps));
 }
 
-bool _safeToFire(const env *e, const b2Vec2 pos, const b2Vec2 direction, const float recoilDistance) {
-    const b2Vec2 rayEnd = b2MulAdd(pos, recoilDistance, direction);
-    const b2Vec2 translation = b2Sub(rayEnd, pos);
-    const b2Circle projCircle = {.center = b2Vec2_zero, .radius = DRONE_RADIUS};
-    const b2Transform projTransform = {.p = pos, .q = b2Rot_identity};
-    const b2QueryFilter filter = {.categoryBits = DRONE_SHAPE, .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | DRONE_SHAPE};
-
-    castCircleCtx ctx = {0};
-    b2World_CastCircle(e->worldID, &projCircle, projTransform, translation, filter, castCircleCallback, &ctx);
-    if (!ctx.hit) {
-        return true;
-    } else {
-        const entity *ent = b2Shape_GetUserData(ctx.shapeID);
-        if (ent->type == STANDARD_WALL_ENTITY || ent->type == BOUNCY_WALL_ENTITY || ent->type == DRONE_ENTITY) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 bool safeToFire(env *e, const droneEntity *drone, const b2Vec2 direction) {
     float shotWait;
     if (drone->ammo > 1) {
@@ -147,12 +147,11 @@ bool safeToFire(env *e, const droneEntity *drone, const b2Vec2 direction) {
     const b2Vec2 pos = drone->pos;
     const b2Vec2 rayEnd = b2MulAdd(pos, recoilDistance, invDirection);
     const b2Vec2 translation = b2Sub(rayEnd, pos);
-    const b2Circle projCircle = {.center = b2Vec2_zero, .radius = DRONE_RADIUS};
-    const b2Transform projTransform = {.p = pos, .q = b2Rot_identity};
+    const b2ShapeProxy cirProxy = b2MakeProxy(&pos, 1, DRONE_RADIUS);
     const b2QueryFilter filter = {.categoryBits = DRONE_SHAPE, .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | DRONE_SHAPE};
 
     castCircleCtx ctx = {0};
-    b2World_CastCircle(e->worldID, &projCircle, projTransform, translation, filter, castCircleCallback, &ctx);
+    b2World_CastShape(e->worldID, &cirProxy, translation, filter, castCircleCallback, &ctx);
     if (!ctx.hit) {
         return true;
     } else {
@@ -245,12 +244,11 @@ bool shouldShootAtEnemy(env *e, const droneEntity *drone, const droneEntity *ene
     const float enemyDroneDistance = b2Distance(enemyDrone->pos, drone->pos);
     const b2Vec2 castEnd = b2MulAdd(drone->pos, enemyDroneDistance, enemyDroneDirection);
     const b2Vec2 translation = b2Sub(castEnd, drone->pos);
-    const b2Circle projCircle = {.center = b2Vec2_zero, .radius = drone->weaponInfo->radius};
-    const b2Transform projTransform = {.p = drone->pos, .q = b2Rot_identity};
+    const b2ShapeProxy cirProxy = b2MakeProxy(&drone->pos, 1, drone->weaponInfo->radius);
     const b2QueryFilter filter = {.categoryBits = PROJECTILE_SHAPE, .maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | DRONE_SHAPE};
 
     castCircleCtx ctx = {0};
-    b2World_CastCircle(e->worldID, &projCircle, projTransform, translation, filter, castCircleCallback, &ctx);
+    b2World_CastShape(e->worldID, &cirProxy, translation, filter, castCircleCallback, &ctx);
     if (!ctx.hit) {
         return false;
     }
@@ -335,16 +333,7 @@ agentActions scriptedAgentActions(env *e, droneEntity *drone) {
             continue;
         }
 
-        bool isCircle = false;
-        b2DistanceInput input;
-        input.proxyA = makeDistanceProxyFromType(DRONE_ENTITY, &isCircle);
-        input.proxyB = makeDistanceProxyFromType(wall->type, &isCircle);
-        input.transformA = (b2Transform){.p = drone->pos, .q = b2Rot_identity};
-        input.transformB = (b2Transform){.p = wall->pos, .q = b2Rot_identity};
-        input.useRadii = isCircle;
-        b2SimplexCache cache = {0};
-        const b2DistanceOutput output = b2ShapeDistance(&cache, &input, NULL, 0);
-
+        const b2DistanceOutput output = closestPoint(drone->ent, wall->ent);
         handleWallProximity(e, drone, wall, output.distance, &actions);
     }
 
@@ -357,16 +346,7 @@ agentActions scriptedAgentActions(env *e, droneEntity *drone) {
             continue;
         }
 
-        bool isCircle = false;
-        b2DistanceInput input;
-        input.proxyA = makeDistanceProxyFromType(DRONE_ENTITY, &isCircle);
-        input.proxyB = makeDistanceProxyFromType(floatingWall->type, &isCircle);
-        input.transformA = (b2Transform){.p = drone->pos, .q = b2Rot_identity};
-        input.transformB = b2Body_GetTransform(floatingWall->bodyID);
-        input.useRadii = isCircle;
-        b2SimplexCache cache = {0};
-        const b2DistanceOutput output = b2ShapeDistance(&cache, &input, NULL, 0);
-
+        const b2DistanceOutput output = closestPoint(drone->ent, floatingWall->ent);
         handleWallProximity(e, drone, floatingWall, output.distance, &actions);
     }
 
@@ -425,7 +405,6 @@ agentActions scriptedAgentActions(env *e, droneEntity *drone) {
         scriptedAgentBurst(drone, &actions);
     }
     // move into ideal range for the current weapon
-    // THE BELOW LINE IS WHERE IT SEGFAULTS
     if (closestDistanceSquared > weaponIdealRangeSquared(drone)) {
         moveTo(e, drone, &actions, enemyDrone->pos);
         return actions;

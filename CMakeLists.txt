@@ -82,10 +82,11 @@ FetchContent_MakeAvailable(raylib)
 # maybe due to install prefix schenanigans?
 FetchContent_Declare(
 	box2d
-	URL https://github.com/capnspacehook/box2d/archive/5dfdb82ce48ad02547c9e09198e9050f3b6a8442.zip
+	URL https://github.com/capnspacehook/box2d/archive/7bdfaf243700aa4b2b82f5eb13f95359966fa5da.zip # 3.1
 )
 set(BOX2D_ENABLE_SIMD ON CACHE BOOL "Enable SIMD math (faster)" FORCE)
 set(BOX2D_AVX2 ON CACHE BOOL "Enable AVX2 (faster)" FORCE)
+add_compile_definitions(B2_MAX_WORLDS=65534)
 FetchContent_MakeAvailable(box2d)
 # this is set to off by box2d to enable cross platform determinism, but
 # I don't care about that and want the small speedup instead

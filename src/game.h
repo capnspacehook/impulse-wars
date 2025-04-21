@@ -108,10 +108,12 @@ b2ShapeProxy makeDistanceProxyFromType(const enum entityType type, bool *isCircl
     switch (type) {
     case DRONE_ENTITY:
         *isCircle = true;
+        proxy.count = 1;
         proxy.radius = DRONE_RADIUS;
         break;
     case SHIELD_ENTITY:
         *isCircle = true;
+        proxy.count = 1;
         proxy.radius = DRONE_SHIELD_RADIUS;
         break;
     case WEAPON_PICKUP_ENTITY:
@@ -142,6 +144,7 @@ b2ShapeProxy makeDistanceProxy(const entity *ent, bool *isCircle) {
         *isCircle = true;
         b2ShapeProxy proxy = {0};
         const projectileEntity *proj = ent->entity;
+        proxy.count = 1;
         proxy.radius = proj->weaponInfo->radius;
         return proxy;
     }
@@ -166,10 +169,12 @@ b2Transform entityTransform(const entity *ent) {
     case PROJECTILE_ENTITY:
         proj = ent->entity;
         transform.p = proj->pos;
+        transform.q = b2Rot_identity;
         return transform;
     case DRONE_ENTITY:
         drone = ent->entity;
         transform.p = drone->pos;
+        transform.q = b2Rot_identity;
         return transform;
     default:
         ERRORF("unknown entity type: %d", ent->type);
@@ -184,10 +189,19 @@ b2DistanceOutput closestPoint(const entity *srcEnt, const entity *dstEnt) {
     input.proxyB = makeDistanceProxy(dstEnt, &isCircle);
     input.transformA = entityTransform(srcEnt);
     input.transformB = entityTransform(dstEnt);
+    if (input.proxyA.radius != 0.0f && input.proxyB.radius != 0.0f) {
+        b2DistanceOutput output = {0};
+        output.distance = b2Distance(input.transformB.p, input.transformA.p) - input.proxyA.radius - input.proxyB.radius;
+        output.normal = b2Normalize(b2Sub(input.transformB.p, input.transformA.p));
+        output.pointA = b2MulAdd(input.transformA.p, input.proxyA.radius, output.normal);
+        output.pointB = b2MulAdd(input.transformB.p, input.proxyB.radius, output.normal);
+        return output;
+    }
+
     input.useRadii = isCircle;
 
     b2SimplexCache cache = {0};
-    return b2ShapeDistance(&cache, &input, NULL, 0);
+    return b2ShapeDistance(&input, &cache, NULL, 0);
 }
 
 typedef struct behindWallContext {
@@ -262,8 +276,7 @@ bool isOverlappingCircleCallback(b2ShapeId shapeID, void *context) {
 }
 
 bool isOverlappingCircleInLineOfSight(const env *e, const entity *ent, const b2Vec2 startPos, const float radius, const b2QueryFilter filter, const enum entityType *targetType) {
-    const b2Circle circle = {.center = b2Vec2_zero, .radius = radius};
-    const b2Transform transform = {.p = startPos, .q = b2Rot_identity};
+    const b2ShapeProxy cirProxy = b2MakeProxy(&startPos, 1, radius);
     overlapCircleCtx ctx = {
         .e = e,
         .ent = ent,
@@ -274,7 +287,7 @@ bool isOverlappingCircleInLineOfSight(const env *e, const entity *ent, const b2V
         },
         .overlaps = false,
     };
-    b2World_OverlapCircle(e->worldID, &circle, transform, filter, isOverlappingCircleCallback, &ctx);
+    b2World_OverlapShape(e->worldID, &cirProxy, filter, isOverlappingCircleCallback, &ctx);
     return ctx.overlaps;
 }
 
@@ -432,8 +445,8 @@ entity *createWall(env *e, const b2Vec2 pos, const float width, const float heig
     b2ShapeDef wallShapeDef = b2DefaultShapeDef();
     wallShapeDef.invokeContactCreation = false;
     wallShapeDef.density = WALL_DENSITY;
-    wallShapeDef.restitution = STANDARD_WALL_RESTITUTION;
-    wallShapeDef.friction = STANDARD_WALL_FRICTION;
+    wallShapeDef.material.restitution = STANDARD_WALL_RESTITUTION;
+    wallShapeDef.material.friction = STANDARD_WALL_FRICTION;
     wallShapeDef.filter.categoryBits = WALL_SHAPE;
     wallShapeDef.filter.maskBits = FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE | SHIELD_SHAPE | DRONE_PIECE_SHAPE;
     if (floating) {
@@ -443,8 +456,8 @@ entity *createWall(env *e, const b2Vec2 pos, const float width, const float heig
     }
 
     if (type == BOUNCY_WALL_ENTITY) {
-        wallShapeDef.restitution = BOUNCY_WALL_RESTITUTION;
-        wallShapeDef.friction = 0.0f;
+        wallShapeDef.material.restitution = BOUNCY_WALL_RESTITUTION;
+        wallShapeDef.material.friction = 0.0f;
     } else if (type == DEATH_WALL_ENTITY) {
         wallShapeDef.enableContactEvents = true;
     }
@@ -626,8 +639,8 @@ void createDroneShield(env *e, droneEntity *drone, const int8_t groupIdx) {
 
     b2ShapeDef shieldBufferShapeDef = b2DefaultShapeDef();
     shieldBufferShapeDef.density = 0.0f;
-    shieldBufferShapeDef.friction = DRONE_FRICTION;
-    shieldBufferShapeDef.restitution = DRONE_RESTITUTION;
+    shieldBufferShapeDef.material.friction = DRONE_FRICTION;
+    shieldBufferShapeDef.material.restitution = DRONE_RESTITUTION;
     shieldBufferShapeDef.filter.categoryBits = SHIELD_SHAPE;
     shieldBufferShapeDef.filter.maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | SHIELD_SHAPE;
     shieldBufferShapeDef.filter.groupIndex = groupIdx;
@@ -686,8 +699,8 @@ void createDrone(env *e, const uint8_t idx) {
     b2BodyId droneBodyID = b2CreateBody(e->worldID, &droneBodyDef);
     b2ShapeDef droneShapeDef = b2DefaultShapeDef();
     droneShapeDef.density = DRONE_DENSITY;
-    droneShapeDef.friction = DRONE_FRICTION;
-    droneShapeDef.restitution = DRONE_RESTITUTION;
+    droneShapeDef.material.friction = DRONE_FRICTION;
+    droneShapeDef.material.restitution = DRONE_RESTITUTION;
     droneShapeDef.filter.categoryBits = DRONE_SHAPE;
     droneShapeDef.filter.maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | WEAPON_PICKUP_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE | SHIELD_SHAPE;
     droneShapeDef.filter.groupIndex = groupIdx;
@@ -768,6 +781,7 @@ void createDronePiece(env *e, droneEntity *drone, const bool fromShield) {
     pieceShapeDef.filter.categoryBits = DRONE_PIECE_SHAPE;
     pieceShapeDef.filter.maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | DRONE_PIECE_SHAPE;
     pieceShapeDef.density = 1.0f;
+    pieceShapeDef.material.friction = 0.5f;
     pieceShapeDef.userData = ent;
 
     // make pieces from the shield a bit smaller
@@ -933,7 +947,8 @@ void createProjectile(env *e, droneEntity *drone, const b2Vec2 normAim) {
     b2ShapeDef projectileShapeDef = b2DefaultShapeDef();
     projectileShapeDef.enableContactEvents = true;
     projectileShapeDef.density = drone->weaponInfo->density;
-    projectileShapeDef.restitution = 1.0f;
+    projectileShapeDef.material.restitution = 1.0f;
+    projectileShapeDef.material.friction = 0.0f;
     projectileShapeDef.filter.categoryBits = PROJECTILE_SHAPE;
     projectileShapeDef.filter.maskBits = WALL_SHAPE | FLOATING_WALL_SHAPE | PROJECTILE_SHAPE | DRONE_SHAPE | SHIELD_SHAPE;
     const b2Circle projectileCircle = {.center = b2Vec2_zero, .radius = radius};
@@ -1159,7 +1174,7 @@ bool explodeCallback(b2ShapeId shapeID, void *context) {
     input.useRadii = isCircle;
 
     b2SimplexCache cache = {0};
-    const b2DistanceOutput output = b2ShapeDistance(&cache, &input, NULL, 0);
+    const b2DistanceOutput output = b2ShapeDistance(&input, &cache, NULL, 0);
     if (output.distance > ctx->def->radius) {
         return true;
     }
@@ -1808,27 +1823,6 @@ void droneDiscardWeapon(env *e, droneEntity *drone) {
     } else {
         drone->energyRefillWait = DRONE_ENERGY_REFILL_WAIT;
     }
-}
-
-typedef struct castCircleCtx {
-    bool hit;
-    b2ShapeId shapeID;
-} castCircleCtx;
-
-float castCircleCallback(b2ShapeId shapeId, b2Vec2 point, b2Vec2 normal, float fraction, void *context) {
-    // these parameters are required by the callback signature
-    MAYBE_UNUSED(point);
-    MAYBE_UNUSED(normal);
-    if (!b2Shape_IsValid(shapeId)) {
-        // skip this shape if it isn't valid
-        return -1.0f;
-    }
-
-    castCircleCtx *ctx = context;
-    ctx->hit = true;
-    ctx->shapeID = shapeId;
-
-    return fraction;
 }
 
 // update drone state, respawn the drone if necessary; false is returned
