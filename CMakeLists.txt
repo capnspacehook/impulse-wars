@@ -58,7 +58,7 @@ else()
 	# ensure the linker used is from the same compiler toolchain, or else
 	# link time optimization will probably fail; if we're using
 	# emscripten it will use it's own linker
-	if(CMAKE_C_COMPILER_ID MATCHES "Clang" AND NOT DEFINED EMSCRIPTEN)
+	if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND NOT DEFINED EMSCRIPTEN)
 		add_link_options("-fuse-ld=lld")
 	endif()
 endif()
@@ -108,7 +108,7 @@ function(configure_target target_name)
 	target_compile_options(${target_name} PRIVATE
 		"-Werror" "-Wall" "-Wextra" "-Wpedantic"
 		"-Wno-implicit-fallthrough" "-Wno-variadic-macros" "-Wno-strict-prototypes" "-Wno-gnu-statement-expression"
-		"-Wno-gnu-folding-constant"
+		"-Wno-gnu-folding-constant" "-Wno-deprecated-declarations"
 	)
 endfunction()
 
@@ -180,7 +180,7 @@ if(DEFINED BUILD_PYTHON_MODULE)
 	configure_target(cy_impulse_wars)
 	# disable false positive warnings for generated Cython source file
 	# but keep other warnings enabled just in case something crazy is generated
-	set_source_files_properties(impulse_wars.c PROPERTIES COMPILE_FLAGS "-Wno-pedantic")
+	set_source_files_properties("${CMAKE_CURRENT_BINARY_DIR}/impulse_wars.c" PROPERTIES COMPILE_FLAGS "-Wno-pedantic")
 
 	install(TARGETS cy_impulse_wars DESTINATION .)
 elseif(DEFINED BUILD_DEMO)

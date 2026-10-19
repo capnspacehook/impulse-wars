@@ -112,7 +112,7 @@
 // use malloc when debugging so the address sanitizer can find issues with
 // heap memory, use dlmalloc in release mode for performance; emscripten
 // uses dlmalloc by default so no need to change anything here
-#if !defined(NDEBUG) || defined(__EMSCRIPTEN__)
+#if !defined(NDEBUG) || defined(__EMSCRIPTEN__) || defined(__APPLE__)
 #define fastMalloc(size) malloc(size)
 #define fastMallocFn malloc
 #define fastCalloc(nmemb, size) calloc(nmemb, size)
