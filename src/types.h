@@ -3,6 +3,8 @@
 
 #include "box2d/box2d.h"
 
+#include "raylib.h"
+
 // autopxd2 can't parse internal box2d headers or raylib headers
 #ifndef AUTOPXD
 #include "id_pool.h"
@@ -19,7 +21,6 @@ void b2DestroyIdPool(b2IdPool *pool);
 int b2AllocId(b2IdPool *pool);
 void b2FreeId(b2IdPool *pool, int id);
 #endif
-#include "raylib.h"
 
 #include "include/cc_array.h"
 

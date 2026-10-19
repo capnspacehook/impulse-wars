@@ -95,6 +95,7 @@ target_compile_options(box2d PRIVATE "-ffp-contract=fast")
 function(configure_target target_name)
 	target_include_directories(
 		${target_name} PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}"
 		"${CMAKE_CURRENT_SOURCE_DIR}/src"
 		"${CMAKE_CURRENT_SOURCE_DIR}/src/include"
 	)
@@ -107,6 +108,7 @@ function(configure_target target_name)
 	target_compile_options(${target_name} PRIVATE
 		"-Werror" "-Wall" "-Wextra" "-Wpedantic"
 		"-Wno-implicit-fallthrough" "-Wno-variadic-macros" "-Wno-strict-prototypes" "-Wno-gnu-statement-expression"
+		"-Wno-gnu-folding-constant"
 	)
 endfunction()
 
