@@ -615,7 +615,6 @@ const weaponInformation nuke = {
     .spawnWeight = NUKE_SPAWN_WEIGHT,
 };
 
-#ifndef AUTOPXD
 weaponInformation *weaponInfos[] = {
     (weaponInformation *)&standard,
     (weaponInformation *)&machineGun,
@@ -628,7 +627,6 @@ weaponInformation *weaponInfos[] = {
     (weaponInformation *)&blackHole,
     (weaponInformation *)&nuke,
 };
-#endif
 
 // max ammo of weapon
 int8_t weaponAmmo(const enum weaponType defaultWep, const enum weaponType type) {

@@ -23,10 +23,9 @@ double accumulator = 0.0;
 #else
 rayClient *createRayClient();
 void destroyRayClient(rayClient *client);
-typedef struct Vector2 {
-    float x;
-    float y;
-} Vector2;
+void setupEnvCamera(env *e);
+void renderEnv(env *e, const bool starting, const bool ending, const int8_t winner, const int8_t winningTeam);
+b2Vec2 rayVecToB2Vec(const env *e, const Vector2 v);
 #endif
 
 const uint8_t THREE_BIT_MASK = 0x7;
@@ -259,7 +258,6 @@ void computeMapObs(env *e, const uint8_t agentIdx, const uint16_t obsStartOffset
     }
 }
 
-#ifndef AUTOPXD
 // computes observations for N nearest walls, floating walls, and weapon pickups
 void computeNearObs(env *e, const droneEntity *drone, const uint16_t discreteObsStart, float *continuousObs) {
     nearEntity nearWalls[NUM_NEAR_WALL_OBS];
@@ -359,7 +357,6 @@ void computeNearObs(env *e, const droneEntity *drone, const uint16_t discreteObs
         }
     }
 }
-#endif
 
 void computeObs(env *e) {
     for (uint8_t agentIdx = 0; agentIdx < e->numAgents; agentIdx++) {

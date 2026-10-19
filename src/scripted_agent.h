@@ -308,8 +308,6 @@ void scriptedAgentBurst(const droneEntity *drone, agentActions *actions) {
     }
 }
 
-#ifndef AUTOPXD
-
 agentActions scriptedAgentActions(env *e, droneEntity *drone) {
     agentActions actions = {0};
     if (e->sittingDuck) {
@@ -434,7 +432,5 @@ agentActions scriptedAgentActions(env *e, droneEntity *drone) {
 
     return actions;
 }
-
-#endif
 
 #endif

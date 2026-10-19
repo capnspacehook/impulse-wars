@@ -58,7 +58,7 @@ else()
 	# ensure the linker used is from the same compiler toolchain, or else
 	# link time optimization will probably fail; if we're using
 	# emscripten it will use it's own linker
-	if(CMAKE_C_COMPILER_ID MATCHES "Clang" AND NOT DEFINED EMSCRIPTEN)
+	if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND NOT DEFINED EMSCRIPTEN)
 		add_link_options("-fuse-ld=lld")
 	endif()
 endif()
@@ -95,6 +95,7 @@ target_compile_options(box2d PRIVATE "-ffp-contract=fast")
 function(configure_target target_name)
 	target_include_directories(
 		${target_name} PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}"
 		"${CMAKE_CURRENT_SOURCE_DIR}/src"
 		"${CMAKE_CURRENT_SOURCE_DIR}/src/include"
 	)
@@ -107,6 +108,7 @@ function(configure_target target_name)
 	target_compile_options(${target_name} PRIVATE
 		"-Werror" "-Wall" "-Wextra" "-Wpedantic"
 		"-Wno-implicit-fallthrough" "-Wno-variadic-macros" "-Wno-strict-prototypes" "-Wno-gnu-statement-expression"
+		"-Wno-gnu-folding-constant" "-Wno-deprecated-declarations"
 	)
 endfunction()
 
@@ -123,7 +125,7 @@ if(DEFINED BUILD_PYTHON_MODULE)
 	file(GLOB_RECURSE IMPULSE_WARS_HEADERS RELATIVE ${CMAKE_SOURCE_DIR} "src/*.h")
 
 	add_custom_command(
-		OUTPUT impulse_wars.pxd.raw
+		OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/impulse_wars.pxd.raw"
 		COMMENT "Converting C headers to Cython PXD file"
 		COMMAND autopxd
 			-I "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -131,20 +133,21 @@ if(DEFINED BUILD_PYTHON_MODULE)
 			-I "${box2d_SOURCE_DIR}/include"
 			-I "${raylib_SOURCE_DIR}/src"
 			-D AUTOPXD
-			"${CMAKE_CURRENT_SOURCE_DIR}/src/env.h" impulse_wars.pxd.raw
+			-P "${CMAKE_CURRENT_SOURCE_DIR}/src"
+			"${CMAKE_CURRENT_SOURCE_DIR}/src/env.h" "${CMAKE_CURRENT_BINARY_DIR}/impulse_wars.pxd.raw"
 		DEPENDS "${IMPULSE_WARS_HEADERS}"
 		VERBATIM
 	)
 
 	# workaround for autopxd not setting bools correctly
 	add_custom_command(
-		OUTPUT impulse_wars.pxd
+		OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/impulse_wars.pxd"
 		COMMENT "Fixing bools in Cython PXD file"
 		COMMAND "${CMAKE_COMMAND}"
 			"-DSOURCE=${CMAKE_CURRENT_BINARY_DIR}/impulse_wars.pxd.raw"
 			"-DTARGET=${CMAKE_CURRENT_BINARY_DIR}/impulse_wars.pxd"
 			-P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/fix-cython-pxd.cmake"
-		DEPENDS impulse_wars.pxd.raw
+		DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/impulse_wars.pxd.raw"
 		VERBATIM
 	)
 
@@ -158,7 +161,7 @@ if(DEFINED BUILD_PYTHON_MODULE)
 	)
 
 	add_custom_command(
-		OUTPUT impulse_wars.c
+		OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/impulse_wars.c"
 		COMMENT "Transpiling Cython to C"
 		COMMAND Python::Interpreter -m cython
 			-3
@@ -166,18 +169,18 @@ if(DEFINED BUILD_PYTHON_MODULE)
 			-X initializedcheck=false
 			-X wraparound=false
 			-X cdivision=true
-			cy_impulse_wars.pyx -o impulse_wars.c
-		DEPENDS impulse_wars.pxd cy_impulse_wars.pyx
+			"${CMAKE_CURRENT_BINARY_DIR}/cy_impulse_wars.pyx" -o "${CMAKE_CURRENT_BINARY_DIR}/impulse_wars.c"
+		DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/impulse_wars.pxd" "${CMAKE_CURRENT_BINARY_DIR}/cy_impulse_wars.pyx"
 		VERBATIM
 	)
 
 	# build python module
-	python_add_library(cy_impulse_wars MODULE impulse_wars.c WITH_SOABI)
+	python_add_library(cy_impulse_wars MODULE "${CMAKE_CURRENT_BINARY_DIR}/impulse_wars.c" WITH_SOABI)
 
 	configure_target(cy_impulse_wars)
 	# disable false positive warnings for generated Cython source file
 	# but keep other warnings enabled just in case something crazy is generated
-	set_source_files_properties(impulse_wars.c PROPERTIES COMPILE_FLAGS "-Wno-pedantic")
+	set_source_files_properties("${CMAKE_CURRENT_BINARY_DIR}/impulse_wars.c" PROPERTIES COMPILE_FLAGS "-Wno-pedantic")
 
 	install(TARGETS cy_impulse_wars DESTINATION .)
 elseif(DEFINED BUILD_DEMO)
