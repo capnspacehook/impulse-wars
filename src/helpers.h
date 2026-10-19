@@ -154,7 +154,6 @@ static inline bool b2VecEqual(const b2Vec2 v1, const b2Vec2 v2) {
     return v1.x == v2.x && v1.y == v2.y;
 }
 
-#ifndef AUTOPXD
 // from https://lemire.me/blog/2019/03/19/the-fastest-conventional-random-number-generator-that-can-pass-big-crush/
 // see also https://github.com/lemire/testingRNG
 uint64_t wyhash64(uint64_t *state) {
@@ -166,7 +165,6 @@ uint64_t wyhash64(uint64_t *state) {
     uint64_t m2 = (tmp >> 64) ^ tmp;
     return m2;
 }
-#endif
 
 static inline float randFloat(uint64_t *state, const float min, const float max) {
     float n = wyhash64(state) / (float)UINT64_MAX;
@@ -181,7 +179,6 @@ static inline float logBasef(const float v, const float b) {
     return log2f(v) / log2(b);
 }
 
-#ifndef AUTOPXD
 #define min(a, b)               \
     ({                          \
         __typeof__(a) _a = (a); \
@@ -195,7 +192,6 @@ static inline float logBasef(const float v, const float b) {
         __typeof__(b) _b = (b); \
         _a > _b ? _a : _b;      \
     })
-#endif
 
 // clamps between 0 and 1
 static inline float clamp(float f) {

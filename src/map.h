@@ -343,7 +343,6 @@ mapEntry siegeMap = {
 
 // clang-format on
 
-#ifndef AUTOPXD
 mapEntry *maps[] = {
     &boringMap,
     &prototypeArenaMap,
@@ -355,7 +354,6 @@ mapEntry *maps[] = {
     &foamPitMap,
     &siegeMap,
 };
-#endif
 
 void resetMap(env *e) {
     // if sudden death walls were placed, remove them
@@ -550,7 +548,6 @@ void computeMapBoundsAndQuadrants(env *e, mapEntry *map) {
     };
 }
 
-#ifndef AUTOPXD
 bool posValidDroneSpawnPoint(const env *e, const b2Vec2 pos) {
     const b2QueryFilter filter = {
         .categoryBits = DRONE_SHAPE,
@@ -569,7 +566,6 @@ bool posValidDroneSpawnPoint(const env *e, const b2Vec2 pos) {
 
     return true;
 }
-#endif
 
 void initMaps(env *e) {
     for (uint8_t i = 0; i < NUM_MAPS; i++) {
